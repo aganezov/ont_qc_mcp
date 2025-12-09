@@ -1,0 +1,27 @@
+[project]
+name = "ont-qc-mcp"
+version = "0.1.0"
+description = "Model Context Protocol server exposing QC/EDA helpers for ONT FASTQ/BAM/CRAM inputs."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Your Name" }]
+dependencies = [
+    "mcp>=0.1.0",
+    "pydantic>=2.6,<3",
+    "typer>=0.12,<1",
+    "rich>=13,<14",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0,<9",
+]
+
+[project.scripts]
+ont-qc-mcp = "mcp.server:main"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
