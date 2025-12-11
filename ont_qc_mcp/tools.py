@@ -1,4 +1,5 @@
 import gzip
+import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -18,13 +19,13 @@ from .schemas import (
     ReadLengthDistribution,
     LengthPercentiles,
 )
-from .utils import CommandError, format_cmd, run_command
+from .utils import CommandError, _truncate_stderr, format_cmd, run_command
 
 
 def env_check(tools: Optional[ToolPaths] = None) -> EnvStatus:
     tools = tools or ToolPaths()
     missing = tools.missing()
-    resolved = tools.as_dict()
+    resolved = tools.resolved()
     available = {k: k not in missing for k in resolved.keys()}
     return EnvStatus(available=available, resolved_paths=resolved, missing=missing)
 
@@ -119,13 +120,21 @@ def coverage_stats(
     path: str,
     tools: Optional[ToolPaths] = None,
     window: Optional[int] = None,
+    low_cov_threshold: Optional[float] = None,
     flags: Optional[Dict[str, Any]] = None,
 ) -> MosdepthStats:
     tools = tools or ToolPaths()
     aln_path = Path(path)
     if not aln_path.exists():
         raise FileNotFoundError(f"Alignment not found: {aln_path}")
-    return mosdepth_coverage(aln_path, tools, window=window, flags=flags, exec_cfg=_EXEC_CFG)
+    return mosdepth_coverage(
+        aln_path,
+        tools,
+        window=window,
+        low_cov_threshold=low_cov_threshold,
+        flags=flags,
+        exec_cfg=_EXEC_CFG,
+    )
 
 
 def alignment_error_profile(
@@ -147,7 +156,9 @@ def alignment_error_profile(
     try:
         result = run_command(cmd, timeout=cfg.timeout_for("samtools"))
     except CommandError as exc:
-        raise RuntimeError(f"samtools stats failed: {format_cmd(exc.result.cmd)}\n{exc.result.stderr}") from exc
+        raise RuntimeError(
+            f"samtools stats failed: {format_cmd(exc.result.cmd)}\n{_truncate_stderr(exc.result.stderr)}"
+        ) from exc
     return parse_error_profile(result.stdout, file_path=str(aln_path))
 
 
@@ -156,7 +167,9 @@ def alignment_summary(
     include_coverage: bool = True,
     include_hist: bool = True,
     use_scaled: bool = False,
+    include_error_profile: bool = False,
     coverage_window: Optional[int] = None,
+    coverage_low_cov_threshold: Optional[float] = None,
     coverage_flags: Optional[Dict[str, Any]] = None,
     cramino_flags: Optional[Dict[str, Any]] = None,
     error_profile_flags: Optional[Dict[str, Any]] = None,
@@ -164,19 +177,32 @@ def alignment_summary(
 ) -> QCReport:
     tools = tools or ToolPaths()
     aln_stats = qc_alignment(path, tools=tools, include_hist=include_hist, use_scaled=use_scaled, flags=cramino_flags)
-    coverage = coverage_stats(path, tools=tools, window=coverage_window, flags=coverage_flags) if include_coverage else None
-    errors = alignment_error_profile(path, tools=tools, flags=error_profile_flags, exec_cfg=_EXEC_CFG)
+    coverage = coverage_stats(
+        path,
+        tools=tools,
+        window=coverage_window,
+        low_cov_threshold=coverage_low_cov_threshold,
+        flags=coverage_flags,
+    ) if include_coverage else None
+    errors = (
+        alignment_error_profile(path, tools=tools, flags=error_profile_flags, exec_cfg=_EXEC_CFG)
+        if include_error_profile
+        else None
+    )
     return QCReport(alignment=aln_stats, coverage=coverage, errors=errors)
 
 
-def _detect_header_format(file_path: Path, file_type: Optional[str]) -> str:
-    """Infer the header format from the provided type or filename."""
-    if file_type:
-        normalized = file_type.lower()
-        if normalized not in {"bam", "cram", "sam", "vcf"}:
-            raise ValueError(f"Unsupported file type: {file_type}")
-        return normalized
+def _normalize_declared_format(file_type: Optional[str]) -> Optional[str]:
+    if not file_type:
+        return None
+    normalized = file_type.lower()
+    if normalized not in {"bam", "cram", "sam", "vcf"}:
+        raise ValueError(f"Unsupported file type: {file_type}")
+    return normalized
 
+
+def _detect_header_format(file_path: Path) -> Optional[str]:
+    """Infer the header format from the filename extension only."""
     name = file_path.name.lower()
     if name.endswith(".bam"):
         return "bam"
@@ -186,7 +212,109 @@ def _detect_header_format(file_path: Path, file_type: Optional[str]) -> str:
         return "sam"
     if name.endswith(".vcf") or name.endswith(".vcf.gz"):
         return "vcf"
-    raise ValueError(f"Unable to infer file type from extension: {file_path}")
+    return None
+
+
+def _sniff_header_format(file_path: Path) -> Optional[str]:
+    """
+    Use cheap magic-byte or header sniffing to guess format.
+    Returns None when inconclusive.
+    """
+    try:
+        with open(file_path, "rb") as fh:
+            prefix = fh.read(32)
+    except OSError:
+        return None
+
+    # CRAM starts with literal CRAM magic.
+    if prefix.startswith(b"CRAM"):
+        return "cram"
+
+    is_gzip = prefix.startswith(b"\x1f\x8b")
+
+    # BAM is BGZF; decompress a few bytes to check for BAM\\1 magic.
+    if is_gzip or prefix.startswith(b"BAM\1"):
+        try:
+            with gzip.open(file_path, "rb") as gf:
+                inner = gf.read(4)
+                if inner.startswith(b"BAM\1"):
+                    return "bam"
+        except OSError:
+            # Could still be another gzip; keep sniffing.
+            pass
+
+    # For gzip VCF, inspect first few text lines.
+    if is_gzip:
+        try:
+            with gzip.open(file_path, "rt", encoding="utf-8", errors="replace") as gf:
+                for _ in range(8):
+                    line = gf.readline()
+                    if not line:
+                        break
+                    if line.startswith("##fileformat=VCF") or line.startswith("#CHROM"):
+                        return "vcf"
+        except OSError:
+            return None
+    else:
+        # Plain text inputs: check a small prefix.
+        try:
+            text = prefix.decode("utf-8", errors="replace")
+        except UnicodeDecodeError:
+            return None
+        for line in text.splitlines():
+            if line.startswith("@HD") or line.startswith("@SQ"):
+                return "sam"
+            if line.startswith("##fileformat=VCF") or line.startswith("#CHROM"):
+                return "vcf"
+
+    return None
+
+
+def _infer_header_format(file_path: Path, file_type: Optional[str]) -> str:
+    """
+    Combine caller hint, sniffing, and extension to decide format.
+    Raise friendly errors when mismatched.
+    """
+    declared = _normalize_declared_format(file_type)
+    sniffed = _sniff_header_format(file_path)
+    ext_guess = _detect_header_format(file_path)
+
+    if declared:
+        if sniffed and sniffed != declared:
+            raise ValueError(
+                f"Provided file_type '{declared}' disagrees with detected format '{sniffed}' for {file_path}"
+            )
+        return declared
+
+    if sniffed:
+        if ext_guess and sniffed != ext_guess:
+            raise ValueError(
+                f"File extension suggests '{ext_guess}' but contents look like '{sniffed}' for {file_path}. "
+                "Pass file_type to override if this is intentional."
+            )
+        return sniffed
+
+    if ext_guess:
+        return ext_guess
+
+    raise ValueError(f"Unable to determine file type for {file_path}; provide file_type explicitly.")
+
+
+def _maybe_quickcheck(path: Path, tools: ToolPaths, fmt: str, exec_cfg: ExecutionConfig) -> None:
+    """Optionally validate BAM/CRAM with samtools quickcheck when available."""
+    if fmt not in {"bam", "cram"}:
+        return
+    samtools_path = shutil.which(tools.samtools)
+    if not samtools_path:
+        return
+
+    cmd = [samtools_path, "quickcheck", "-v", str(path)]
+    try:
+        run_command(cmd, timeout=exec_cfg.timeout_for("samtools"))
+    except CommandError as exc:
+        raise RuntimeError(
+            f"samtools quickcheck failed for {fmt}: {format_cmd(exc.result.cmd)}\n{_truncate_stderr(exc.result.stderr)}"
+        ) from exc
 
 
 def _read_alignment_header_text(
@@ -202,7 +330,9 @@ def _read_alignment_header_text(
     try:
         result = run_command(cmd, timeout=exec_cfg.timeout_for("samtools"))
     except CommandError as exc:
-        raise RuntimeError(f"samtools view -H failed: {format_cmd(exc.result.cmd)}\n{exc.result.stderr}") from exc
+        raise RuntimeError(
+            f"samtools view -H failed: {format_cmd(exc.result.cmd)}\n{_truncate_stderr(exc.result.stderr)}"
+        ) from exc
     return result.stdout
 
 
@@ -243,8 +373,9 @@ def header_metadata_lookup(
     if not file_path.exists():
         raise FileNotFoundError(f"File not found: {file_path}")
 
-    fmt = _detect_header_format(file_path, file_type)
+    fmt = _infer_header_format(file_path, file_type)
     if fmt in {"bam", "cram", "sam"}:
+        _maybe_quickcheck(file_path, tools, fmt, cfg)
         header_text = _read_alignment_header_text(file_path, tools, flags, cfg)
         metadata = parse_alignment_header(header_text, file_path=str(file_path), fmt=fmt)
     elif fmt == "vcf":

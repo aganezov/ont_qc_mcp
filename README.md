@@ -27,6 +27,11 @@ pip install -e .
 ont-qc-mcp  # launches the MCP stdio server
 ```
 
+### Consistent environment for tests/tools
+- Use `scripts/with-env.sh` to set PATH and venv for all commands: `scripts/with-env.sh pytest`.
+- It prepends conda CLI tools (`/Users/saganezov/miniforge3/envs/ont-qc-mcp/bin`) and cargo-installed `nanoq` (`/Users/saganezov/.cargo/bin`), then activates `.venv`.
+- Keep `.venv` in the repo root; if missing, the script warns and continues.
+
 ## MCP tools (high level)
 - `qc_reads`: nanoq read-level QC (counts, lengths, qscore histogram).
 - `filter_reads`: chopper filtering/trimming; returns command + stats.
@@ -39,6 +44,7 @@ ont-qc-mcp  # launches the MCP stdio server
 - `env_status`: report availability and resolved paths for all tools.
 - `header_metadata_tool`: extract BAM/CRAM/VCF header metadata (contigs, samples, programs) plus a concise summary.
 - Guidance resource: `tool://guidance/{tool}` returns runtime hints, defaults (threads/timeouts), and links to flag schemas/recipes to help orchestration layers decide whether to call a tool.
+- Defaults stay lightweight; heavier steps (error profiles, quantized/threshold coverage) are opt-in via flags.
 
 ## Execution defaults and configurability
 - CLI calls are executed in worker threads to avoid blocking the MCP event loop.
@@ -46,6 +52,7 @@ ont-qc-mcp  # launches the MCP stdio server
   - `MCP_THREADS_DEFAULT` / `MCP_THREADS_<TOOL>` (e.g., `MCP_THREADS_NANOQ`)
   - `MCP_TIMEOUT_DEFAULT` / `MCP_TIMEOUT_<TOOL>` (seconds; e.g., `MCP_TIMEOUT_MOSDEPTH`)
 - Per-tool defaults are also reflected in the guidance resource and tool descriptions returned by `list_tools`.
+- Coverage low-depth marking is opt-in via `low_cov_threshold`; error-profile collection in summaries is opt-in via `include_error_profile`.
 
 ## Development
 ```bash

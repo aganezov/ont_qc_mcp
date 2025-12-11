@@ -78,7 +78,16 @@ def test_parse_mosdepth_summary():
     parsed = parse_mosdepth_summary(summary, file_path="align.bam")
     assert parsed.file == "align.bam"
     assert len(parsed.coverage_by_contig) == 2
-    assert abs(parsed.mean_depth - 7.5) < 1e-6
+    assert abs(parsed.mean_depth - 8.3333333333) < 1e-6
+    assert abs(parsed.mean_depth_unweighted - 7.5) < 1e-6
+
+
+def test_parse_mosdepth_summary_low_cov_threshold():
+    summary = "chrom\tlength\tbases\tmean\nchr1\t1000\t10000\t3\nchr2\t500\t2500\t12\n"
+    parsed = parse_mosdepth_summary(summary, file_path="align.bam", threshold=5)
+    assert parsed.low_coverage_regions
+    assert parsed.low_coverage_regions[0].contig == "chr1"
+    assert parsed.low_coverage_regions[0].mean_depth == 3
 
 
 def test_parse_error_profile():
@@ -87,12 +96,19 @@ def test_parse_error_profile():
             "SN\tmismatches per base:\t0.01",
             "SN\tinsertions per base:\t0.002",
             "SN\tdeletions per base:\t0.003",
+            "COV\t10\t1000",
+            "MPC\t1\t0.01",
+            "MPC\t2\t0.02",
+            "IS\t100\t5",
         ]
     )
     parsed = parse_error_profile(sample, file_path="align.bam")
     assert parsed.mismatch_rate == 0.01
     assert parsed.insertion_rate == 0.002
     assert parsed.deletion_rate == 0.003
+    assert parsed.coverage_histogram and parsed.coverage_histogram[0].count == 1000
+    assert parsed.mismatch_by_cycle == [0.01, 0.02]
+    assert parsed.insert_size_histogram and parsed.insert_size_histogram[0].start == 100
 
 
 def test_parse_alignment_header_and_summary():

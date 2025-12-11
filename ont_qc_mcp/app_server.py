@@ -7,6 +7,7 @@ from mcp.server import Server
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.stdio import stdio_server
 
+from .cli_wrappers import FlagValidationError
 from .config import ExecutionConfig, ToolPaths
 from .flag_schemas import TOOL_FLAGS, get_tool_flags, get_tool_recipes
 from .tools import (
@@ -95,11 +96,20 @@ async def qscore_distribution_tool(path: str, flags: Optional[dict] = None) -> L
 
 
 async def coverage_stats_tool(
-    path: str, window: Optional[int] = None, flags: Optional[dict] = None
+    path: str,
+    window: Optional[int] = None,
+    low_cov_threshold: Optional[float] = None,
+    flags: Optional[dict] = None,
 ) -> List[types.TextContent]:
     """Compute coverage with mosdepth."""
     report = await anyio.to_thread.run_sync(
-        lambda: coverage_stats(path, tools=ToolPaths(), window=window, flags=flags)
+        lambda: coverage_stats(
+            path,
+            tools=ToolPaths(),
+            window=window,
+            low_cov_threshold=low_cov_threshold,
+            flags=flags,
+        )
     )
     return _json_content(serialize_model(report))
 
@@ -117,7 +127,9 @@ async def alignment_summary_tool(
     include_coverage: bool = True,
     include_hist: bool = True,
     use_scaled: bool = False,
+    include_error_profile: bool = False,
     coverage_window: Optional[int] = None,
+    coverage_low_cov_threshold: Optional[float] = None,
     coverage_flags: Optional[dict] = None,
     cramino_flags: Optional[dict] = None,
     error_profile_flags: Optional[dict] = None,
@@ -129,7 +141,9 @@ async def alignment_summary_tool(
             include_coverage=include_coverage,
             include_hist=include_hist,
             use_scaled=use_scaled,
+            include_error_profile=include_error_profile,
             coverage_window=coverage_window,
+            coverage_low_cov_threshold=coverage_low_cov_threshold,
             coverage_flags=coverage_flags,
             cramino_flags=cramino_flags,
             error_profile_flags=error_profile_flags,
@@ -218,6 +232,10 @@ TOOL_SCHEMAS: dict[str, dict] = {
         "properties": {
             "path": {**_PATH_PROP, "description": "Path to BAM/CRAM alignment file"},
             "window": {"type": "integer", "description": "Window size for coverage calculation"},
+            "low_cov_threshold": {
+                "type": "number",
+                "description": "Mark contigs with mean depth below this threshold",
+            },
             "flags": _FLAGS_PROP,
         },
         "required": ["path"],
@@ -237,7 +255,16 @@ TOOL_SCHEMAS: dict[str, dict] = {
             "include_coverage": {"type": "boolean", "description": "Include coverage stats", "default": True},
             "include_hist": {"type": "boolean", "description": "Include histogram data", "default": True},
             "use_scaled": {"type": "boolean", "description": "Use scaled histogram bins", "default": False},
+            "include_error_profile": {
+                "type": "boolean",
+                "description": "Include samtools stats error profile",
+                "default": False,
+            },
             "coverage_window": {"type": "integer", "description": "Window size for coverage calculation"},
+            "coverage_low_cov_threshold": {
+                "type": "number",
+                "description": "Mark contigs with mean depth below this threshold",
+            },
             "coverage_flags": {"type": "object", "description": "Flags for mosdepth coverage tool"},
             "cramino_flags": {"type": "object", "description": "Flags for cramino alignment tool"},
             "error_profile_flags": {"type": "object", "description": "Flags for samtools stats error profile"},
@@ -338,21 +365,21 @@ TOOL_METADATA: dict[str, dict] = {
         "io_hint": "Reads BAM/CRAM; writes temporary outputs only",
         "default_threads": EXEC_CFG.threads_for("mosdepth"),
         "timeout_seconds": EXEC_CFG.timeout_for("mosdepth"),
-        "when_to_use": "Depth-of-coverage summaries via mosdepth; tune window to control cost.",
+        "when_to_use": "Depth-of-coverage summaries via mosdepth; tune window/quantize/fast-mode to control cost.",
     },
     "alignment_error_profile_tool": {
         "runtime_hint": "medium (1-3 min; scales with BAM/CRAM size)",
         "io_hint": "Reads BAM/CRAM; uses samtools stats",
         "default_threads": EXEC_CFG.threads_for("samtools"),
         "timeout_seconds": EXEC_CFG.timeout_for("samtools"),
-        "when_to_use": "Base error profile and indel/substitution rates from samtools stats.",
+        "when_to_use": "Base error profile and indel/substitution rates from samtools stats; opt-in to avoid extra cost.",
     },
     "alignment_summary_tool": {
         "runtime_hint": "composite (bounded by cramino + mosdepth + samtools)",
         "io_hint": "Reads BAM/CRAM; aggregates multiple tools",
         "default_threads": _SUMMARY_THREADS,
         "timeout_seconds": _SUMMARY_TIMEOUT,
-        "when_to_use": "One-shot QC combining alignment, coverage, and error profile.",
+        "when_to_use": "One-shot QC combining alignment, coverage, and optional error profile (opt-in).",
     },
     "header_metadata_tool": {
         "runtime_hint": "fast (header-only; seconds)",
@@ -379,6 +406,15 @@ def _tool_description(name: str, base_desc: str) -> str:
     suffix = "; ".join(parts)
     return f"{base_desc} ({suffix})" if suffix else base_desc
 
+
+def _error_result(kind: str, message: str) -> types.CallToolResult:
+    """Return a structured MCP error payload."""
+    prefix = f"{kind}: " if kind else ""
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text=f"{prefix}{message}")],
+        isError=True,
+    )
+
 @server.list_tools()
 async def list_tools() -> list[types.Tool]:
     return [
@@ -395,24 +431,21 @@ async def list_tools() -> list[types.Tool]:
 async def dispatch_tool(name: str, arguments: Optional[dict]) -> types.CallToolResult:
     handler_entry = TOOL_HANDLERS.get(name)
     if handler_entry is None:
-        return types.CallToolResult(
-            content=[types.TextContent(type="text", text=f"Unknown tool: {name}")],
-            isError=True,
-        )
+        return _error_result("validation", f"Unknown tool: {name}")
 
     _, handler = handler_entry
     try:
         result = await handler(**(arguments or {}))
+    except FlagValidationError as exc:
+        return _error_result("validation", str(exc))
+    except FileNotFoundError as exc:
+        return _error_result("not_found", str(exc))
+    except ValueError as exc:
+        return _error_result("validation", str(exc))
     except TypeError as exc:
-        return types.CallToolResult(
-            content=[types.TextContent(type="text", text=f"Invalid arguments for {name}: {exc}")],
-            isError=True,
-        )
+        return _error_result("validation", f"Invalid arguments for {name}: {exc}")
     except Exception as exc:  # pragma: no cover
-        return types.CallToolResult(
-            content=[types.TextContent(type="text", text=str(exc))],
-            isError=True,
-        )
+        return _error_result("runtime", str(exc))
 
     if isinstance(result, types.CallToolResult):
         return result
