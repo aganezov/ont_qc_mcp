@@ -197,3 +197,48 @@ def test_alignment_header_other_fields():
     assert meta.programs[0].other["XY"] == "pg_extra"
     assert meta.programs[0].previous_id == "prev"
 
+
+def test_fastq_histogram_tools_reuse_nanoq_cache(monkeypatch, tmp_path):
+    from ont_qc_mcp import tools as m_tools
+    from ont_qc_mcp.schemas import LengthPercentiles, NanoqStats
+
+    m_tools._NANOQ_CACHE.clear()
+
+    fastq_path = tmp_path / "reads.fastq"
+    fastq_path.write_text("@r1\nACGT\n+\n!!!!\n")
+
+    call_count = {"n": 0}
+
+    def fake_nanoq(path, tool_paths, flags=None, exec_cfg=None):
+        call_count["n"] += 1
+        return NanoqStats(
+            file=str(path),
+            read_count=1,
+            total_bases=4,
+            min_len=4,
+            max_len=4,
+            mean_len=4.0,
+            median_len=4.0,
+            n50=None,
+            mean_qscore=12.0,
+            median_qscore=12.0,
+            gc_content=None,
+            length_percentiles=LengthPercentiles(p50=4),
+            length_histogram=[],
+            qscore_histogram=[],
+        )
+
+    monkeypatch.setattr(m_tools, "nanoq_stats", fake_nanoq)
+
+    first = m_tools.read_length_distribution(str(fastq_path))
+    second = m_tools.qscore_distribution(str(fastq_path))
+    assert first.file == str(fastq_path)
+    assert second.file == str(fastq_path)
+    assert call_count["n"] == 1
+
+    # Different flag set should bypass the cache.
+    m_tools.qscore_distribution(str(fastq_path), flags={"min_len": 10})
+    assert call_count["n"] == 2
+
+    m_tools._NANOQ_CACHE.clear()
+

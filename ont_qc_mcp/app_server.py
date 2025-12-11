@@ -371,21 +371,21 @@ TOOL_METADATA: dict[str, dict] = {
         "timeout_seconds": EXEC_CFG.timeout_for("cramino"),
         "when_to_use": "Alignment-level stats via cramino; use when you need read-length/identity summaries.",
     },
-    "qc_reads_tool": {
+    "qc_reads_fastq_tool": {
         "runtime_hint": "fast-medium (tens of seconds for 1-2 GB FASTQ)",
         "io_hint": "Reads FASTQ; returns read-level QC metrics",
         "default_threads": EXEC_CFG.threads_for("nanoq"),
         "timeout_seconds": EXEC_CFG.timeout_for("nanoq"),
         "when_to_use": "Quick QC for raw reads with nanoq; combine with recipes for strict/lenient QC.",
     },
-    "filter_reads_tool": {
+    "filter_reads_fastq_tool": {
         "runtime_hint": "medium (minutes for multi-GB FASTQ, depends on flags)",
         "io_hint": "Reads FASTQ, writes filtered FASTQ, emits JSON stats",
         "default_threads": EXEC_CFG.threads_for("chopper"),
         "timeout_seconds": EXEC_CFG.timeout_for("chopper"),
         "when_to_use": "Trim/filter ONT reads with chopper; specify output_fastq if persistence is needed.",
     },
-    "read_length_distribution_tool": {
+    "read_length_distribution_fastq_tool": {
         "runtime_hint": "fast-medium (reuses nanoq stats; tens of seconds)",
         "io_hint": "Reads FASTQ; returns percentiles + histogram",
         "default_threads": EXEC_CFG.threads_for("nanoq"),
@@ -399,7 +399,7 @@ TOOL_METADATA: dict[str, dict] = {
         "timeout_seconds": max(EXEC_CFG.timeout_for("samtools"), EXEC_CFG.timeout_for("nanoq")),
         "when_to_use": "Length percentiles/histogram from BAM/CRAM when FASTQ is not available.",
     },
-    "qscore_distribution_tool": {
+    "qscore_distribution_fastq_tool": {
         "runtime_hint": "fast-medium (reuses nanoq stats; tens of seconds)",
         "io_hint": "Reads FASTQ; returns q-score histogram",
         "default_threads": EXEC_CFG.threads_for("nanoq"),

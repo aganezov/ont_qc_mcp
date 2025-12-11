@@ -360,3 +360,67 @@ def test_alignment_summary_tool_real_bam(mcp_server_params, sample_bam):
                 assert payload["coverage"]
 
     anyio.run(_test)
+
+
+def test_missing_fastq_returns_not_found_error(mcp_server_params, tmp_path):
+    """FASTQ tools should surface not_found errors for missing paths."""
+
+    missing_fastq = tmp_path / "does_not_exist.fastq"
+
+    async def _test():
+        async with stdio_client(mcp_server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool("qc_reads_fastq_tool", {"path": str(missing_fastq)})
+                assert result.isError
+                assert result.content
+                assert "not_found" in result.content[0].text
+
+    anyio.run(_test)
+
+
+def test_invalid_flags_return_validation_error(mcp_server_params, sample_fastq):
+    """Invalid flag types should be returned as validation errors."""
+
+    async def _test():
+        async with stdio_client(mcp_server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool(
+                    "qc_reads_fastq_tool", {"path": str(sample_fastq), "flags": {"threads": "bad"}}
+                )
+                assert result.isError
+                assert result.content
+                assert "validation" in result.content[0].text
+
+    anyio.run(_test)
+
+
+def test_bam_streaming_timeout_surface_runtime_error(mcp_server_params, tmp_path, monkeypatch):
+    """Streaming pipeline should fail cleanly on timeout."""
+
+    sleep_script = tmp_path / "sleep_tool.py"
+    sleep_script.write_text("#!/usr/bin/env python3\nimport time\nimport sys\ntime.sleep(5)\n")
+    sleep_script.chmod(0o755)
+
+    # Force very short timeouts and redirect samtools/nanoq to the sleeping stub.
+    monkeypatch.setenv("SAMTOOLS", str(sleep_script))
+    monkeypatch.setenv("NANOQ", str(sleep_script))
+    monkeypatch.setenv("MCP_TIMEOUT_SAMTOOLS", "1")
+    monkeypatch.setenv("MCP_TIMEOUT_NANOQ", "1")
+
+    dummy_bam = tmp_path / "dummy.bam"
+    dummy_bam.write_text("bam")
+
+    async def _test():
+        async with stdio_client(mcp_server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool(
+                    "read_length_distribution_bam_tool", {"path": str(dummy_bam)}
+                )
+                assert result.isError
+                assert result.content
+                assert "runtime" in result.content[0].text or "Timeout" in result.content[0].text
+
+    anyio.run(_test)

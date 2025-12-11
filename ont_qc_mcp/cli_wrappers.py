@@ -1,5 +1,6 @@
 import json
 import tempfile
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
@@ -254,27 +255,72 @@ def nanoq_from_bam_streaming(
     # Run samtools fastq -> nanoq via async to avoid deadlocks on pipes.
     import subprocess
 
-    sam_proc = subprocess.Popen(sam_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    sam_proc = subprocess.Popen(sam_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     nano_proc = subprocess.Popen(
         nano_cmd,
         stdin=sam_proc.stdout,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        text=True,
     )
     if sam_proc.stdout:
         sam_proc.stdout.close()
 
-    nano_out, nano_err = nano_proc.communicate(timeout=nano_timeout)
-    sam_err = sam_proc.stderr.read() if sam_proc.stderr else ""
-    sam_rc = sam_proc.wait(timeout=sam_timeout)
+    overall_timeout = max(sam_timeout, nano_timeout)
+    start_time = time.monotonic()
+
+    def _terminate_pipeline(reason: str) -> RuntimeError:
+        for proc in (nano_proc, sam_proc):
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+        for proc in (nano_proc, sam_proc):
+            try:
+                proc.kill()
+            except Exception:
+                pass
+        for proc in (nano_proc, sam_proc):
+            try:
+                proc.wait(timeout=1)
+            except Exception:
+                pass
+        return RuntimeError(reason)
+
+    try:
+        nano_out, nano_err = nano_proc.communicate(timeout=overall_timeout)
+    except subprocess.TimeoutExpired:
+        raise _terminate_pipeline(
+            f"Timeout while running samtools|nanoq pipeline (>{overall_timeout}s). "
+            f"samtools cmd: {format_cmd(sam_cmd)}; nanoq cmd: {format_cmd(nano_cmd)}"
+        )
+
+    remaining = max(0.0, overall_timeout - (time.monotonic() - start_time))
+    try:
+        _, sam_err = sam_proc.communicate(timeout=remaining or 0.1)
+    except subprocess.TimeoutExpired:
+        raise _terminate_pipeline(
+            f"Timeout waiting for samtools fastq to exit (>{overall_timeout}s). "
+            f"cmd: {format_cmd(sam_cmd)}"
+        )
+
+    sam_rc = sam_proc.returncode
+    sam_err_text = sam_err.decode("utf-8", errors="replace") if isinstance(sam_err, (bytes, bytearray)) else (sam_err or "")
+    nano_out_text = nano_out.decode("utf-8", errors="replace") if isinstance(nano_out, (bytes, bytearray)) else nano_out
+    nano_err_text = nano_err.decode("utf-8", errors="replace") if isinstance(nano_err, (bytes, bytearray)) else nano_err
 
     if sam_rc not in (0, 141):  # samtools may exit with SIGPIPE (141) if downstream closes early
-        raise RuntimeError(f"samtools fastq failed: {format_cmd(sam_cmd)}\n{_truncate_stderr(sam_err)}")
+        raise RuntimeError(f"samtools fastq failed: {format_cmd(sam_cmd)}\n{_truncate_stderr(sam_err_text)}")
     if nano_proc.returncode != 0:
-        raise CommandError(CommandResult(cmd=nano_cmd, returncode=nano_proc.returncode or 1, stdout=nano_out, stderr=nano_err))
+        raise CommandError(
+            CommandResult(
+                cmd=nano_cmd,
+                returncode=nano_proc.returncode or 1,
+                stdout=nano_out_text,
+                stderr=nano_err_text,
+            )
+        )
 
-    return parse_nanoq_json(nano_out)
+    return parse_nanoq_json(nano_out_text)
 
 
 def mosdepth_coverage(

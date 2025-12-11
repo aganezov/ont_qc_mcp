@@ -40,6 +40,37 @@ def env_check(tools: Optional[ToolPaths] = None) -> EnvStatus:
 
 
 _EXEC_CFG = ExecutionConfig()
+_NANOQ_CACHE: Dict[tuple, NanoqStats] = {}
+_NANOQ_CACHE_MAX = 8
+
+
+def _nanoq_cache_key(path: Path, flags: Optional[Dict[str, Any]], cfg: ExecutionConfig) -> tuple:
+    stat = path.stat()
+    normalized_flags = tuple(sorted((flags or {}).items()))
+    return (
+        str(path.resolve()),
+        stat.st_mtime_ns,
+        stat.st_size,
+        normalized_flags,
+        cfg.timeout_for("nanoq"),
+        cfg.threads_for("nanoq"),
+    )
+
+
+def _cached_nanoq_stats(
+    path: Path, tools: ToolPaths, flags: Optional[Dict[str, Any]], cfg: ExecutionConfig
+) -> NanoqStats:
+    key = _nanoq_cache_key(path, flags, cfg)
+    cached = _NANOQ_CACHE.get(key)
+    if cached:
+        return cached
+
+    stats = nanoq_stats(path, tools, flags=flags, exec_cfg=cfg)
+    # Simple bounded cache to avoid unbounded growth.
+    if len(_NANOQ_CACHE) >= _NANOQ_CACHE_MAX:
+        _NANOQ_CACHE.pop(next(iter(_NANOQ_CACHE)))
+    _NANOQ_CACHE[key] = stats
+    return stats
 
 
 def qc_reads(
@@ -53,7 +84,7 @@ def qc_reads(
     fastq_path = Path(path)
     if not fastq_path.exists():
         raise FileNotFoundError(f"FASTQ not found: {fastq_path}")
-    return nanoq_stats(fastq_path, tools, flags=flags, exec_cfg=cfg)
+    return _cached_nanoq_stats(fastq_path, tools, flags=flags, cfg=cfg)
 
 
 def filter_reads(
