@@ -17,7 +17,7 @@ def sample_bam() -> Path:
     bam_path = Path(env_path) if env_path else default_path
 
     if not bam_path.exists():
-        pytest.skip(f"Sample BAM missing: {bam_path} (set MCP_SAMPLE_BAM to override)")
+        pytest.fail(f"Sample BAM missing: {bam_path} (set MCP_SAMPLE_BAM to override)")
     return bam_path
 
 
@@ -33,8 +33,24 @@ def sample_vcf() -> Path:
     vcf_path = Path(env_path) if env_path else default_path
 
     if not vcf_path.exists():
-        pytest.skip(f"Sample VCF missing: {vcf_path} (set MCP_SAMPLE_VCF to override)")
+        pytest.fail(f"Sample VCF missing: {vcf_path} (set MCP_SAMPLE_VCF to override)")
     return vcf_path
+
+
+@pytest.fixture
+def sample_fastq() -> Path:
+    """
+    Sample FASTQ for read-level tests.
+
+    Uses the checked-in real gzipped FASTQ; can be overridden with MCP_SAMPLE_FASTQ.
+    """
+    env_path = os.environ.get("MCP_SAMPLE_FASTQ")
+    default_path = Path(__file__).resolve().parent / "fixtures" / "real" / "haplotag.large.fq.gz"
+    fastq_path = Path(env_path) if env_path else default_path
+
+    if not fastq_path.exists():
+        pytest.fail(f"Sample FASTQ missing: {fastq_path} (set MCP_SAMPLE_FASTQ to override)")
+    return fastq_path
 
 
 @pytest.fixture

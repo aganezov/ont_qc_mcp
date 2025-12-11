@@ -14,6 +14,16 @@ from mcp.client.stdio import stdio_client
 from ont_qc_mcp.tools import env_check
 
 
+REQUIRED_TOOLS = ["nanoq", "chopper", "cramino", "mosdepth", "samtools"]
+
+
+def _require_tools(tools: list[str] | None = None):
+    tools = tools or REQUIRED_TOOLS
+    env_status = env_check()
+    missing = [tool for tool in tools if not env_status.available.get(tool)]
+    assert not missing, f"Required CLI tools missing: {', '.join(missing)}"
+
+
 def test_initialize_and_list_tools(mcp_server_params):
     """Test that we can connect and list available tools."""
 
@@ -108,12 +118,7 @@ def test_env_status_tool(mcp_server_params):
 def test_alignment_workflow_smoke(mcp_server_params, sample_bam):
     """Simulate a minimal alignment workflow using real tools if available."""
 
-    env_status = env_check()
-    missing = [tool for tool, ok in env_status.available.items() if not ok]
-    if missing:
-        pytest.skip(f"Required CLI tools missing: {', '.join(missing)}")
-
-    skip_reason: str | None = None
+    _require_tools()
 
     async def _test():
         async with stdio_client(mcp_server_params) as (read, write):
@@ -121,10 +126,7 @@ def test_alignment_workflow_smoke(mcp_server_params, sample_bam):
                 await session.initialize()
 
                 qc = await session.call_tool("qc_alignment_tool", {"path": str(sample_bam)})
-                if qc.isError:
-                    nonlocal skip_reason
-                    skip_reason = f"qc_alignment_tool failed: {qc.content[0].text}"
-                    return
+                assert not qc.isError, f"qc_alignment_tool failed: {qc.content[0].text}"
 
                 coverage = await session.call_tool("coverage_stats_tool", {"path": str(sample_bam)})
                 assert not coverage.isError
@@ -133,8 +135,6 @@ def test_alignment_workflow_smoke(mcp_server_params, sample_bam):
                 assert coverage_data
 
     anyio.run(_test)
-    if skip_reason:
-        pytest.skip(skip_reason)
 
 
 def test_header_metadata_tool_vcf(mcp_server_params, tmp_path):
@@ -183,5 +183,138 @@ def test_header_metadata_tool_real_vcf(mcp_server_params, sample_vcf):
                 assert payload["format"] == "vcf"
                 assert payload["samples"]
                 assert payload["references"]
+
+    anyio.run(_test)
+
+
+def test_qc_reads_tool_real_fastq(mcp_server_params, sample_fastq):
+    """qc_reads_tool should operate on the real FASTQ fixture."""
+
+    _require_tools(["nanoq"])
+
+    async def _test():
+        async with stdio_client(mcp_server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool("qc_reads_tool", {"path": str(sample_fastq)})
+                assert not result.isError
+                payload = json.loads(result.content[0].text)
+                assert payload["file"]
+                assert payload["read_count"] > 0
+
+    anyio.run(_test)
+
+
+def test_read_length_distribution_tool_real_fastq(mcp_server_params, sample_fastq):
+    """read_length_distribution_tool should operate on the real FASTQ fixture."""
+
+    _require_tools(["nanoq"])
+
+    async def _test():
+        async with stdio_client(mcp_server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool("read_length_distribution_tool", {"path": str(sample_fastq)})
+                assert not result.isError
+                payload = json.loads(result.content[0].text)
+                assert payload["percentiles"]
+                assert payload["histogram"] is not None
+
+    anyio.run(_test)
+
+
+def test_qscore_distribution_tool_real_fastq(mcp_server_params, sample_fastq):
+    """qscore_distribution_tool should operate on the real FASTQ fixture."""
+
+    _require_tools(["nanoq"])
+
+    async def _test():
+        async with stdio_client(mcp_server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool("qscore_distribution_tool", {"path": str(sample_fastq)})
+                assert not result.isError
+                payload = json.loads(result.content[0].text)
+                assert payload["histogram"] is not None
+
+    anyio.run(_test)
+
+
+def test_filter_reads_tool_real_fastq(mcp_server_params, sample_fastq, tmp_path):
+    """filter_reads_tool should process the real FASTQ fixture and produce output."""
+
+    _require_tools(["chopper"])
+
+    output_fastq = tmp_path / "filtered.fastq"
+
+    async def _test():
+        async with stdio_client(mcp_server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool(
+                    "filter_reads_tool", {"path": str(sample_fastq), "output_fastq": str(output_fastq)}
+                )
+                assert not result.isError
+                payload = json.loads(result.content[0].text)
+                assert payload["command"]
+                assert output_fastq.exists()
+
+    anyio.run(_test)
+
+
+def test_header_metadata_tool_real_bam(mcp_server_params, sample_bam):
+    """Header metadata tool should parse BAM headers."""
+
+    _require_tools(["samtools"])
+
+    async def _test():
+        async with stdio_client(mcp_server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool(
+                    "header_metadata_tool", {"path": str(sample_bam), "file_type": "bam"}
+                )
+                assert not result.isError
+                payload = json.loads(result.content[1].text)
+                assert payload["format"] == "bam"
+                assert payload["references"]
+                assert payload["programs"] is not None
+
+    anyio.run(_test)
+
+
+def test_alignment_error_profile_tool_real_bam(mcp_server_params, sample_bam):
+    """alignment_error_profile_tool should run samtools stats on the real BAM."""
+
+    _require_tools(["samtools"])
+
+    async def _test():
+        async with stdio_client(mcp_server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool(
+                    "alignment_error_profile_tool", {"path": str(sample_bam)}
+                )
+                assert not result.isError
+                payload = json.loads(result.content[0].text)
+                assert "mismatch_rate" in payload
+
+    anyio.run(_test)
+
+
+def test_alignment_summary_tool_real_bam(mcp_server_params, sample_bam):
+    """alignment_summary_tool should aggregate cramino + mosdepth on real BAM."""
+
+    _require_tools()
+
+    async def _test():
+        async with stdio_client(mcp_server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool("alignment_summary_tool", {"path": str(sample_bam)})
+                assert not result.isError
+                payload = json.loads(result.content[0].text)
+                assert payload["alignment"]
+                assert payload["coverage"]
 
     anyio.run(_test)

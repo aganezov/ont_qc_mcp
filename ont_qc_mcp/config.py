@@ -68,6 +68,9 @@ DEFAULT_TOOL_TIMEOUTS: Dict[str, int] = {
     "samtools": 300,
 }
 
+# Some versions of these tools lack thread flags; default to no threads unless overridden.
+DISABLE_THREADS_DEFAULT: set[str] = {"nanoq", "chopper", "samtools"}
+
 
 @dataclass
 class ExecutionConfig:
@@ -99,10 +102,14 @@ class ExecutionConfig:
         }
     )
 
-    def threads_for(self, tool: str) -> int:
-        """Return threads default for a tool, applying env overrides."""
+    def threads_for(self, tool: str) -> Optional[int]:
+        """Return threads default for a tool, applying env overrides. None means do not set."""
         value = self.per_tool_threads.get(tool)
-        return value if value is not None else self.default_threads
+        if value is not None:
+            return value
+        if tool in DISABLE_THREADS_DEFAULT:
+            return None
+        return self.default_threads
 
     def timeout_for(self, tool: str) -> int:
         """

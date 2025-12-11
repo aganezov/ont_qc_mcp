@@ -33,7 +33,9 @@ def _prepare_execution(
     """Merge user flags with defaults and return timeout."""
     cfg = exec_cfg or ExecutionConfig()
     merged = dict(flags or {})
-    merged.setdefault("threads", cfg.threads_for(tool))
+    threads = cfg.threads_for(tool)
+    if threads is not None:
+        merged.setdefault("threads", threads)
     return merged, cfg.timeout_for(tool)
 
 
@@ -95,7 +97,7 @@ def nanoq_stats(
     """
     merged_flags, timeout = _prepare_execution("nanoq", flags, exec_cfg)
     flag_args = build_cli_args("nanoq", merged_flags)
-    cmd: Sequence[str] = [tools.nanoq, "--stats", "--json", *flag_args, str(path)]
+    cmd: Sequence[str] = [tools.nanoq, "--stats", "--json", "--input", str(path), *flag_args]
     result = run_command(cmd, timeout=timeout)
     return parse_nanoq_json(result.stdout)
 
@@ -120,43 +122,53 @@ def chopper_filter(
         temp_file.close()
         output_fastq = temp_output
 
-    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as json_fp:
-        json_path = Path(json_fp.name)
-
-    cmd: List[str] = [
-        tools.chopper,
-        "filter",
-        "--input",
-        str(input_fastq),
-        "--output",
-        str(output_fastq),
-        "--report-json",
-        str(json_path),
-    ] + flag_args
-
-    try:
-        run_command(cmd, timeout=timeout)
-    except CommandError as exc:
-        raise RuntimeError(
-            f"chopper failed: {format_cmd(exc.result.cmd)}\n{_truncate_stderr(exc.result.stderr)}"
-        ) from exc
-
     report_data: dict = {}
+    json_path: Optional[Path] = None
+
+    # Preferred path: newer chopper with filter/report-json support.
+    command_executed: List[str] = []
     try:
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as json_fp:
+            json_path = Path(json_fp.name)
+        cmd: List[str] = [
+            tools.chopper,
+            "filter",
+            "--input",
+            str(input_fastq),
+            "--output",
+            str(output_fastq),
+            "--report-json",
+            str(json_path),
+            *flag_args,
+        ]
+        command_executed = cmd
+        run_command(cmd, timeout=timeout)
         if json_path.exists():
             with open(json_path, "r", encoding="utf-8") as fh:
                 report_data = json.load(fh)
+    except CommandError:
+        # Fallback for older chopper versions: no subcommand, no JSON; capture stdout to output_fastq.
+        fallback_cmd: List[str] = [tools.chopper, "--input", str(input_fastq), *flag_args]
+        try:
+            command_executed = fallback_cmd
+            result = run_command(fallback_cmd, timeout=timeout)
+            output_fastq.write_text(result.stdout)
+        except CommandError as exc:
+            raise RuntimeError(
+                f"chopper failed: {format_cmd(exc.result.cmd)}\n{_truncate_stderr(exc.result.stderr)}"
+            ) from exc
     finally:
-        json_path.unlink(missing_ok=True)
+        if json_path:
+            json_path.unlink(missing_ok=True)
         if temp_output:
             temp_output.unlink(missing_ok=True)
 
-    reads_section = report_data.get("reads", {})
+    reads_section = report_data.get("reads", {}) if isinstance(report_data, dict) else {}
     return ChopperReport(
         input_reads=reads_section.get("input"),
         output_reads=reads_section.get("output"),
         filtered_reads=reads_section.get("filtered"),
-        command=list(cmd),
+        command=list(command_executed),
         params={"flags": flags or {}},
         output_fastq=str(output_fastq),
     )

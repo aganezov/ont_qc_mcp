@@ -308,12 +308,17 @@ TOOL_HANDLERS: dict[str, tuple[str, callable]] = {
     "header_metadata_tool": ("Extract BAM/CRAM/VCF header metadata", header_metadata_tool),
 }
 
+def _max_threads(*vals: int | None) -> int:
+    candidates = [v for v in vals if v is not None]
+    return max(candidates) if candidates else 0
+
+
 _SUMMARY_TIMEOUT = max(
     EXEC_CFG.timeout_for("cramino"),
     EXEC_CFG.timeout_for("mosdepth"),
     EXEC_CFG.timeout_for("samtools"),
 )
-_SUMMARY_THREADS = max(
+_SUMMARY_THREADS = _max_threads(
     EXEC_CFG.threads_for("cramino"),
     EXEC_CFG.threads_for("mosdepth"),
     EXEC_CFG.threads_for("samtools"),

@@ -51,10 +51,16 @@ def parse_nanoq_json(payload: str | Dict) -> NanoqStats:
     data = json.loads(payload) if isinstance(payload, str) else payload
     summary = data.get("summary", data)
     read_stats = summary.get("reads", summary)
+    if not isinstance(read_stats, dict):
+        read_stats = summary
 
     file_name = summary.get("file") or summary.get("input") or "unknown"
-    length_info = read_stats.get("length", {})
-    qscore_info = read_stats.get("qscore", {})
+    length_info = read_stats.get("length", {}) if isinstance(read_stats, dict) else {}
+    if not isinstance(length_info, dict):
+        length_info = {}
+    qscore_info = read_stats.get("qscore", {}) if isinstance(read_stats, dict) else {}
+    if not isinstance(qscore_info, dict):
+        qscore_info = {}
 
     length_bins_raw = length_info.get("hist") or length_info.get("histogram") or []
     qscore_bins_raw = qscore_info.get("hist") or qscore_info.get("histogram") or []
