@@ -20,7 +20,9 @@ from .tools import (
     qc_reads,
     header_metadata_lookup,
     qscore_distribution,
+    qscore_distribution_bam,
     read_length_distribution,
+    read_length_distribution_bam,
     serialize_model,
 )
 
@@ -92,6 +94,18 @@ async def read_length_distribution_tool(path: str, flags: Optional[dict] = None)
 async def qscore_distribution_tool(path: str, flags: Optional[dict] = None) -> List[types.TextContent]:
     """Return q-score distribution/histogram from nanoq."""
     report = await anyio.to_thread.run_sync(lambda: qscore_distribution(path, tools=ToolPaths(), flags=flags))
+    return _json_content(serialize_model(report))
+
+
+async def read_length_distribution_bam_tool(path: str, flags: Optional[dict] = None) -> List[types.TextContent]:
+    """Return length percentiles/histogram from BAM/CRAM via streaming nanoq."""
+    report = await read_length_distribution_bam(path, tools=ToolPaths(), flags=flags)
+    return _json_content(serialize_model(report))
+
+
+async def qscore_distribution_bam_tool(path: str, flags: Optional[dict] = None) -> List[types.TextContent]:
+    """Return q-score distribution/histogram from BAM/CRAM via streaming nanoq."""
+    report = await qscore_distribution_bam(path, tools=ToolPaths(), flags=flags)
     return _json_content(serialize_model(report))
 
 
@@ -194,7 +208,7 @@ TOOL_SCHEMAS: dict[str, dict] = {
         },
         "required": ["path"],
     },
-    "qc_reads_tool": {
+    "qc_reads_fastq_tool": {
         "type": "object",
         "properties": {
             "path": {**_PATH_PROP, "description": "Path to FASTQ file"},
@@ -202,7 +216,7 @@ TOOL_SCHEMAS: dict[str, dict] = {
         },
         "required": ["path"],
     },
-    "filter_reads_tool": {
+    "filter_reads_fastq_tool": {
         "type": "object",
         "properties": {
             "path": {**_PATH_PROP, "description": "Path to input FASTQ file"},
@@ -211,7 +225,7 @@ TOOL_SCHEMAS: dict[str, dict] = {
         },
         "required": ["path"],
     },
-    "read_length_distribution_tool": {
+    "read_length_distribution_fastq_tool": {
         "type": "object",
         "properties": {
             "path": {**_PATH_PROP, "description": "Path to FASTQ file"},
@@ -219,10 +233,26 @@ TOOL_SCHEMAS: dict[str, dict] = {
         },
         "required": ["path"],
     },
-    "qscore_distribution_tool": {
+    "read_length_distribution_bam_tool": {
+        "type": "object",
+        "properties": {
+            "path": {**_PATH_PROP, "description": "Path to BAM/CRAM alignment file"},
+            "flags": _FLAGS_PROP,
+        },
+        "required": ["path"],
+    },
+    "qscore_distribution_fastq_tool": {
         "type": "object",
         "properties": {
             "path": {**_PATH_PROP, "description": "Path to FASTQ file"},
+            "flags": _FLAGS_PROP,
+        },
+        "required": ["path"],
+    },
+    "qscore_distribution_bam_tool": {
+        "type": "object",
+        "properties": {
+            "path": {**_PATH_PROP, "description": "Path to BAM/CRAM alignment file"},
             "flags": _FLAGS_PROP,
         },
         "required": ["path"],
@@ -298,13 +328,17 @@ TOOL_SCHEMAS: dict[str, dict] = {
 TOOL_HANDLERS: dict[str, tuple[str, callable]] = {
     "env_status": ("Check availability of required CLI tools", env_status),
     "qc_alignment_tool": ("Run cramino stats on a BAM/CRAM alignment", qc_alignment_tool),
-    "qc_reads_tool": ("Run nanoq stats on a FASTQ file", qc_reads_tool),
-    "filter_reads_tool": ("Filter/trim reads with chopper", filter_reads_tool),
-    "read_length_distribution_tool": ("Return length percentiles/histogram from nanoq", read_length_distribution_tool),
-    "qscore_distribution_tool": ("Return q-score distribution/histogram from nanoq", qscore_distribution_tool),
-    "coverage_stats_tool": ("Compute coverage with mosdepth", coverage_stats_tool),
-    "alignment_error_profile_tool": ("Parse error profile from samtools stats", alignment_error_profile_tool),
-    "alignment_summary_tool": ("Aggregate cramino + mosdepth + samtools stats", alignment_summary_tool),
+    # FASTQ variants
+    "qc_reads_fastq_tool": ("Run nanoq stats on a FASTQ file", qc_reads_tool),
+    "filter_reads_fastq_tool": ("Filter/trim FASTQ reads with chopper", filter_reads_tool),
+    "read_length_distribution_fastq_tool": ("FASTQ: length percentiles/histogram via nanoq", read_length_distribution_tool),
+    "qscore_distribution_fastq_tool": ("FASTQ: q-score histogram via nanoq", qscore_distribution_tool),
+    # BAM/CRAM variants
+    "read_length_distribution_bam_tool": ("BAM/CRAM: length percentiles/histogram via samtools fastq -> nanoq streaming", read_length_distribution_bam_tool),
+    "qscore_distribution_bam_tool": ("BAM/CRAM: q-score histogram via samtools fastq -> nanoq streaming", qscore_distribution_bam_tool),
+    "coverage_stats_tool": ("Compute coverage with mosdepth (BAM/CRAM)", coverage_stats_tool),
+    "alignment_error_profile_tool": ("Parse error profile from samtools stats (BAM/CRAM)", alignment_error_profile_tool),
+    "alignment_summary_tool": ("Aggregate cramino + mosdepth + samtools stats (BAM/CRAM)", alignment_summary_tool),
     "header_metadata_tool": ("Extract BAM/CRAM/VCF header metadata", header_metadata_tool),
 }
 
@@ -358,12 +392,26 @@ TOOL_METADATA: dict[str, dict] = {
         "timeout_seconds": EXEC_CFG.timeout_for("nanoq"),
         "when_to_use": "Get length percentiles/histogram without full QC payload.",
     },
+    "read_length_distribution_bam_tool": {
+        "runtime_hint": "medium (streams BAM/CRAM through samtools fastq + nanoq)",
+        "io_hint": "Streams BAM/CRAM to FASTQ; returns percentiles + histogram",
+        "default_threads": EXEC_CFG.threads_for("nanoq"),
+        "timeout_seconds": max(EXEC_CFG.timeout_for("samtools"), EXEC_CFG.timeout_for("nanoq")),
+        "when_to_use": "Length percentiles/histogram from BAM/CRAM when FASTQ is not available.",
+    },
     "qscore_distribution_tool": {
         "runtime_hint": "fast-medium (reuses nanoq stats; tens of seconds)",
         "io_hint": "Reads FASTQ; returns q-score histogram",
         "default_threads": EXEC_CFG.threads_for("nanoq"),
         "timeout_seconds": EXEC_CFG.timeout_for("nanoq"),
         "when_to_use": "Retrieve q-score distribution quickly; same cost as qc_reads.",
+    },
+    "qscore_distribution_bam_tool": {
+        "runtime_hint": "medium (streams BAM/CRAM through samtools fastq + nanoq)",
+        "io_hint": "Streams BAM/CRAM to FASTQ; returns q-score histogram",
+        "default_threads": EXEC_CFG.threads_for("nanoq"),
+        "timeout_seconds": max(EXEC_CFG.timeout_for("samtools"), EXEC_CFG.timeout_for("nanoq")),
+        "when_to_use": "Q-score distribution from BAM/CRAM when FASTQ is not available.",
     },
     "coverage_stats_tool": {
         "runtime_hint": "medium-heavy (minutes; depends on BAM/CRAM size and window)",

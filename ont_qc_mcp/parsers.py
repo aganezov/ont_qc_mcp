@@ -1,6 +1,6 @@
 import json
 import re
-from typing import Dict, List, Sequence
+from typing import Dict, List, Optional, Sequence
 
 from .schemas import (
     CraminoStats,
@@ -111,7 +111,11 @@ def parse_qscore_distribution(payload: str | Dict) -> QScoreDistribution:
     )
 
 
-def parse_cramino_json(payload: str | Dict) -> CraminoStats:
+def parse_cramino_json(
+    payload: str | Dict,
+    length_bins: Optional[List[HistogramBin]] = None,
+    length_bins_scaled: Optional[List[HistogramBin]] = None,
+) -> CraminoStats:
     """
     Parse cramino JSON output (e.g., --format json), supporting both count and scaled histograms.
     """
@@ -135,6 +139,8 @@ def parse_cramino_json(payload: str | Dict) -> CraminoStats:
         n50=summary.get("n50"),
         mean_identity=summary.get("mean_identity"),
         median_identity=summary.get("median_identity"),
+        length_histogram=length_bins or None,
+        length_histogram_scaled=length_bins_scaled or None,
         mapq_histogram=_histogram_from_seq(mapq_bins_counts),
         mapq_histogram_scaled=_histogram_from_seq(mapq_bins_scaled) if mapq_bins_scaled else None,
     )

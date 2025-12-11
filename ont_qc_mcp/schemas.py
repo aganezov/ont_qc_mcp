@@ -78,6 +78,8 @@ class CraminoStats(BaseModel):
     n50: Optional[int] = None
     mean_identity: Optional[float] = None
     median_identity: Optional[float] = None
+    length_histogram: Optional[List[HistogramBin]] = None  # count-based bins
+    length_histogram_scaled: Optional[List[HistogramBin]] = None  # reserved for future scaled support
     mapq_histogram: Optional[List[HistogramBin]] = None  # count-based bins
     mapq_histogram_scaled: Optional[List[HistogramBin]] = None  # base-weighted bins when --scaled
 

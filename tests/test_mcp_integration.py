@@ -35,7 +35,7 @@ def test_initialize_and_list_tools(mcp_server_params):
                 tool_names = {tool.name for tool in result.tools}
                 assert "env_status" in tool_names
                 assert "qc_alignment_tool" in tool_names
-                assert "qc_reads_tool" in tool_names
+                assert "qc_reads_fastq_tool" in tool_names
                 assert "header_metadata_tool" in tool_names
 
     anyio.run(_test)
@@ -127,6 +127,8 @@ def test_alignment_workflow_smoke(mcp_server_params, sample_bam):
 
                 qc = await session.call_tool("qc_alignment_tool", {"path": str(sample_bam)})
                 assert not qc.isError, f"qc_alignment_tool failed: {qc.content[0].text}"
+                qc_payload = json.loads(qc.content[0].text)
+                assert qc_payload["length_histogram"], "Expected length_histogram from cramino"
 
                 coverage = await session.call_tool("coverage_stats_tool", {"path": str(sample_bam)})
                 assert not coverage.isError
@@ -188,7 +190,7 @@ def test_header_metadata_tool_real_vcf(mcp_server_params, sample_vcf):
 
 
 def test_qc_reads_tool_real_fastq(mcp_server_params, sample_fastq):
-    """qc_reads_tool should operate on the real FASTQ fixture."""
+    """qc_reads_fastq_tool should operate on the real FASTQ fixture."""
 
     _require_tools(["nanoq"])
 
@@ -196,7 +198,7 @@ def test_qc_reads_tool_real_fastq(mcp_server_params, sample_fastq):
         async with stdio_client(mcp_server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                result = await session.call_tool("qc_reads_tool", {"path": str(sample_fastq)})
+                result = await session.call_tool("qc_reads_fastq_tool", {"path": str(sample_fastq)})
                 assert not result.isError
                 payload = json.loads(result.content[0].text)
                 assert payload["file"]
@@ -206,7 +208,7 @@ def test_qc_reads_tool_real_fastq(mcp_server_params, sample_fastq):
 
 
 def test_read_length_distribution_tool_real_fastq(mcp_server_params, sample_fastq):
-    """read_length_distribution_tool should operate on the real FASTQ fixture."""
+    """read_length_distribution_fastq_tool should operate on the real FASTQ fixture."""
 
     _require_tools(["nanoq"])
 
@@ -214,7 +216,7 @@ def test_read_length_distribution_tool_real_fastq(mcp_server_params, sample_fast
         async with stdio_client(mcp_server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                result = await session.call_tool("read_length_distribution_tool", {"path": str(sample_fastq)})
+                result = await session.call_tool("read_length_distribution_fastq_tool", {"path": str(sample_fastq)})
                 assert not result.isError
                 payload = json.loads(result.content[0].text)
                 assert payload["percentiles"]
@@ -224,7 +226,7 @@ def test_read_length_distribution_tool_real_fastq(mcp_server_params, sample_fast
 
 
 def test_qscore_distribution_tool_real_fastq(mcp_server_params, sample_fastq):
-    """qscore_distribution_tool should operate on the real FASTQ fixture."""
+    """qscore_distribution_fastq_tool should operate on the real FASTQ fixture."""
 
     _require_tools(["nanoq"])
 
@@ -232,7 +234,47 @@ def test_qscore_distribution_tool_real_fastq(mcp_server_params, sample_fastq):
         async with stdio_client(mcp_server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                result = await session.call_tool("qscore_distribution_tool", {"path": str(sample_fastq)})
+                result = await session.call_tool("qscore_distribution_fastq_tool", {"path": str(sample_fastq)})
+                assert not result.isError
+                payload = json.loads(result.content[0].text)
+                assert payload["histogram"] is not None
+
+    anyio.run(_test)
+
+
+def test_read_length_distribution_bam_tool(mcp_server_params, sample_bam):
+    """read_length_distribution_bam_tool should stream BAM -> nanoq and return histogram."""
+
+    _require_tools(["samtools", "nanoq"])
+
+    async def _test():
+        async with stdio_client(mcp_server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool(
+                    "read_length_distribution_bam_tool", {"path": str(sample_bam)}
+                )
+                assert not result.isError
+                payload = json.loads(result.content[0].text)
+                assert payload["file"]
+                assert payload["percentiles"] is not None
+                assert payload["histogram"] is not None
+
+    anyio.run(_test)
+
+
+def test_qscore_distribution_bam_tool(mcp_server_params, sample_bam):
+    """qscore_distribution_bam_tool should stream BAM -> nanoq and return qscore histogram."""
+
+    _require_tools(["samtools", "nanoq"])
+
+    async def _test():
+        async with stdio_client(mcp_server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool(
+                    "qscore_distribution_bam_tool", {"path": str(sample_bam)}
+                )
                 assert not result.isError
                 payload = json.loads(result.content[0].text)
                 assert payload["histogram"] is not None
@@ -241,7 +283,7 @@ def test_qscore_distribution_tool_real_fastq(mcp_server_params, sample_fastq):
 
 
 def test_filter_reads_tool_real_fastq(mcp_server_params, sample_fastq, tmp_path):
-    """filter_reads_tool should process the real FASTQ fixture and produce output."""
+    """filter_reads_fastq_tool should process the real FASTQ fixture and produce output."""
 
     _require_tools(["chopper"])
 
@@ -252,7 +294,7 @@ def test_filter_reads_tool_real_fastq(mcp_server_params, sample_fastq, tmp_path)
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.call_tool(
-                    "filter_reads_tool", {"path": str(sample_fastq), "output_fastq": str(output_fastq)}
+                    "filter_reads_fastq_tool", {"path": str(sample_fastq), "output_fastq": str(output_fastq)}
                 )
                 assert not result.isError
                 payload = json.loads(result.content[0].text)

@@ -2,7 +2,7 @@ import json
 import shlex
 import subprocess
 from dataclasses import dataclass
-from typing import List, Sequence
+from typing import IO, List, Optional, Sequence
 
 import anyio
 
@@ -45,7 +45,10 @@ class CommandError(RuntimeError):
         self.result = result
 
 
-def run_command(cmd: Sequence[str], timeout: int = 120) -> CommandResult:
+from typing import IO, Optional, Sequence
+
+
+def run_command(cmd: Sequence[str], timeout: int = 120, stdin: Optional[IO[str]] = None) -> CommandResult:
     """Run a command and capture stdio."""
     process = subprocess.run(
         cmd,
@@ -53,6 +56,7 @@ def run_command(cmd: Sequence[str], timeout: int = 120) -> CommandResult:
         text=True,
         capture_output=True,
         timeout=timeout,
+        stdin=stdin,
     )
     result = CommandResult(cmd=cmd, returncode=process.returncode, stdout=process.stdout, stderr=process.stderr)
     if process.returncode != 0:
@@ -60,11 +64,11 @@ def run_command(cmd: Sequence[str], timeout: int = 120) -> CommandResult:
     return result
 
 
-async def run_command_async(cmd: Sequence[str], timeout: int = 120) -> CommandResult:
+async def run_command_async(cmd: Sequence[str], timeout: int = 120, stdin: Optional[IO[str]] = None) -> CommandResult:
     """
     Async wrapper that runs the command in a worker thread to avoid blocking.
     """
-    return await anyio.to_thread.run_sync(run_command, cmd, timeout)
+    return await anyio.to_thread.run_sync(run_command, cmd, timeout, stdin)
 
 
 def format_cmd(cmd: Sequence[str]) -> str:

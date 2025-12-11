@@ -68,8 +68,8 @@ DEFAULT_TOOL_TIMEOUTS: Dict[str, int] = {
     "samtools": 300,
 }
 
-# Some versions of these tools lack thread flags; default to no threads unless overridden.
-DISABLE_THREADS_DEFAULT: set[str] = {"nanoq", "chopper", "samtools"}
+# Tools for which we do NOT set threads by default (leave unset unless explicitly overridden).
+DISABLE_THREADS_DEFAULT: set[str] = {"nanoq", "samtools"}
 
 
 @dataclass
@@ -86,7 +86,7 @@ class ExecutionConfig:
     a tool name is not present in the per_tool_timeouts mapping.
     """
 
-    default_threads: int = field(default_factory=lambda: _env_int("MCP_THREADS_DEFAULT", 2))
+    default_threads: int = field(default_factory=lambda: _env_int("MCP_THREADS_DEFAULT", 4))
     default_timeout: int = field(default_factory=lambda: _env_int("MCP_TIMEOUT_DEFAULT", 600))
     per_tool_threads: Dict[str, int] = field(
         default_factory=lambda: {

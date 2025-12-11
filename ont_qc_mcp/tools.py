@@ -3,7 +3,16 @@ import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .cli_wrappers import build_cli_args, chopper_filter, cramino_stats, mosdepth_coverage, nanoq_stats
+import anyio
+
+from .cli_wrappers import (
+    build_cli_args,
+    chopper_filter,
+    cramino_stats,
+    mosdepth_coverage,
+    nanoq_from_bam_streaming,
+    nanoq_stats,
+)
 from .config import ExecutionConfig, ToolPaths
 from .parsers import parse_alignment_header, parse_error_profile, parse_vcf_header, summarize_header
 from .schemas import (
@@ -95,6 +104,48 @@ def qscore_distribution(
     )
 
 
+async def read_length_distribution_bam(
+    path: str,
+    tools: Optional[ToolPaths] = None,
+    flags: Optional[Dict[str, Any]] = None,
+    exec_cfg: Optional[ExecutionConfig] = None,
+) -> ReadLengthDistribution:
+    tools = tools or ToolPaths()
+    aln_path = Path(path)
+    if not aln_path.exists():
+        raise FileNotFoundError(f"Alignment not found: {aln_path}")
+    stats = await anyio.to_thread.run_sync(
+        nanoq_from_bam_streaming, aln_path, tools, flags or {}, exec_cfg or _EXEC_CFG
+    )
+    return ReadLengthDistribution(
+        file=stats.file,
+        percentiles=stats.length_percentiles or LengthPercentiles(),
+        histogram=stats.length_histogram or [],
+    )
+
+
+async def qscore_distribution_bam(
+    path: str,
+    tools: Optional[ToolPaths] = None,
+    flags: Optional[Dict[str, Any]] = None,
+    exec_cfg: Optional[ExecutionConfig] = None,
+) -> QScoreDistribution:
+    tools = tools or ToolPaths()
+    aln_path = Path(path)
+    if not aln_path.exists():
+        raise FileNotFoundError(f"Alignment not found: {aln_path}")
+    stats = await anyio.to_thread.run_sync(
+        nanoq_from_bam_streaming, aln_path, tools, flags or {}, exec_cfg or _EXEC_CFG
+    )
+    return QScoreDistribution(
+        file=stats.file,
+        mean_qscore=stats.mean_qscore,
+        median_qscore=stats.median_qscore,
+        histogram=stats.qscore_histogram or [],
+        per_position_mean=None,
+    )
+
+
 def qc_alignment(
     path: str,
     tools: Optional[ToolPaths] = None,
@@ -152,7 +203,7 @@ def alignment_error_profile(
     flag_data: Dict[str, Any] = dict(flags or {})
     flag_data.setdefault("threads", cfg.threads_for("samtools"))
     flag_args = build_cli_args("samtools", flag_data)
-    cmd = [tools.samtools, *flag_args, "stats", str(aln_path)]
+    cmd = [tools.samtools, "stats", *flag_args, str(aln_path)]
     try:
         result = run_command(cmd, timeout=cfg.timeout_for("samtools"))
     except CommandError as exc:
@@ -326,7 +377,7 @@ def _read_alignment_header_text(
     flag_data: Dict[str, Any] = dict(flags or {})
     flag_data.setdefault("threads", exec_cfg.threads_for("samtools"))
     flag_args = build_cli_args("samtools", flag_data)
-    cmd = [tools.samtools, *flag_args, "view", "-H", str(path)]
+    cmd = [tools.samtools, "view", "-H", *flag_args, str(path)]
     try:
         result = run_command(cmd, timeout=exec_cfg.timeout_for("samtools"))
     except CommandError as exc:
