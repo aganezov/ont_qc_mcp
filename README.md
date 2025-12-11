@@ -49,8 +49,9 @@ ont-qc-mcp  # launches the MCP stdio server
 
 ## Development
 ```bash
-pip install -e ".[dev]"           # base dev deps
-pip install -e ".[plots]"        # add matplotlib if you want PNG histograms
+pip install -e ".[dev]"           # tests + linting/coverage helpers
+pip install -e ".[plots]"         # add matplotlib for PNG histograms
+pip install -e ".[all]"           # everything above in one go
 pytest
 ```
 

@@ -8,6 +8,7 @@ license = { text = "MIT" }
 authors = [{ name = "Your Name" }]
 dependencies = [
     "mcp>=0.1.0",
+    "anyio>=4,<5",
     "pydantic>=2.6,<3",
     "typer>=0.12,<1",
     "rich>=13,<14",
@@ -17,8 +18,17 @@ dependencies = [
 dev = [
     "pytest>=8.0,<9",
     "pytest-asyncio>=0.23,<1",
+    "pytest-cov>=4,<6",
+    "ruff>=0.6,<0.7",
 ]
 plots = ["matplotlib>=3.8,<4"]
+all = [
+    "pytest>=8.0,<9",
+    "pytest-asyncio>=0.23,<1",
+    "pytest-cov>=4,<6",
+    "ruff>=0.6,<0.7",
+    "matplotlib>=3.8,<4",
+]
 
 [project.scripts]
 ont-qc-mcp = "mcp.app_server:main"
