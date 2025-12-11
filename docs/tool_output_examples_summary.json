@@ -1,0 +1,209 @@
+{
+  "env_status": {
+    "available": {
+      "nanoq": true,
+      "chopper": true,
+      "cramino": true,
+      "mosdepth": true,
+      "samtools": true
+    },
+    "resolved_paths": {
+      "nanoq": "/Users/saganezov/.cargo/bin/nanoq",
+      "chopper": "/Users/saganezov/miniforge3/envs/ont-qc-mcp/bin/chopper",
+      "cramino": "/Users/saganezov/miniforge3/envs/ont-qc-mcp/bin/cramino",
+      "mosdepth": "/Users/saganezov/miniforge3/envs/ont-qc-mcp/bin/mosdepth",
+      "samtools": "/Users/saganezov/miniforge3/envs/ont-qc-mcp/bin/samtools"
+    },
+    "missing": []
+  },
+  "qc_reads_fastq_tool": {
+    "read_count": 221,
+    "total_bases": 1268233,
+    "min_len": 1065,
+    "max_len": 17418,
+    "mean_len": 5738.0,
+    "median_len": 5087.0,
+    "n50": 7476,
+    "mean_qscore": 33.0001,
+    "median_qscore": 33.00012,
+    "gc_content": null,
+    "length_histogram_head": [],
+    "qscore_histogram_head": []
+  },
+  "filter_reads_fastq_tool": {
+    "input_reads": null,
+    "output_reads": null,
+    "filtered_reads": null,
+    "command": [
+      "chopper",
+      "--input",
+      "tests/fixtures/real/haplotag.large.fq.gz",
+      "--threads",
+      "4"
+    ],
+    "params": {
+      "flags": {}
+    },
+    "output_fastq": "/var/folders/4l/8gfmmd1x1y90k1932xrwqt1w0000gn/T/tmprc7p563l.fastq"
+  },
+  "read_length_distribution_fastq_tool": {
+    "percentiles": {
+      "p1": null,
+      "p5": null,
+      "p25": null,
+      "p50": null,
+      "p75": null,
+      "p95": null,
+      "p99": null
+    },
+    "histogram_head": []
+  },
+  "qscore_distribution_fastq_tool": {
+    "mean_qscore": 33.0001,
+    "median_qscore": 33.00012,
+    "histogram_head": []
+  },
+  "read_length_distribution_bam_tool": {
+    "percentiles": {
+      "p1": null,
+      "p5": null,
+      "p25": null,
+      "p50": null,
+      "p75": null,
+      "p95": null,
+      "p99": null
+    },
+    "histogram_head": []
+  },
+  "qscore_distribution_bam_tool": {
+    "mean_qscore": 33.0001,
+    "median_qscore": 33.00012,
+    "histogram_head": []
+  },
+  "qc_alignment_tool": {
+    "total_reads": 221,
+    "mapped": 0,
+    "unmapped": 0,
+    "mean_length": 5110.343891402715,
+    "median_length": 4142.0,
+    "n50": 6828,
+    "mean_identity": 87.72413633097887,
+    "median_identity": 88.03353658536585,
+    "length_histogram_head": [
+      {
+        "start": 0.0,
+        "end": 2000.0,
+        "count": 40
+      },
+      {
+        "start": 2000.0,
+        "end": 4000.0,
+        "count": 65
+      },
+      {
+        "start": 4000.0,
+        "end": 6000.0,
+        "count": 42
+      },
+      {
+        "start": 6000.0,
+        "end": 8000.0,
+        "count": 33
+      },
+      {
+        "start": 8000.0,
+        "end": 10000.0,
+        "count": 17
+      }
+    ],
+    "mapq_histogram_head": []
+  },
+  "coverage_stats_tool": {
+    "mean_depth": 0.0,
+    "mean_depth_unweighted": 0.0,
+    "coverage_distribution_head": [],
+    "coverage_by_contig_head": [
+      {
+        "contig": "chr1",
+        "mean_depth": 0.0,
+        "median_depth": null,
+        "length": 248956422
+      },
+      {
+        "contig": "chr2",
+        "mean_depth": 0.0,
+        "median_depth": null,
+        "length": 242193529
+      },
+      {
+        "contig": "chr3",
+        "mean_depth": 0.0,
+        "median_depth": null,
+        "length": 198295559
+      }
+    ]
+  },
+  "alignment_error_profile_tool": {
+    "mismatch_rate": null,
+    "insertion_rate": null,
+    "deletion_rate": null,
+    "coverage_histogram_head": [],
+    "gc_coverage_head": [
+      {
+        "start": 0.0,
+        "end": 0.0,
+        "count": 50
+      },
+      {
+        "start": 22.1,
+        "end": 22.1,
+        "count": 75
+      },
+      {
+        "start": 48.0,
+        "end": 48.0,
+        "count": 100
+      }
+    ]
+  },
+  "alignment_summary_tool": {
+    "alignment_keys": [
+      "reads",
+      "read_lengths",
+      "qscores",
+      "chopper",
+      "alignment",
+      "coverage",
+      "errors"
+    ],
+    "alignment_mapped": 0,
+    "coverage_mean_depth": 0.0
+  },
+  "alignment_summary_tool_highdepth": {
+    "alignment_keys": [
+      "reads",
+      "read_lengths",
+      "qscores",
+      "chopper",
+      "alignment",
+      "coverage",
+      "errors"
+    ],
+    "alignment_mapped": 0,
+    "coverage_mean_depth": 5.0
+  },
+  "header_metadata_tool_bam": {
+    "summary": "BAM header; 24 contigs (e.g., chr10, chr11, chr12, \u2026); samples: NA12878; programs: minimap2, minimap2; sort order=coordinate",
+    "references": 24,
+    "samples": [
+      "NA12878"
+    ]
+  },
+  "header_metadata_tool_vcf": {
+    "summary": "VCF header; 3 contigs (e.g., chr1, chr2, chr3); samples: NA12878; 1 FORMAT fields",
+    "references": 3,
+    "samples": [
+      "NA12878"
+    ]
+  }
+}

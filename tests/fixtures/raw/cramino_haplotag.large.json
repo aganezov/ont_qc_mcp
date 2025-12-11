@@ -1,0 +1,26 @@
+{
+  "file_info": {
+    "name": "haplotag.large.bam",
+    "path": "tests/fixtures/real/haplotag.large.bam",
+    "creation_time": "21/06/2024 10:59:01"
+  },
+  "alignment_stats": {
+    "num_alignments": 221,
+    "percent_from_total": 100.0,
+    "num_reads": 221
+  },
+  "read_stats": {
+    "yield_gb": 0.001129386,
+    "mean_coverage": 0.00036570185295907133,
+    "yield_gb_long": 0.0,
+    "n50": 6828,
+    "n75": 4276,
+    "median_length": 4142.0,
+    "mean_length": 5110.343891402715
+  },
+  "identity_stats": {
+    "median_identity": 88.03353658536585,
+    "mean_identity": 87.72413633097887,
+    "modal_identity": 86.7
+  }
+}

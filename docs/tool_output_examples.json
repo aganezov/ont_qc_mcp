@@ -1,0 +1,1294 @@
+{
+  "env_status": {
+    "available": {
+      "nanoq": true,
+      "chopper": true,
+      "cramino": true,
+      "mosdepth": true,
+      "samtools": true
+    },
+    "resolved_paths": {
+      "nanoq": "/Users/saganezov/.cargo/bin/nanoq",
+      "chopper": "/Users/saganezov/miniforge3/envs/ont-qc-mcp/bin/chopper",
+      "cramino": "/Users/saganezov/miniforge3/envs/ont-qc-mcp/bin/cramino",
+      "mosdepth": "/Users/saganezov/miniforge3/envs/ont-qc-mcp/bin/mosdepth",
+      "samtools": "/Users/saganezov/miniforge3/envs/ont-qc-mcp/bin/samtools"
+    },
+    "missing": []
+  },
+  "qc_reads_fastq_tool": {
+    "file": "unknown",
+    "read_count": 221,
+    "total_bases": 1268233,
+    "min_len": 1065,
+    "max_len": 17418,
+    "mean_len": 5738.0,
+    "median_len": 5087.0,
+    "n50": 7476,
+    "mean_qscore": 33.0001,
+    "median_qscore": 33.00012,
+    "gc_content": null,
+    "length_percentiles": {
+      "p1": null,
+      "p5": null,
+      "p25": null,
+      "p50": null,
+      "p75": null,
+      "p95": null,
+      "p99": null
+    },
+    "length_histogram": [],
+    "qscore_histogram": []
+  },
+  "filter_reads_fastq_tool": {
+    "input_reads": null,
+    "output_reads": null,
+    "filtered_reads": null,
+    "command": [
+      "chopper",
+      "--input",
+      "tests/fixtures/real/haplotag.large.fq.gz",
+      "--threads",
+      "4"
+    ],
+    "params": {
+      "flags": {}
+    },
+    "output_fastq": "/var/folders/4l/8gfmmd1x1y90k1932xrwqt1w0000gn/T/tmprc7p563l.fastq"
+  },
+  "read_length_distribution_fastq_tool": {
+    "file": "unknown",
+    "percentiles": {
+      "p1": null,
+      "p5": null,
+      "p25": null,
+      "p50": null,
+      "p75": null,
+      "p95": null,
+      "p99": null
+    },
+    "histogram": []
+  },
+  "qscore_distribution_fastq_tool": {
+    "file": "unknown",
+    "mean_qscore": 33.0001,
+    "median_qscore": 33.00012,
+    "histogram": [],
+    "per_position_mean": null
+  },
+  "read_length_distribution_bam_tool": {
+    "file": "unknown",
+    "percentiles": {
+      "p1": null,
+      "p5": null,
+      "p25": null,
+      "p50": null,
+      "p75": null,
+      "p95": null,
+      "p99": null
+    },
+    "histogram": []
+  },
+  "qscore_distribution_bam_tool": {
+    "file": "unknown",
+    "mean_qscore": 33.0001,
+    "median_qscore": 33.00012,
+    "histogram": [],
+    "per_position_mean": null
+  },
+  "qc_alignment_tool": {
+    "file": "tests/fixtures/real/haplotag.large.bam",
+    "total_reads": 221,
+    "mapped": 0,
+    "unmapped": 0,
+    "primary": null,
+    "secondary": null,
+    "supplementary": null,
+    "mean_length": 5110.343891402715,
+    "median_length": 4142.0,
+    "n50": 6828,
+    "mean_identity": 87.72413633097887,
+    "median_identity": 88.03353658536585,
+    "length_histogram": [
+      {
+        "start": 0.0,
+        "end": 2000.0,
+        "count": 40
+      },
+      {
+        "start": 2000.0,
+        "end": 4000.0,
+        "count": 65
+      },
+      {
+        "start": 4000.0,
+        "end": 6000.0,
+        "count": 42
+      },
+      {
+        "start": 6000.0,
+        "end": 8000.0,
+        "count": 33
+      },
+      {
+        "start": 8000.0,
+        "end": 10000.0,
+        "count": 17
+      },
+      {
+        "start": 10000.0,
+        "end": 12000.0,
+        "count": 13
+      },
+      {
+        "start": 12000.0,
+        "end": 14000.0,
+        "count": 7
+      },
+      {
+        "start": 14000.0,
+        "end": 16000.0,
+        "count": 2
+      },
+      {
+        "start": 16000.0,
+        "end": 18000.0,
+        "count": 2
+      },
+      {
+        "start": 18000.0,
+        "end": 20000.0,
+        "count": 0
+      }
+    ],
+    "length_histogram_scaled": null,
+    "mapq_histogram": [],
+    "mapq_histogram_scaled": null
+  },
+  "coverage_stats_tool": {
+    "file": "tests/fixtures/real/haplotag.large.bam",
+    "mean_depth": 0.0,
+    "mean_depth_unweighted": 0.0,
+    "median_depth": null,
+    "coverage_distribution": [],
+    "coverage_by_contig": [
+      {
+        "contig": "chr1",
+        "mean_depth": 0.0,
+        "median_depth": null,
+        "length": 248956422
+      },
+      {
+        "contig": "chr2",
+        "mean_depth": 0.0,
+        "median_depth": null,
+        "length": 242193529
+      },
+      {
+        "contig": "chr3",
+        "mean_depth": 0.0,
+        "median_depth": null,
+        "length": 198295559
+      },
+      {
+        "contig": "total",
+        "mean_depth": 0.0,
+        "median_depth": null,
+        "length": 689445510
+      }
+    ],
+    "low_coverage_regions": []
+  },
+  "alignment_error_profile_tool": {
+    "file": "tests/fixtures/real/haplotag.large.bam",
+    "mismatch_rate": null,
+    "insertion_rate": null,
+    "deletion_rate": null,
+    "error_by_position": null,
+    "coverage_histogram": null,
+    "gc_coverage": [
+      {
+        "start": 0.0,
+        "end": 0.0,
+        "count": 50
+      },
+      {
+        "start": 22.1,
+        "end": 22.1,
+        "count": 75
+      },
+      {
+        "start": 48.0,
+        "end": 48.0,
+        "count": 100
+      }
+    ],
+    "mismatch_by_cycle": null,
+    "insert_size_histogram": null
+  },
+  "alignment_summary_tool": {
+    "reads": null,
+    "read_lengths": null,
+    "qscores": null,
+    "chopper": null,
+    "alignment": {
+      "file": "tests/fixtures/real/haplotag.large.bam",
+      "total_reads": 221,
+      "mapped": 0,
+      "unmapped": 0,
+      "primary": null,
+      "secondary": null,
+      "supplementary": null,
+      "mean_length": 5110.343891402715,
+      "median_length": 4142.0,
+      "n50": 6828,
+      "mean_identity": 87.72413633097887,
+      "median_identity": 88.03353658536585,
+      "length_histogram": [
+        {
+          "start": 0.0,
+          "end": 2000.0,
+          "count": 40
+        },
+        {
+          "start": 2000.0,
+          "end": 4000.0,
+          "count": 65
+        },
+        {
+          "start": 4000.0,
+          "end": 6000.0,
+          "count": 42
+        },
+        {
+          "start": 6000.0,
+          "end": 8000.0,
+          "count": 33
+        },
+        {
+          "start": 8000.0,
+          "end": 10000.0,
+          "count": 17
+        },
+        {
+          "start": 10000.0,
+          "end": 12000.0,
+          "count": 13
+        },
+        {
+          "start": 12000.0,
+          "end": 14000.0,
+          "count": 7
+        },
+        {
+          "start": 14000.0,
+          "end": 16000.0,
+          "count": 2
+        },
+        {
+          "start": 16000.0,
+          "end": 18000.0,
+          "count": 2
+        },
+        {
+          "start": 18000.0,
+          "end": 20000.0,
+          "count": 0
+        }
+      ],
+      "length_histogram_scaled": null,
+      "mapq_histogram": [],
+      "mapq_histogram_scaled": null
+    },
+    "coverage": {
+      "file": "tests/fixtures/real/haplotag.large.bam",
+      "mean_depth": 0.0,
+      "mean_depth_unweighted": 0.0,
+      "median_depth": null,
+      "coverage_distribution": [],
+      "coverage_by_contig": [
+        {
+          "contig": "chr1",
+          "mean_depth": 0.0,
+          "median_depth": null,
+          "length": 248956422
+        },
+        {
+          "contig": "chr2",
+          "mean_depth": 0.0,
+          "median_depth": null,
+          "length": 242193529
+        },
+        {
+          "contig": "chr3",
+          "mean_depth": 0.0,
+          "median_depth": null,
+          "length": 198295559
+        },
+        {
+          "contig": "total",
+          "mean_depth": 0.0,
+          "median_depth": null,
+          "length": 689445510
+        }
+      ],
+      "low_coverage_regions": []
+    },
+    "errors": null
+  },
+  "alignment_summary_tool_highdepth": {
+    "reads": null,
+    "read_lengths": null,
+    "qscores": null,
+    "chopper": null,
+    "alignment": {
+      "file": "tests/fixtures/synthetic/highdepth.bam",
+      "total_reads": 50,
+      "mapped": 0,
+      "unmapped": 0,
+      "primary": null,
+      "secondary": null,
+      "supplementary": null,
+      "mean_length": 100.0,
+      "median_length": 100.0,
+      "n50": 100,
+      "mean_identity": 100.0,
+      "median_identity": 100.0,
+      "length_histogram": [
+        {
+          "start": 0.0,
+          "end": 2000.0,
+          "count": 50
+        },
+        {
+          "start": 2000.0,
+          "end": 4000.0,
+          "count": 0
+        },
+        {
+          "start": 4000.0,
+          "end": 6000.0,
+          "count": 0
+        },
+        {
+          "start": 6000.0,
+          "end": 8000.0,
+          "count": 0
+        },
+        {
+          "start": 8000.0,
+          "end": 10000.0,
+          "count": 0
+        }
+      ],
+      "length_histogram_scaled": null,
+      "mapq_histogram": [],
+      "mapq_histogram_scaled": null
+    },
+    "coverage": {
+      "file": "tests/fixtures/synthetic/highdepth.bam",
+      "mean_depth": 5.0,
+      "mean_depth_unweighted": 5.0,
+      "median_depth": null,
+      "coverage_distribution": [],
+      "coverage_by_contig": [
+        {
+          "contig": "chrHD",
+          "mean_depth": 5.0,
+          "median_depth": null,
+          "length": 1000
+        },
+        {
+          "contig": "total",
+          "mean_depth": 5.0,
+          "median_depth": null,
+          "length": 1000
+        }
+      ],
+      "low_coverage_regions": []
+    },
+    "errors": null
+  },
+  "header_metadata_tool_bam": {
+    "summary": "BAM header; 24 contigs (e.g., chr10, chr11, chr12, \u2026); samples: NA12878; programs: minimap2, minimap2; sort order=coordinate",
+    "payload": {
+      "file": "tests/fixtures/real/haplotag.large.bam",
+      "format": "bam",
+      "references": [
+        {
+          "name": "chr10",
+          "length": 133797422,
+          "assembly": null,
+          "uri": null,
+          "md5": null,
+          "other": {}
+        },
+        {
+          "name": "chr11",
+          "length": 135086622,
+          "assembly": null,
+          "uri": null,
+          "md5": null,
+          "other": {}
+        },
+        {
+          "name": "chr12",
+          "length": 133275309,
+          "assembly": null,
+          "uri": null,
+          "md5": null,
+          "other": {}
+        },
+        {
+          "name": "chr13",
+          "length": 114364328,
+          "assembly": null,
+          "uri": null,
+          "md5": null,
+          "other": {}
+        },
+        {
+          "name": "chr14",
+          "length": 107043718,
+          "assembly": null,
+          "uri": null,
+          "md5": null,
+          "other": {}
+        },
+        {
+          "name": "chr15",
+          "length": 101991189,
+          "assembly": null,
+          "uri": null,
+          "md5": null,
+          "other": {}
+        },
+        {
+          "name": "chr16",
+          "length": 90338345,
+          "assembly": null,
+          "uri": null,
+          "md5": null,
+          "other": {}
+        },
+        {
+          "name": "chr17",
+          "length": 83257441,
+          "assembly": null,
+          "uri": null,
+          "md5": null,
+          "other": {}
+        },
+        {
+          "name": "chr18",
+          "length": 80373285,
+          "assembly": null,
+          "uri": null,
+          "md5": null,
+          "other": {}
+        },
+        {
+          "name": "chr19",
+          "length": 58617616,
+          "assembly": null,
+          "uri": null,
+          "md5": null,
+          "other": {}
+        },
+        {
+          "name": "chr1",
+          "length": 248956422,
+          "assembly": null,
+          "uri": null,
+          "md5": null,
+          "other": {}
+        },
+        {
+          "name": "chr20",
+          "length": 64444167,
+          "assembly": null,
+          "uri": null,
+          "md5": null,
+          "other": {}
+        },
+        {
+          "name": "chr21",
+          "length": 46709983,
+          "assembly": null,
+          "uri": null,
+          "md5": null,
+          "other": {}
+        },
+        {
+          "name": "chr22",
+          "length": 50818468,
+          "assembly": null,
+          "uri": null,
+          "md5": null,
+          "other": {}
+        },
+        {
+          "name": "chr2",
+          "length": 242193529,
+          "assembly": null,
+          "uri": null,
+          "md5": null,
+          "other": {}
+        },
+        {
+          "name": "chr3",
+          "length": 198295559,
+          "assembly": null,
+          "uri": null,
+          "md5": null,
+          "other": {}
+        },
+        {
+          "name": "chr4",
+          "length": 190214555,
+          "assembly": null,
+          "uri": null,
+          "md5": null,
+          "other": {}
+        },
+        {
+          "name": "chr5",
+          "length": 181538259,
+          "assembly": null,
+          "uri": null,
+          "md5": null,
+          "other": {}
+        },
+        {
+          "name": "chr6",
+          "length": 170805979,
+          "assembly": null,
+          "uri": null,
+          "md5": null,
+          "other": {}
+        },
+        {
+          "name": "chr7",
+          "length": 159345973,
+          "assembly": null,
+          "uri": null,
+          "md5": null,
+          "other": {}
+        },
+        {
+          "name": "chr8",
+          "length": 145138636,
+          "assembly": null,
+          "uri": null,
+          "md5": null,
+          "other": {}
+        },
+        {
+          "name": "chr9",
+          "length": 138394717,
+          "assembly": null,
+          "uri": null,
+          "md5": null,
+          "other": {}
+        },
+        {
+          "name": "chrX",
+          "length": 156040895,
+          "assembly": null,
+          "uri": null,
+          "md5": null,
+          "other": {}
+        },
+        {
+          "name": "chrY",
+          "length": 57227415,
+          "assembly": null,
+          "uri": null,
+          "md5": null,
+          "other": {}
+        }
+      ],
+      "programs": [
+        {
+          "id": "minimap2",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr10.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr10.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-C1EB6AC",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr11.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr11.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-3D89B926",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr12.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr12.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-26757A78",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr13.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr13.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-4DD39467",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr14.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr14.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-7DD06FEE",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr15.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr15.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-774FD1B8",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr16.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr16.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-18F15CB7",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr17.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr17.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-4B8A1FE4",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr18.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr18.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-547545B8",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr19.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr19.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-6AF87CDA",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr1.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr1.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-2F023A76",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr20.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr20.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-717BA8D1",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr21.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr21.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-A0794E9",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr22.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr22.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-3A1BA6E2",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr2.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr2.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-718C9EF8",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr3.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr3.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-389C4F5C",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr4.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr4.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-14CEED41",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr5.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr5.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-5E930267",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr6.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr6.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-5697CEB6",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr7.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr7.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-6464F06B",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr8.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr8.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-4968D8F0",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr9.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr9.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-6AB4F9FF",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chrX.fa /mnt/marginPhase/realign/fa/NA12878.pb.chrX.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-2A7302F7",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chrY.fa /mnt/marginPhase/realign/fa/NA12878.pb.chrY.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-4B00416C",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr10.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr10.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-C1EB6AC-7EB0C01D",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr11.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr11.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-3D89B926-2292E86D",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr12.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr12.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-26757A78-7B8B1081",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr13.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr13.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-4DD39467-31DE1637",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr14.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr14.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-7DD06FEE-E5AC197",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr15.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr15.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-774FD1B8-50396574",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr16.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr16.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-18F15CB7-11D53327",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr17.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr17.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-4B8A1FE4-22083809",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr18.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr18.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-547545B8-2973FC20",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr19.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr19.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-6AF87CDA-35EEC27A",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr1.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr1.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-2F023A76-318B9DBC",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr20.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr20.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-717BA8D1-4A0B8BC2",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr21.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr21.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-A0794E9-5A284410",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr22.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr22.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-3A1BA6E2-260152C4",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr2.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr2.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-718C9EF8-7F5C986E",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr3.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr3.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-389C4F5C-5E62A922",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr4.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr4.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-14CEED41-4F3BB3FD",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr5.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr5.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-5E930267-17B6A2CB",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr6.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr6.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-5697CEB6-1AF5A825",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr7.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr7.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-6464F06B-2506A258",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr8.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr8.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-4968D8F0-7B2D9E7E",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr9.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr9.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-6AB4F9FF-6938B3D4",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chrX.fa /mnt/marginPhase/realign/fa/NA12878.pb.chrX.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-2A7302F7-528A4B16",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chrY.fa /mnt/marginPhase/realign/fa/NA12878.pb.chrY.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-65D07A29",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr10.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr10.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-C1EB6AC-58999A0A",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr11.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr11.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-3D89B926-1DED172D",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr12.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr12.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-26757A78-55D8AC75",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr13.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr13.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-4DD39467-610392B9",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr14.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr14.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-7DD06FEE-10EA28FE",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr15.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr15.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-774FD1B8-79504305",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr16.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr16.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-18F15CB7-78C0A147",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr17.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr17.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-4B8A1FE4-7E53FEFA",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr18.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr18.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-547545B8-28E69FBD",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr19.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr19.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-6AF87CDA-177B1AE9",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr1.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr1.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-2F023A76-39346055",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr20.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr20.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-717BA8D1-8C040AE",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr21.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr21.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-A0794E9-7A5E0AF1",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr22.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr22.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-3A1BA6E2-469E45D7",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr2.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr2.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-718C9EF8-140F873C",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr3.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr3.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-389C4F5C-45449D1A",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr4.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr4.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-14CEED41-754AF7F0",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr5.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr5.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-5E930267-1F9E8C00",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr6.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr6.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-5697CEB6-2F581EA2",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr7.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr7.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-6464F06B-1466D249",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr8.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr8.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-4968D8F0-3968213B",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr9.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr9.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-6AB4F9FF-4137161F",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chrX.fa /mnt/marginPhase/realign/fa/NA12878.pb.chrX.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "minimap2-2A7302F7-3FB66F83",
+          "name": "minimap2",
+          "version": "2.3-r543-dirty",
+          "command": "minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chrY.fa /mnt/marginPhase/realign/fa/NA12878.pb.chrY.fa",
+          "previous_id": null,
+          "other": {}
+        },
+        {
+          "id": "samtools",
+          "name": "samtools",
+          "version": "1.22.1",
+          "command": "samtools view -H tests/fixtures/real/haplotag.large.bam",
+          "previous_id": "minimap2-2A7302F7-3FB66F83",
+          "other": {}
+        }
+      ],
+      "samples": [
+        {
+          "name": "NA12878",
+          "read_group_id": "NA12878",
+          "library": "lib1",
+          "platform": "pacbio",
+          "platform_unit": "unit1",
+          "sequencing_center": null,
+          "run_date": null,
+          "flowcell_id": null,
+          "platform_model": null,
+          "description": null,
+          "other": {}
+        }
+      ],
+      "metadata": {
+        "version": "1.4",
+        "sort_order": "coordinate"
+      },
+      "info_fields": [],
+      "format_fields": [],
+      "filter_fields": [],
+      "header_other": {},
+      "comments": [],
+      "raw_header": "@HD\tVN:1.4\tSO:coordinate\n@SQ\tSN:chr10\tLN:133797422\n@SQ\tSN:chr11\tLN:135086622\n@SQ\tSN:chr12\tLN:133275309\n@SQ\tSN:chr13\tLN:114364328\n@SQ\tSN:chr14\tLN:107043718\n@SQ\tSN:chr15\tLN:101991189\n@SQ\tSN:chr16\tLN:90338345\n@SQ\tSN:chr17\tLN:83257441\n@SQ\tSN:chr18\tLN:80373285\n@SQ\tSN:chr19\tLN:58617616\n@SQ\tSN:chr1\tLN:248956422\n@SQ\tSN:chr20\tLN:64444167\n@SQ\tSN:chr21\tLN:46709983\n@SQ\tSN:chr22\tLN:50818468\n@SQ\tSN:chr2\tLN:242193529\n@SQ\tSN:chr3\tLN:198295559\n@SQ\tSN:chr4\tLN:190214555\n@SQ\tSN:chr5\tLN:181538259\n@SQ\tSN:chr6\tLN:170805979\n@SQ\tSN:chr7\tLN:159345973\n@SQ\tSN:chr8\tLN:145138636\n@SQ\tSN:chr9\tLN:138394717\n@SQ\tSN:chrX\tLN:156040895\n@SQ\tSN:chrY\tLN:57227415\n@RG\tID:NA12878\tPU:unit1\tLB:lib1\tSM:NA12878\tPL:pacbio\n@PG\tID:minimap2\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr10.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr10.fa\tPN:minimap2\n@PG\tID:minimap2-C1EB6AC\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr11.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr11.fa\tPN:minimap2\n@PG\tID:minimap2-3D89B926\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr12.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr12.fa\tPN:minimap2\n@PG\tID:minimap2-26757A78\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr13.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr13.fa\tPN:minimap2\n@PG\tID:minimap2-4DD39467\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr14.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr14.fa\tPN:minimap2\n@PG\tID:minimap2-7DD06FEE\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr15.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr15.fa\tPN:minimap2\n@PG\tID:minimap2-774FD1B8\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr16.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr16.fa\tPN:minimap2\n@PG\tID:minimap2-18F15CB7\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr17.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr17.fa\tPN:minimap2\n@PG\tID:minimap2-4B8A1FE4\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr18.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr18.fa\tPN:minimap2\n@PG\tID:minimap2-547545B8\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr19.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr19.fa\tPN:minimap2\n@PG\tID:minimap2-6AF87CDA\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr1.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr1.fa\tPN:minimap2\n@PG\tID:minimap2-2F023A76\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr20.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr20.fa\tPN:minimap2\n@PG\tID:minimap2-717BA8D1\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr21.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr21.fa\tPN:minimap2\n@PG\tID:minimap2-A0794E9\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr22.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr22.fa\tPN:minimap2\n@PG\tID:minimap2-3A1BA6E2\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr2.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr2.fa\tPN:minimap2\n@PG\tID:minimap2-718C9EF8\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr3.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr3.fa\tPN:minimap2\n@PG\tID:minimap2-389C4F5C\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr4.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr4.fa\tPN:minimap2\n@PG\tID:minimap2-14CEED41\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr5.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr5.fa\tPN:minimap2\n@PG\tID:minimap2-5E930267\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr6.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr6.fa\tPN:minimap2\n@PG\tID:minimap2-5697CEB6\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr7.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr7.fa\tPN:minimap2\n@PG\tID:minimap2-6464F06B\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr8.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr8.fa\tPN:minimap2\n@PG\tID:minimap2-4968D8F0\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr9.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr9.fa\tPN:minimap2\n@PG\tID:minimap2-6AB4F9FF\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chrX.fa /mnt/marginPhase/realign/fa/NA12878.pb.chrX.fa\tPN:minimap2\n@PG\tID:minimap2-2A7302F7\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chrY.fa /mnt/marginPhase/realign/fa/NA12878.pb.chrY.fa\tPN:minimap2\n@PG\tID:minimap2-4B00416C\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr10.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr10.fa\tPN:minimap2\n@PG\tID:minimap2-C1EB6AC-7EB0C01D\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr11.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr11.fa\tPN:minimap2\n@PG\tID:minimap2-3D89B926-2292E86D\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr12.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr12.fa\tPN:minimap2\n@PG\tID:minimap2-26757A78-7B8B1081\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr13.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr13.fa\tPN:minimap2\n@PG\tID:minimap2-4DD39467-31DE1637\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr14.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr14.fa\tPN:minimap2\n@PG\tID:minimap2-7DD06FEE-E5AC197\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr15.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr15.fa\tPN:minimap2\n@PG\tID:minimap2-774FD1B8-50396574\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr16.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr16.fa\tPN:minimap2\n@PG\tID:minimap2-18F15CB7-11D53327\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr17.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr17.fa\tPN:minimap2\n@PG\tID:minimap2-4B8A1FE4-22083809\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr18.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr18.fa\tPN:minimap2\n@PG\tID:minimap2-547545B8-2973FC20\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr19.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr19.fa\tPN:minimap2\n@PG\tID:minimap2-6AF87CDA-35EEC27A\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr1.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr1.fa\tPN:minimap2\n@PG\tID:minimap2-2F023A76-318B9DBC\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr20.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr20.fa\tPN:minimap2\n@PG\tID:minimap2-717BA8D1-4A0B8BC2\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr21.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr21.fa\tPN:minimap2\n@PG\tID:minimap2-A0794E9-5A284410\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr22.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr22.fa\tPN:minimap2\n@PG\tID:minimap2-3A1BA6E2-260152C4\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr2.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr2.fa\tPN:minimap2\n@PG\tID:minimap2-718C9EF8-7F5C986E\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr3.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr3.fa\tPN:minimap2\n@PG\tID:minimap2-389C4F5C-5E62A922\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr4.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr4.fa\tPN:minimap2\n@PG\tID:minimap2-14CEED41-4F3BB3FD\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr5.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr5.fa\tPN:minimap2\n@PG\tID:minimap2-5E930267-17B6A2CB\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr6.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr6.fa\tPN:minimap2\n@PG\tID:minimap2-5697CEB6-1AF5A825\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr7.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr7.fa\tPN:minimap2\n@PG\tID:minimap2-6464F06B-2506A258\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr8.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr8.fa\tPN:minimap2\n@PG\tID:minimap2-4968D8F0-7B2D9E7E\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr9.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr9.fa\tPN:minimap2\n@PG\tID:minimap2-6AB4F9FF-6938B3D4\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chrX.fa /mnt/marginPhase/realign/fa/NA12878.pb.chrX.fa\tPN:minimap2\n@PG\tID:minimap2-2A7302F7-528A4B16\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chrY.fa /mnt/marginPhase/realign/fa/NA12878.pb.chrY.fa\tPN:minimap2\n@PG\tID:minimap2-65D07A29\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr10.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr10.fa\tPN:minimap2\n@PG\tID:minimap2-C1EB6AC-58999A0A\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr11.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr11.fa\tPN:minimap2\n@PG\tID:minimap2-3D89B926-1DED172D\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr12.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr12.fa\tPN:minimap2\n@PG\tID:minimap2-26757A78-55D8AC75\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr13.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr13.fa\tPN:minimap2\n@PG\tID:minimap2-4DD39467-610392B9\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr14.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr14.fa\tPN:minimap2\n@PG\tID:minimap2-7DD06FEE-10EA28FE\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr15.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr15.fa\tPN:minimap2\n@PG\tID:minimap2-774FD1B8-79504305\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr16.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr16.fa\tPN:minimap2\n@PG\tID:minimap2-18F15CB7-78C0A147\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr17.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr17.fa\tPN:minimap2\n@PG\tID:minimap2-4B8A1FE4-7E53FEFA\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr18.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr18.fa\tPN:minimap2\n@PG\tID:minimap2-547545B8-28E69FBD\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr19.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr19.fa\tPN:minimap2\n@PG\tID:minimap2-6AF87CDA-177B1AE9\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr1.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr1.fa\tPN:minimap2\n@PG\tID:minimap2-2F023A76-39346055\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr20.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr20.fa\tPN:minimap2\n@PG\tID:minimap2-717BA8D1-8C040AE\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr21.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr21.fa\tPN:minimap2\n@PG\tID:minimap2-A0794E9-7A5E0AF1\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr22.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr22.fa\tPN:minimap2\n@PG\tID:minimap2-3A1BA6E2-469E45D7\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr2.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr2.fa\tPN:minimap2\n@PG\tID:minimap2-718C9EF8-140F873C\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr3.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr3.fa\tPN:minimap2\n@PG\tID:minimap2-389C4F5C-45449D1A\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr4.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr4.fa\tPN:minimap2\n@PG\tID:minimap2-14CEED41-754AF7F0\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr5.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr5.fa\tPN:minimap2\n@PG\tID:minimap2-5E930267-1F9E8C00\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr6.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr6.fa\tPN:minimap2\n@PG\tID:minimap2-5697CEB6-2F581EA2\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr7.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr7.fa\tPN:minimap2\n@PG\tID:minimap2-6464F06B-1466D249\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr8.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr8.fa\tPN:minimap2\n@PG\tID:minimap2-4968D8F0-3968213B\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chr9.fa /mnt/marginPhase/realign/fa/NA12878.pb.chr9.fa\tPN:minimap2\n@PG\tID:minimap2-6AB4F9FF-4137161F\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chrX.fa /mnt/marginPhase/realign/fa/NA12878.pb.chrX.fa\tPN:minimap2\n@PG\tID:minimap2-2A7302F7-3FB66F83\tVN:2.3-r543-dirty\tCL:minimap2 -ax map-pb /mnt/marginPhase/production_prep/ref.fasta/hg38.chrY.fa /mnt/marginPhase/realign/fa/NA12878.pb.chrY.fa\tPN:minimap2\n@PG\tID:samtools\tPN:samtools\tPP:minimap2-2A7302F7-3FB66F83\tVN:1.22.1\tCL:samtools view -H tests/fixtures/real/haplotag.large.bam\n",
+      "summary": "BAM header; 24 contigs (e.g., chr10, chr11, chr12, \u2026); samples: NA12878; programs: minimap2, minimap2; sort order=coordinate"
+    }
+  },
+  "header_metadata_tool_vcf": {
+    "summary": "VCF header; 3 contigs (e.g., chr1, chr2, chr3); samples: NA12878; 1 FORMAT fields",
+    "payload": {
+      "file": "tests/fixtures/real/haplotag.large.vcf.gz",
+      "format": "vcf",
+      "references": [
+        {
+          "name": "chr1",
+          "length": 248956422,
+          "assembly": null,
+          "uri": null,
+          "md5": null,
+          "other": {}
+        },
+        {
+          "name": "chr2",
+          "length": 242193529,
+          "assembly": null,
+          "uri": null,
+          "md5": null,
+          "other": {}
+        },
+        {
+          "name": "chr3",
+          "length": 198295559,
+          "assembly": null,
+          "uri": null,
+          "md5": null,
+          "other": {}
+        }
+      ],
+      "programs": [],
+      "samples": [
+        {
+          "name": "NA12878",
+          "read_group_id": null,
+          "library": null,
+          "platform": null,
+          "platform_unit": null,
+          "sequencing_center": null,
+          "run_date": null,
+          "flowcell_id": null,
+          "platform_model": null,
+          "description": null,
+          "other": {}
+        }
+      ],
+      "metadata": {
+        "fileformat": "VCFv4.1",
+        "reference": "hg38"
+      },
+      "info_fields": [],
+      "format_fields": [
+        {
+          "id": "GT",
+          "number": "1",
+          "type": "String",
+          "description": "Genotype",
+          "category": "FORMAT",
+          "other": {}
+        }
+      ],
+      "filter_fields": [],
+      "header_other": {},
+      "comments": [],
+      "raw_header": "##fileformat=VCFv4.1\n##reference=hg38\n##contig=<ID=chr1,length=248956422>\n##contig=<ID=chr2,length=242193529>\n##contig=<ID=chr3,length=198295559>\n##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tNA12878",
+      "summary": "VCF header; 3 contigs (e.g., chr1, chr2, chr3); samples: NA12878; 1 FORMAT fields"
+    }
+  }
+}
