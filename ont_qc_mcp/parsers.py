@@ -50,27 +50,48 @@ def parse_nanoq_json(payload: str | Dict) -> NanoqStats:
     """
     data = json.loads(payload) if isinstance(payload, str) else payload
     summary = data.get("summary", data)
-    read_stats = summary.get("reads", summary)
-    if not isinstance(read_stats, dict):
-        read_stats = summary
+
+    # nanoq >=0.10 emits flat keys; older versions nest under summary.reads.length/qscore.
+    raw_reads = summary.get("reads", summary)
+    if isinstance(raw_reads, dict):
+        read_stats = raw_reads
+        length_info = read_stats.get("length", {}) if isinstance(read_stats, dict) else {}
+        qscore_info = read_stats.get("qscore", {}) if isinstance(read_stats, dict) else {}
+    else:
+        # Flat schema: pull directly from top-level keys.
+        read_stats = {"count": raw_reads, "bases": summary.get("bases")}
+        length_info = {
+            "min": summary.get("shortest"),
+            "max": summary.get("longest"),
+            "mean": summary.get("mean_length"),
+            "median": summary.get("median_length"),
+            "n50": summary.get("n50"),
+        }
+        # Histogram/percentiles are not present in this schema; leave empty.
+        qscore_info = {
+            "mean": summary.get("mean_quality"),
+            "median": summary.get("median_quality"),
+        }
 
     file_name = summary.get("file") or summary.get("input") or "unknown"
-    length_info = read_stats.get("length", {}) if isinstance(read_stats, dict) else {}
     if not isinstance(length_info, dict):
         length_info = {}
-    qscore_info = read_stats.get("qscore", {}) if isinstance(read_stats, dict) else {}
     if not isinstance(qscore_info, dict):
         qscore_info = {}
 
     length_bins_raw = length_info.get("hist") or length_info.get("histogram") or []
     qscore_bins_raw = qscore_info.get("hist") or qscore_info.get("histogram") or []
 
-    percentiles = _safe_percentiles(length_info.get("percentiles", {})) if length_info else None
+    percentiles = _safe_percentiles(length_info.get("percentiles", {})) if isinstance(length_info, dict) else None
+
+    # Fallbacks to keep previous defaults when values are missing.
+    read_count = read_stats.get("count", read_stats.get("reads", 0) or 0) if isinstance(read_stats, dict) else int(raw_reads or 0)
+    total_bases = read_stats.get("bases", read_stats.get("total_bases", 0) or 0) if isinstance(read_stats, dict) else summary.get("bases", 0)
 
     return NanoqStats(
         file=file_name,
-        read_count=int(read_stats.get("count", read_stats.get("reads", 0) or 0)),
-        total_bases=int(read_stats.get("bases", read_stats.get("total_bases", 0) or 0)),
+        read_count=int(read_count or 0),
+        total_bases=int(total_bases or 0),
         min_len=int(length_info.get("min", 0) or 0),
         max_len=int(length_info.get("max", 0) or 0),
         mean_len=float(length_info.get("mean", 0.0) or 0.0),
@@ -82,7 +103,7 @@ def parse_nanoq_json(payload: str | Dict) -> NanoqStats:
         median_qscore=float(qscore_info.get("median", qscore_info.get("p50", 0.0) or 0.0))
         if qscore_info
         else None,
-        gc_content=read_stats.get("gc"),
+        gc_content=read_stats.get("gc") if isinstance(read_stats, dict) else summary.get("gc"),
         length_percentiles=percentiles,
         length_histogram=_histogram_from_seq(length_bins_raw),
         qscore_histogram=_histogram_from_seq(qscore_bins_raw),
@@ -121,24 +142,41 @@ def parse_cramino_json(
     """
     data = json.loads(payload) if isinstance(payload, str) else payload
     summary = data.get("summary", data)
-    read_counts = summary.get("reads", summary)
+    # Support older summary.reads schema and newer cramino >=0.15 schema with alignment_stats/read_stats/identity_stats.
+    alignment_stats = summary.get("alignment_stats", {}) if isinstance(summary, dict) else {}
+    read_stats = summary.get("read_stats", {}) if isinstance(summary, dict) else {}
+    identity_stats = summary.get("identity_stats", {}) if isinstance(summary, dict) else {}
+
+    legacy_read_counts = summary.get("reads", summary)
+    if alignment_stats:
+        read_counts = {
+            "total": alignment_stats.get("num_reads") or alignment_stats.get("num_alignments") or 0,
+            # cramino JSON in this version does not emit mapped/unmapped breakdown.
+        }
+    elif isinstance(legacy_read_counts, dict):
+        read_counts = legacy_read_counts
+    else:
+        read_counts = {"total": legacy_read_counts or 0}
 
     mapq_bins_counts = summary.get("mapq_hist", summary.get("mapq_histogram", []))
     mapq_bins_scaled = summary.get("mapq_hist_scaled") or summary.get("mapq_hist_scaled_bp") or []
 
+    file_info = summary.get("file_info", {}) if isinstance(summary, dict) else {}
+    file_path = file_info.get("path") or file_info.get("name") or summary.get("file", "unknown")
+
     return CraminoStats(
-        file=summary.get("file", "unknown"),
+        file=file_path,
         total_reads=int(read_counts.get("total", read_counts.get("reads", 0) or 0)),
-        mapped=int(read_counts.get("mapped", 0) or 0),
-        unmapped=int(read_counts.get("unmapped", 0) or 0),
-        primary=read_counts.get("primary"),
-        secondary=read_counts.get("secondary"),
-        supplementary=read_counts.get("supplementary"),
-        mean_length=summary.get("mean_length"),
-        median_length=summary.get("median_length"),
-        n50=summary.get("n50"),
-        mean_identity=summary.get("mean_identity"),
-        median_identity=summary.get("median_identity"),
+        mapped=int(read_counts.get("mapped", 0) or 0) if isinstance(read_counts, dict) else 0,
+        unmapped=int(read_counts.get("unmapped", 0) or 0) if isinstance(read_counts, dict) else 0,
+        primary=read_counts.get("primary") if isinstance(read_counts, dict) else None,
+        secondary=read_counts.get("secondary") if isinstance(read_counts, dict) else None,
+        supplementary=read_counts.get("supplementary") if isinstance(read_counts, dict) else None,
+        mean_length=summary.get("mean_length") or read_stats.get("mean_length"),
+        median_length=summary.get("median_length") or read_stats.get("median_length"),
+        n50=summary.get("n50") or read_stats.get("n50"),
+        mean_identity=summary.get("mean_identity") or identity_stats.get("mean_identity"),
+        median_identity=summary.get("median_identity") or identity_stats.get("median_identity"),
         length_histogram=length_bins or None,
         length_histogram_scaled=length_bins_scaled or None,
         mapq_histogram=_histogram_from_seq(mapq_bins_counts),

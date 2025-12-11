@@ -129,6 +129,8 @@ def test_alignment_workflow_smoke(mcp_server_params, sample_bam):
                 assert not qc.isError, f"qc_alignment_tool failed: {qc.content[0].text}"
                 qc_payload = json.loads(qc.content[0].text)
                 assert qc_payload["length_histogram"], "Expected length_histogram from cramino"
+                assert qc_payload.get("total_reads", 0) > 0
+                assert qc_payload.get("mean_identity") is not None
 
                 coverage = await session.call_tool("coverage_stats_tool", {"path": str(sample_bam)})
                 assert not coverage.isError
@@ -203,6 +205,7 @@ def test_qc_reads_tool_real_fastq(mcp_server_params, sample_fastq):
                 payload = json.loads(result.content[0].text)
                 assert payload["file"]
                 assert payload["read_count"] > 0
+                assert payload.get("mean_len", 0) > 0
 
     anyio.run(_test)
 
@@ -358,6 +361,25 @@ def test_alignment_summary_tool_real_bam(mcp_server_params, sample_bam):
                 payload = json.loads(result.content[0].text)
                 assert payload["alignment"]
                 assert payload["coverage"]
+                assert payload["alignment"].get("total_reads", 0) > 0
+
+    anyio.run(_test)
+
+
+def test_alignment_summary_tool_highdepth_bam(mcp_server_params, sample_bam_highdepth):
+    """alignment_summary_tool should show non-zero coverage on the high-depth synthetic BAM."""
+
+    _require_tools()
+
+    async def _test():
+        async with stdio_client(mcp_server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool("alignment_summary_tool", {"path": str(sample_bam_highdepth)})
+                assert not result.isError
+                payload = json.loads(result.content[0].text)
+                assert payload["coverage"]["mean_depth"] > 0
+                assert payload["alignment"].get("total_reads", 0) >= 50
 
     anyio.run(_test)
 

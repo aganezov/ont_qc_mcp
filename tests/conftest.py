@@ -54,6 +54,17 @@ def sample_fastq() -> Path:
 
 
 @pytest.fixture
+def sample_bam_highdepth() -> Path:
+    """
+    High-depth synthetic BAM for coverage-focused tests.
+    """
+    bam_path = Path(__file__).resolve().parent / "fixtures" / "synthetic" / "highdepth.bam"
+    if not bam_path.exists():
+        pytest.fail(f"High-depth BAM missing: {bam_path}")
+    return bam_path
+
+
+@pytest.fixture
 def mcp_server_params():
     """Return StdioServerParameters for launching the MCP server."""
     from mcp.client.stdio import StdioServerParameters

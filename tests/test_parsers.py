@@ -1,3 +1,8 @@
+import json
+import shutil
+import subprocess
+from pathlib import Path
+
 from ont_qc_mcp.parsers import (
     parse_alignment_header,
     parse_cramino_json,
@@ -71,6 +76,65 @@ def test_parse_cramino_json_scaled():
     parsed = parse_cramino_json(payload)
     assert parsed.mapq_histogram_scaled is not None
     assert parsed.mapq_histogram_scaled[1].count == 1500
+
+
+def test_parse_nanoq_json_real_fixture():
+    from pathlib import Path
+    import json
+
+    path = Path("tests/fixtures/raw/nanoq_haplotag.large.json")
+    data = json.loads(path.read_text())
+    parsed = parse_nanoq_json(data)
+
+    assert parsed.read_count == 221
+    assert parsed.total_bases == 1268233
+    assert parsed.mean_len > 0
+    assert parsed.median_len > 0
+    # Histogram is absent in this nanoq version but parser should not crash.
+    assert parsed.length_histogram == []
+    assert parsed.qscore_histogram == []
+
+
+def test_parse_cramino_json_real_fixture():
+    path = Path("tests/fixtures/raw/cramino_haplotag.large.json")
+    data = json.loads(path.read_text())
+    parsed = parse_cramino_json(data)
+
+    assert parsed.total_reads == 221
+    assert parsed.mean_length and parsed.mean_length > 0
+    assert parsed.mean_identity and parsed.mean_identity > 0
+    # Histogram provided externally via hist TSV; should remain list even if empty.
+    assert parsed.length_histogram is None or isinstance(parsed.length_histogram, list)
+
+
+def test_parse_nanoq_json_real_cli(sample_fastq):
+    if not shutil.which("nanoq"):
+        pytest.skip("nanoq not available")
+    result = subprocess.run(
+        ["nanoq", "--stats", "--json", "--input", str(sample_fastq)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    parsed = parse_nanoq_json(result.stdout)
+    assert parsed.read_count > 0
+    assert parsed.mean_len > 0
+    assert parsed.mean_qscore is not None
+
+
+def test_parse_cramino_json_real_cli(sample_bam):
+    if not shutil.which("cramino"):
+        pytest.skip("cramino not available")
+    result = subprocess.run(
+        ["cramino", "--format", "json", str(sample_bam)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    parsed = parse_cramino_json(result.stdout)
+    assert parsed.total_reads > 0
+    assert parsed.mean_length and parsed.mean_length > 0
+    assert parsed.mean_identity and parsed.mean_identity > 0
 
 
 def test_parse_mosdepth_summary():
