@@ -37,6 +37,14 @@ class ToolPaths:
             "samtools": self.samtools,
         }
 
+    def resolved(self) -> Dict[str, str]:
+        """Return best-effort resolved paths (absolute when found)."""
+        resolved: Dict[str, str] = {}
+        for name, path in self.as_dict().items():
+            resolved_path = which(path)
+            resolved[name] = resolved_path or path
+        return resolved
+
     def missing(self) -> List[str]:
         """Return missing tools based on PATH resolution."""
         missing: List[str] = []

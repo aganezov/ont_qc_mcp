@@ -11,6 +11,8 @@ import pytest
 from mcp.client.session import ClientSession
 from mcp.client.stdio import stdio_client
 
+from ont_qc_mcp.tools import env_check
+
 
 def test_initialize_and_list_tools(mcp_server_params):
     """Test that we can connect and list available tools."""
@@ -106,16 +108,15 @@ def test_env_status_tool(mcp_server_params):
 def test_alignment_workflow_smoke(mcp_server_params, sample_bam):
     """Simulate a minimal alignment workflow using real tools if available."""
 
+    env_status = env_check()
+    missing = [tool for tool, ok in env_status.available.items() if not ok]
+    if missing:
+        pytest.skip(f"Required CLI tools missing: {', '.join(missing)}")
+
     async def _test():
         async with stdio_client(mcp_server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-
-                env_status = await session.call_tool("env_status")
-                env_payload = json.loads(env_status.content[0].text)
-                missing = [tool for tool, ok in env_payload.get("available", {}).items() if not ok]
-                if missing:
-                    pytest.skip(f"Required CLI tools missing: {', '.join(missing)}")
 
                 qc = await session.call_tool("qc_alignment_tool", {"path": str(sample_bam)})
                 assert not qc.isError

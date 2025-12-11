@@ -26,11 +26,22 @@ class CommandResult:
         )
 
 
+def _truncate_stderr(stderr: str, max_lines: int = 20) -> str:
+    """Keep first/last chunks of stderr to avoid flooding clients."""
+    if not stderr:
+        return ""
+    lines = stderr.splitlines()
+    if len(lines) <= max_lines * 2:
+        return stderr
+    return "\n".join(lines[:max_lines] + ["... (truncated) ..."] + lines[-max_lines:])
+
+
 class CommandError(RuntimeError):
     """Raised when an external command fails."""
 
-    def __init__(self, result: CommandResult):
-        super().__init__(result.stderr or f"Command failed: {' '.join(result.cmd)}")
+    def __init__(self, result: CommandResult, stderr_max_lines: int = 20):
+        message = _truncate_stderr(result.stderr, stderr_max_lines) or f"Command failed: {' '.join(result.cmd)}"
+        super().__init__(message)
         self.result = result
 
 
