@@ -1,4 +1,4 @@
-from mcp.parsers import (
+from ont_qc_mcp.parsers import (
     parse_alignment_header,
     parse_cramino_json,
     parse_error_profile,
@@ -7,7 +7,7 @@ from mcp.parsers import (
     parse_vcf_header,
     summarize_header,
 )
-from mcp.tools import header_metadata_lookup
+from ont_qc_mcp.tools import header_metadata_lookup
 
 
 def test_parse_nanoq_json():

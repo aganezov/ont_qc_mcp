@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from mcp.cli_wrappers import FlagValidationError, build_cli_args, cramino_stats
-from mcp.config import ToolPaths
+from ont_qc_mcp.cli_wrappers import FlagValidationError, build_cli_args, cramino_stats
+from ont_qc_mcp.config import ToolPaths
 
 
 def test_build_cli_args_validation():
@@ -27,7 +27,7 @@ def test_cramino_flags_applied_once(monkeypatch):
 
         return Result()
 
-    monkeypatch.setattr("mcp.cli_wrappers.run_command", fake_run)
+    monkeypatch.setattr("ont_qc_mcp.cli_wrappers.run_command", fake_run)
     cramino_stats(Path("dummy.bam"), ToolPaths(), include_hist=True, use_scaled=False, flags={"threads": 4})
     cmd = captured["cmd"]
     assert cmd[0] == "cramino"
@@ -36,7 +36,7 @@ def test_cramino_flags_applied_once(monkeypatch):
 
 
 def test_resources_exposed():
-    from mcp import app_server as srv
+    from ont_qc_mcp import app_server as srv
 
     resources = asyncio.run(srv.list_resources())
     uris = {str(r.uri) for r in resources}
@@ -45,7 +45,7 @@ def test_resources_exposed():
 
 
 def test_read_resource_flags_and_recipes():
-    from mcp import app_server as srv
+    from ont_qc_mcp import app_server as srv
 
     flag_contents = asyncio.run(srv.read_resource("tool://flags/nanoq"))
     flag_payload = json.loads(flag_contents[0].content)

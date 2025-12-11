@@ -28,6 +28,6 @@ def mcp_server_params():
 
     return StdioServerParameters(
         command=sys.executable,
-        args=["-m", "mcp.app_server"],
+        args=["-m", "ont_qc_mcp.app_server"],
         cwd=str(Path(__file__).resolve().parent.parent),
     )

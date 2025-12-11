@@ -31,7 +31,7 @@ all = [
 ]
 
 [project.scripts]
-ont-qc-mcp = "mcp.app_server:main"
+ont-qc-mcp = "ont_qc_mcp.app_server:main"
 
 [build-system]
 requires = ["setuptools>=61.0"]
