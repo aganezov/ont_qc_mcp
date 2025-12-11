@@ -8,17 +8,33 @@ import pytest
 @pytest.fixture
 def sample_bam() -> Path:
     """
-    Optional sample BAM path for workflow tests.
+    Sample BAM for workflow tests.
 
-    Provide MCP_SAMPLE_BAM env var to enable workflow smoke tests.
+    Defaults to the checked-in real fixture; can be overridden with MCP_SAMPLE_BAM.
     """
     env_path = os.environ.get("MCP_SAMPLE_BAM")
-    if not env_path:
-        pytest.skip("Set MCP_SAMPLE_BAM to a BAM/CRAM path to run workflow tests.")
-    bam_path = Path(env_path)
+    default_path = Path(__file__).resolve().parent / "fixtures" / "real" / "haplotag.large.bam"
+    bam_path = Path(env_path) if env_path else default_path
+
     if not bam_path.exists():
-        pytest.skip(f"MCP_SAMPLE_BAM does not exist: {bam_path}")
+        pytest.skip(f"Sample BAM missing: {bam_path} (set MCP_SAMPLE_BAM to override)")
     return bam_path
+
+
+@pytest.fixture
+def sample_vcf() -> Path:
+    """
+    Sample VCF for header/metadata tests.
+
+    Uses the checked-in real gzipped VCF; can be overridden with MCP_SAMPLE_VCF.
+    """
+    env_path = os.environ.get("MCP_SAMPLE_VCF")
+    default_path = Path(__file__).resolve().parent / "fixtures" / "real" / "haplotag.large.vcf.gz"
+    vcf_path = Path(env_path) if env_path else default_path
+
+    if not vcf_path.exists():
+        pytest.skip(f"Sample VCF missing: {vcf_path} (set MCP_SAMPLE_VCF to override)")
+    return vcf_path
 
 
 @pytest.fixture

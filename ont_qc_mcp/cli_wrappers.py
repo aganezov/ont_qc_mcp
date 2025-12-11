@@ -171,18 +171,32 @@ def cramino_stats(
     exec_cfg: Optional[ExecutionConfig] = None,
 ) -> CraminoStats:
     """
-    Run cramino --json for alignment-level stats.
+    Run cramino with JSON output for alignment-level stats.
     """
     flag_data: Dict[str, Any] = dict(flags or {})
+    hist_path: Optional[Path] = None
+    hist_arg: List[str] = []
+
     if include_hist:
-        flag_data.setdefault("hist", True)
+        # Direct histogram output to a temp file so stdout remains pure JSON.
+        with tempfile.NamedTemporaryFile(suffix=".cramino.hist", delete=False) as tmp:
+            hist_path = Path(tmp.name)
+        hist_arg = ["--hist", str(hist_path)]
     if use_scaled:
         flag_data.setdefault("scaled", True)
+    # Force JSON output regardless of user-supplied flags; parser expects JSON.
+    flag_data.setdefault("format", "json")
 
     flag_data, timeout = _prepare_execution("cramino", flag_data, exec_cfg)
-    flag_args = build_cli_args("cramino", flag_data)
-    cmd: List[str] = [tools.cramino, "--json", *flag_args, str(path)]
-    result = run_command(cmd, timeout=timeout)
+    # Handle --hist separately so we can pass a path even though the flag is defined as boolean.
+    flag_data_no_hist = {k: v for k, v in flag_data.items() if k != "hist"}
+    flag_args = build_cli_args("cramino", flag_data_no_hist)
+    cmd: List[str] = [tools.cramino, *flag_args, *hist_arg, str(path)]
+    try:
+        result = run_command(cmd, timeout=timeout)
+    finally:
+        if hist_path:
+            hist_path.unlink(missing_ok=True)
     return parse_cramino_json(result.stdout)
 
 
@@ -205,7 +219,7 @@ def mosdepth_coverage(
     flag_args = build_cli_args("mosdepth", flag_data)
     with tempfile.TemporaryDirectory() as tmpdir:
         prefix = Path(tmpdir) / "mosdepth"
-        summary_path = prefix.with_suffix(".summary.txt")
+        summary_path = Path(f"{prefix}.mosdepth.summary.txt")
 
         cmd: List[str] = [
             tools.mosdepth,

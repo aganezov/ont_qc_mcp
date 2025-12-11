@@ -48,6 +48,7 @@ TOOL_FLAGS: Dict[str, List[FlagDef]] = {
         FlagDef(param="scaled", name="--scaled", type="bool", description="Weight histograms by bases"),
         FlagDef(param="mapq", name="--mapq", type="bool", description="Emit MAPQ histogram when supported"),
         FlagDef(param="flags", name="--flags", type="bool", description="Emit SAM flag histogram when supported"),
+        FlagDef(param="format", name="--format", type="str", description="Output format (text, json, tsv)"),
         FlagDef(param="threads", name="--threads", short="-t", type="int", description="Worker threads"),
     ],
     "mosdepth": [

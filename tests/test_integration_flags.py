@@ -32,6 +32,10 @@ def test_cramino_flags_applied_once(monkeypatch):
     cmd = captured["cmd"]
     assert cmd[0] == "cramino"
     assert cmd.count("--hist") == 1
+    hist_idx = cmd.index("--hist")
+    assert hist_idx + 1 < len(cmd) and cmd[hist_idx + 1].endswith(".cramino.hist")
+    assert "--format" in cmd
+    assert "json" in cmd
     assert "--threads" in cmd and "4" in cmd
 
 

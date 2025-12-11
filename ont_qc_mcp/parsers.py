@@ -107,7 +107,7 @@ def parse_qscore_distribution(payload: str | Dict) -> QScoreDistribution:
 
 def parse_cramino_json(payload: str | Dict) -> CraminoStats:
     """
-    Parse cramino --json output, supporting both count and scaled histograms.
+    Parse cramino JSON output (e.g., --format json), supporting both count and scaled histograms.
     """
     data = json.loads(payload) if isinstance(payload, str) else payload
     summary = data.get("summary", data)
