@@ -4,6 +4,8 @@ import subprocess
 from dataclasses import dataclass
 from typing import List, Sequence
 
+import anyio
+
 
 @dataclass
 class CommandResult:
@@ -45,6 +47,13 @@ def run_command(cmd: Sequence[str], timeout: int = 120) -> CommandResult:
     if process.returncode != 0:
         raise CommandError(result)
     return result
+
+
+async def run_command_async(cmd: Sequence[str], timeout: int = 120) -> CommandResult:
+    """
+    Async wrapper that runs the command in a worker thread to avoid blocking.
+    """
+    return await anyio.to_thread.run_sync(run_command, cmd, timeout)
 
 
 def format_cmd(cmd: Sequence[str]) -> str:

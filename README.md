@@ -3,18 +3,23 @@
 Model Context Protocol server exposing lightweight QC/EDA helpers for Oxford Nanopore FASTQ and BAM/CRAM inputs. The server wraps common CLI tools and returns machine-readable summaries for educational and practical workflows.
 
 ## Features
-- FASTQ basic stats via `seqkit stats` (read count, length/N50, GC).
-- BAM/CRAM stats via `samtools stats`.
-- Optional read filtering/trimming through `fastp` with JSON output passthrough.
-- Simple environment validation for required CLI tools.
+- FASTQ read-level QC via `nanoq` (read count, length/N50, GC, q-score/length histograms).
+- BAM/CRAM alignment QC via `cramino` (mapping breakdown, identity, MAPQ hist).
+- Depth-of-coverage via `mosdepth`.
+- Read filtering/trimming via `chopper`.
+- Optional plotting helpers (length/qscore histograms) when `matplotlib` is installed.
+- Environment validation for required CLI tools.
+- Per-tool runtime guidance via MCP resources to help LLM tool selection.
+- Non-blocking execution: CLI calls are offloaded to worker threads with configurable timeouts and thread defaults.
 
 ## Requirements
 - Python >= 3.10
 - CLI tools on `PATH` (override via env vars):
-  - `SEQKIT` (default `seqkit`)
-  - `SAMTOOLS` (default `samtools`)
-  - `FASTP` (default `fastp`)
-  - `NANOPLOT` (default `NanoPlot`, optional for plotting JSON export)
+  - `NANOQ` (default `nanoq`)
+  - `CRAMINO` (default `cramino`)
+  - `MOSDEPTH` (default `mosdepth`)
+  - `CHOPPER` (default `chopper`)
+  - `SAMTOOLS` (default `samtools`) for error profiling
 
 ## Quick start
 ```bash
@@ -23,19 +28,33 @@ ont-qc-mcp  # launches the MCP stdio server
 ```
 
 ## MCP tools (high level)
-- `qc_fastq`: run `seqkit stats` and return parsed metrics.
-- `qc_alignment`: run `samtools stats` and return parsed metrics.
-- `fastp_filter`: optional filter/trim; returns the `fastp` JSON report.
-- `fastq_eda`: aggregate `seqkit` stats with optional `NanoPlot` JSON export.
-- `env_check`: report availability and versions of configured CLI tools.
+- `qc_reads`: nanoq read-level QC (counts, lengths, qscore histogram).
+- `filter_reads`: chopper filtering/trimming; returns command + stats.
+- `read_length_distribution`: percentiles + histogram from nanoq.
+- `qscore_distribution`: per-read q-score histogram from nanoq.
+- `qc_alignment`: cramino alignment QC (mapped/unmapped, identity, MAPQ hist; use `use_scaled` for base-weighted bins).
+- `coverage_stats`: mosdepth coverage summary.
+- `alignment_error_profile`: error rates parsed from `samtools stats`.
+- `alignment_summary`: aggregates cramino + mosdepth (+ error profile).
+- `env_status`: report availability and resolved paths for all tools.
+- `header_metadata_tool`: extract BAM/CRAM/VCF header metadata (contigs, samples, programs) plus a concise summary.
+- Guidance resource: `tool://guidance/{tool}` returns runtime hints, defaults (threads/timeouts), and links to flag schemas/recipes to help orchestration layers decide whether to call a tool.
+
+## Execution defaults and configurability
+- CLI calls are executed in worker threads to avoid blocking the MCP event loop.
+- Defaults are conservative and overridable via environment variables:
+  - `MCP_THREADS_DEFAULT` / `MCP_THREADS_<TOOL>` (e.g., `MCP_THREADS_NANOQ`)
+  - `MCP_TIMEOUT_DEFAULT` / `MCP_TIMEOUT_<TOOL>` (seconds; e.g., `MCP_TIMEOUT_MOSDEPTH`)
+- Per-tool defaults are also reflected in the guidance resource and tool descriptions returned by `list_tools`.
 
 ## Development
 ```bash
-pip install -e ".[dev]"
+pip install -e ".[dev]"           # base dev deps
+pip install -e ".[plots]"        # add matplotlib if you want PNG histograms
 pytest
 ```
 
 ## Notes
-- Outputs favor JSON/CLI-style data so they can be consumed by downstream workflows.
-- Plotting hooks are scaffolded; NanoPlot JSON export can be wired in later without changing the MCP interface.
+- Outputs are JSON-first to play well with downstream pipelines.
+- Plotting helpers emit file paths (PNG); no base64 payloads are returned.
 
