@@ -19,4 +19,3 @@ def test_run_command_with_retry_success():
 def test_run_command_with_retry_failure():
     with pytest.raises(CommandError):
         run_command_with_retry(["python", "-c", "import sys; sys.exit(2)"], max_attempts=2, backoff_seconds=0.01)
-

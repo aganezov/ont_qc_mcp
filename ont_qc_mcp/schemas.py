@@ -215,4 +215,3 @@ __all__ = [
     "SampleRecord",
     "VCFFieldDef",
 ]
-

@@ -90,12 +90,8 @@ def parse_nanoq_json(payload: str | dict) -> NanoqStats:
     if not isinstance(qscore_info, dict):
         qscore_info = {}
 
-    length_bins_present = isinstance(length_info, dict) and (
-        "hist" in length_info or "histogram" in length_info
-    )
-    qscore_bins_present = isinstance(qscore_info, dict) and (
-        "hist" in qscore_info or "histogram" in qscore_info
-    )
+    length_bins_present = isinstance(length_info, dict) and ("hist" in length_info or "histogram" in length_info)
+    qscore_bins_present = isinstance(qscore_info, dict) and ("hist" in qscore_info or "histogram" in qscore_info)
     length_bins_raw = None
     qscore_bins_raw = None
     if isinstance(length_info, dict):
@@ -108,10 +104,14 @@ def parse_nanoq_json(payload: str | dict) -> NanoqStats:
             qscore_bins_raw = qscore_info.get("histogram")
 
     percentiles = (
-        _safe_percentiles(length_info.get("percentiles", {}))
-        if isinstance(length_info, dict) and "percentiles" in length_info
+        (
+            _safe_percentiles(length_info.get("percentiles", {}))
+            if isinstance(length_info, dict) and "percentiles" in length_info
+            else None
+        )
+        if isinstance(length_info, dict)
         else None
-    ) if isinstance(length_info, dict) else None
+    )
 
     # Fallbacks to keep previous defaults when values are missing.
     read_count = (
@@ -138,12 +138,8 @@ def parse_nanoq_json(payload: str | dict) -> NanoqStats:
         mean_len=float(length_info.get("mean", 0.0) or 0.0),
         median_len=float(length_info.get("median", length_info.get("p50", 0.0) or 0.0)),
         n50=length_info.get("n50"),
-        mean_qscore=float(qscore_info.get("mean", qscore_info.get("average", 0.0) or 0.0))
-        if qscore_info
-        else None,
-        median_qscore=float(qscore_info.get("median", qscore_info.get("p50", 0.0) or 0.0))
-        if qscore_info
-        else None,
+        mean_qscore=float(qscore_info.get("mean", qscore_info.get("average", 0.0) or 0.0)) if qscore_info else None,
+        median_qscore=float(qscore_info.get("median", qscore_info.get("p50", 0.0) or 0.0)) if qscore_info else None,
         gc_content=read_stats.get("gc") if isinstance(read_stats, dict) else summary.get("gc"),
         length_percentiles=percentiles,
         length_histogram=_histogram_or_none(length_bins_raw, length_bins_present),
@@ -245,9 +241,7 @@ def parse_mosdepth_summary(text: str, file_path: str, threshold: float | int | N
         if len(parts) < 4:
             continue
         contig, length, _, mean = parts[0], int(parts[1]), float(parts[2]), float(parts[3])
-        coverage_by_contig.append(
-            CoverageByContig(contig=contig, length=length, mean_depth=mean, median_depth=None)
-        )
+        coverage_by_contig.append(CoverageByContig(contig=contig, length=length, mean_depth=mean, median_depth=None))
 
     total_len = sum(c.length or 0 for c in coverage_by_contig)
     unweighted_mean = (
@@ -629,9 +623,7 @@ def summarize_header(metadata: HeaderMetadata) -> str:
         + sum(len(f.other) for f in metadata.filter_fields)
     )
     if any([extra_header, extra_ref, extra_prog, extra_rg, extra_vcf]):
-        parts.append(
-            f"extras h={extra_header},sq={extra_ref},pg={extra_prog},rg={extra_rg},vcf={extra_vcf}"
-        )
+        parts.append(f"extras h={extra_header},sq={extra_ref},pg={extra_prog},rg={extra_rg},vcf={extra_vcf}")
     summary = "; ".join(parts)
     metadata.summary = summary
     return summary
@@ -648,4 +640,3 @@ __all__ = [
     "parse_vcf_header",
     "summarize_header",
 ]
-

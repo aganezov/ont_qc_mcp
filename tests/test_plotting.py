@@ -20,4 +20,3 @@ def test_plot_qscore_histogram(tmp_path):
     path = plot_qscore_histogram(bins, output_path=output)
     assert output.exists()
     assert str(output) == path
-

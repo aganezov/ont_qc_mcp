@@ -224,7 +224,7 @@ def test_parse_vcf_header_and_summary():
         [
             "##fileformat=VCFv4.3",
             "##source=test-generator",
-            '##contig=<ID=chr1,length=5000,IDX=1>',
+            "##contig=<ID=chr1,length=5000,IDX=1>",
             '##INFO=<ID=DP,Number=1,Type=Integer,Description="Depth",Source="caller">',
             '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype",Version="1.0">',
             "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\ts1\ts2",
@@ -247,7 +247,7 @@ def test_header_metadata_lookup_vcf_max_lines(tmp_path):
         [
             "##fileformat=VCFv4.3",
             "##source=test-suite",
-            "##INFO=<ID=DP,Number=1,Type=Integer,Description=\"Depth\">",
+            '##INFO=<ID=DP,Number=1,Type=Integer,Description="Depth">',
             "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO",
         ]
     )
@@ -363,4 +363,3 @@ def test_nanoq_cache_thread_safe(monkeypatch, tmp_path):
 
     assert call_count["n"] == 1
     m_tools._NANOQ_CACHE.clear()
-
