@@ -262,7 +262,11 @@ _TOOL_SPECS = [
         description="Check availability of required CLI tools",
         handler=env_status,
         schema={"type": "object", "properties": {}},
-        metadata={"runtime_hint": "instant (<1s)", "io_hint": "No inputs; checks PATH for required CLI tools", "timeout_seconds": 30},
+        metadata={
+            "runtime_hint": "instant (<1s)",
+            "io_hint": "No inputs; checks PATH for required CLI tools",
+            "timeout_seconds": 30,
+        },
     ),
     ToolSpec(
         name="qc_alignment_tool",
@@ -411,7 +415,9 @@ _TOOL_SPECS = [
             "io_hint": "Reads BAM/CRAM; writes temporary outputs only",
             "default_threads": EXEC_CFG.threads_for("mosdepth"),
             "timeout_seconds": EXEC_CFG.timeout_for("mosdepth"),
-            "when_to_use": "Depth-of-coverage summaries via mosdepth; tune window/quantize/fast-mode to control cost.",
+            "when_to_use": (
+                "Depth-of-coverage summaries via mosdepth; tune window/quantize/fast-mode to control cost."
+            ),
         },
     ),
     ToolSpec(
@@ -428,7 +434,9 @@ _TOOL_SPECS = [
             "io_hint": "Reads BAM/CRAM; uses samtools stats",
             "default_threads": EXEC_CFG.threads_for("samtools"),
             "timeout_seconds": EXEC_CFG.timeout_for("samtools"),
-            "when_to_use": "Base error profile and indel/substitution rates from samtools stats; opt-in to avoid extra cost.",
+            "when_to_use": (
+                "Base error profile and indel/substitution rates from samtools stats; opt-in to avoid extra cost."
+            ),
         },
     ),
     ToolSpec(
@@ -463,7 +471,9 @@ _TOOL_SPECS = [
             "io_hint": "Reads BAM/CRAM; aggregates multiple tools",
             "default_threads": _SUMMARY_THREADS,
             "timeout_seconds": _SUMMARY_TIMEOUT,
-            "when_to_use": "One-shot QC combining alignment, coverage, and optional error profile (opt-in).",
+            "when_to_use": (
+                "One-shot QC combining alignment, coverage, and optional error profile (opt-in)."
+            ),
         },
     ),
     ToolSpec(

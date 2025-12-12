@@ -170,7 +170,11 @@ def chopper_filter(
     except CommandError as exc:
         # Fallback for older chopper versions: no subcommand, no JSON; stream stdout directly to output_fastq.
         stderr_text = exc.result.stderr or ""
-        capability_error = "report-json" in stderr_text or "filter" in stderr_text.lower() or "unknown command" in stderr_text.lower()
+        capability_error = (
+            "report-json" in stderr_text
+            or "filter" in stderr_text.lower()
+            or "unknown command" in stderr_text.lower()
+        )
         if not capability_error:
             if created_temp_output and output_fastq.exists():
                 output_fastq.unlink(missing_ok=True)
@@ -360,7 +364,11 @@ def nanoq_from_bam_streaming(
             stderr_thread.join(timeout=0.2)
 
     sam_rc = sam_proc.returncode
-    sam_err_text = sam_err.decode("utf-8", errors="replace") if isinstance(sam_err, (bytes, bytearray)) else (sam_err or "")
+    sam_err_text = (
+        sam_err.decode("utf-8", errors="replace")
+        if isinstance(sam_err, (bytes, bytearray))
+        else (sam_err or "")
+    )
     if stderr_tail:
         tail_text = "\n".join(stderr_tail)
         sam_err_text = tail_text if sam_err_text == "" else sam_err_text or tail_text
