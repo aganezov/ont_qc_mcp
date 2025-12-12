@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "ONT QC MCP Maintainers" }]
-urls = { "Repository" = "https://github.com/ont-qc-mcp/ont-qc-mcp", "Issues" = "https://github.com/ont-qc-mcp/ont-qc-mcp/issues" }
+urls = { "Repository" = "https://github.com/aganezov/ont_qc_mcp", "Issues" = "https://github.com/aganezov/ont_qc_mcp/issues" }
 classifiers = [
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
