@@ -39,8 +39,18 @@ TOOL_FLAGS: dict[str, list[FlagDef]] = {
         FlagDef(param="maxlength", name="--maxlength", type="int", description="Maximum read length"),
         FlagDef(param="quality", name="--quality", short="-q", type="int", description="Minimum mean Q-score"),
         FlagDef(param="cutoff", name="--cutoff", type="int", description="Quality cutoff for adaptive trimming"),
-        FlagDef(param="trim_approach", name="--trim-approach", type="str", description="Trimming strategy (e.g., fixed-crop, trim-by-quality)"),
-        FlagDef(param="inverse", name="--inverse", type="bool", description="Inverse selection (emit reads that would be filtered)"),
+        FlagDef(
+            param="trim_approach",
+            name="--trim-approach",
+            type="str",
+            description="Trimming strategy (e.g., fixed-crop, trim-by-quality)",
+        ),
+        FlagDef(
+            param="inverse",
+            name="--inverse",
+            type="bool",
+            description="Inverse selection (emit reads that would be filtered)",
+        ),
         FlagDef(param="threads", name="--threads", short="-t", type="int", description="Worker threads"),
     ],
     "cramino": [
@@ -57,8 +67,18 @@ TOOL_FLAGS: dict[str, list[FlagDef]] = {
         FlagDef(param="mapq", name="--mapq", type="int", description="Minimum MAPQ to include"),
         FlagDef(param="flag", name="--flag", type="int", description="Include reads with SAM flag filter"),
         FlagDef(param="fast_mode", name="--fast-mode", short="-x", type="bool", description="Skip overlap correction (faster)"),
-        FlagDef(param="quantize", name="--quantize", type="str", description="Coverage quantization bins (colon-separated)"),
-        FlagDef(param="thresholds", name="--thresholds", type="str", description="Emit threshold BED for depths (comma-separated)"),
+        FlagDef(
+            param="quantize",
+            name="--quantize",
+            type="str",
+            description="Coverage quantization bins (colon-separated)",
+        ),
+        FlagDef(
+            param="thresholds",
+            name="--thresholds",
+            type="str",
+            description="Emit threshold BED for depths (comma-separated)",
+        ),
     ],
     "samtools": [
         FlagDef(param="threads", name="-@", type="int", description="Worker threads"),

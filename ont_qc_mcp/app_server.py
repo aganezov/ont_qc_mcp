@@ -351,7 +351,10 @@ _TOOL_SPECS = [
         handler=read_length_distribution_bam_tool,
         schema={
             "type": "object",
-            "properties": {"path": {**_PATH_PROP, "description": "Path to BAM/CRAM alignment file"}, "flags": _FLAGS_PROP},
+            "properties": {
+                "path": {**_PATH_PROP, "description": "Path to BAM/CRAM alignment file"},
+                "flags": _FLAGS_PROP,
+            },
             "required": ["path"],
         },
         metadata={
@@ -385,7 +388,10 @@ _TOOL_SPECS = [
         handler=qscore_distribution_bam_tool,
         schema={
             "type": "object",
-            "properties": {"path": {**_PATH_PROP, "description": "Path to BAM/CRAM alignment file"}, "flags": _FLAGS_PROP},
+            "properties": {
+                "path": {**_PATH_PROP, "description": "Path to BAM/CRAM alignment file"},
+                "flags": _FLAGS_PROP,
+            },
             "required": ["path"],
         },
         metadata={
@@ -405,7 +411,10 @@ _TOOL_SPECS = [
             "properties": {
                 "path": {**_PATH_PROP, "description": "Path to BAM/CRAM alignment file"},
                 "window": {"type": "integer", "description": "Window size for coverage calculation"},
-                "low_cov_threshold": {"type": "number", "description": "Mark contigs with mean depth below this threshold"},
+                "low_cov_threshold": {
+                    "type": "number",
+                    "description": "Mark contigs with mean depth below this threshold",
+                },
                 "flags": _FLAGS_PROP,
             },
             "required": ["path"],
@@ -484,8 +493,15 @@ _TOOL_SPECS = [
             "type": "object",
             "properties": {
                 "path": {**_PATH_PROP, "description": "Path to BAM/CRAM/VCF file"},
-                "file_type": {"type": "string", "enum": ["bam", "cram", "sam", "vcf"], "description": "Override detected file type"},
-                "flags": {"type": "object", "description": "Optional flags for samtools when reading BAM/CRAM headers"},
+                "file_type": {
+                    "type": "string",
+                    "enum": ["bam", "cram", "sam", "vcf"],
+                    "description": "Override detected file type",
+                },
+                "flags": {
+                    "type": "object",
+                    "description": "Optional flags for samtools when reading BAM/CRAM headers",
+                },
                 "max_lines": {
                     "type": "integer",
                     "description": "Maximum number of VCF header lines to read (guards huge headers)",
