@@ -44,7 +44,13 @@ def _plot_histogram(
 
 def plot_length_histogram(bins: list[HistogramBin], output_path: str | None = None) -> str:
     """Save a length histogram PNG and return its path."""
-    return _plot_histogram(bins, xlabel="Read length (bp)", ylabel="Count", title="read_length_histogram", output_path=output_path)
+    return _plot_histogram(
+        bins,
+        xlabel="Read length (bp)",
+        ylabel="Count",
+        title="read_length_histogram",
+        output_path=output_path,
+    )
 
 
 def plot_qscore_histogram(bins: list[HistogramBin], output_path: str | None = None) -> str:

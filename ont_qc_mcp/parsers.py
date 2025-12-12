@@ -114,8 +114,16 @@ def parse_nanoq_json(payload: str | dict) -> NanoqStats:
     ) if isinstance(length_info, dict) else None
 
     # Fallbacks to keep previous defaults when values are missing.
-    read_count = read_stats.get("count", read_stats.get("reads", 0) or 0) if isinstance(read_stats, dict) else int(raw_reads or 0)
-    total_bases = read_stats.get("bases", read_stats.get("total_bases", 0) or 0) if isinstance(read_stats, dict) else summary.get("bases", 0)
+    read_count = (
+        read_stats.get("count", read_stats.get("reads", 0) or 0)
+        if isinstance(read_stats, dict)
+        else int(raw_reads or 0)
+    )
+    total_bases = (
+        read_stats.get("bases", read_stats.get("total_bases", 0) or 0)
+        if isinstance(read_stats, dict)
+        else summary.get("bases", 0)
+    )
 
     for name, val in (("read_count", read_count), ("total_bases", total_bases)):
         if val is not None and val < 0:
@@ -236,7 +244,7 @@ def parse_mosdepth_summary(text: str, file_path: str, threshold: float | int | N
         parts = line.strip().split("\t")
         if len(parts) < 4:
             continue
-        contig, length, bases, mean = parts[0], int(parts[1]), float(parts[2]), float(parts[3])
+        contig, length, _, mean = parts[0], int(parts[1]), float(parts[2]), float(parts[3])
         coverage_by_contig.append(
             CoverageByContig(contig=contig, length=length, mean_depth=mean, median_depth=None)
         )
