@@ -1,6 +1,6 @@
 import json
 import re
-from typing import Dict, List, Optional, Sequence
+from typing import Sequence
 
 from .schemas import (
     CraminoStats,
@@ -21,8 +21,8 @@ from .schemas import (
 )
 
 
-def _histogram_from_seq(bins: Sequence[Sequence[float]]) -> List[HistogramBin]:
-    histogram: List[HistogramBin] = []
+def _histogram_from_seq(bins: Sequence[Sequence[float]]) -> list[HistogramBin]:
+    histogram: list[HistogramBin] = []
     for entry in bins:
         if len(entry) < 3:
             continue
@@ -31,7 +31,7 @@ def _histogram_from_seq(bins: Sequence[Sequence[float]]) -> List[HistogramBin]:
     return histogram
 
 
-def _histogram_or_none(bins: Sequence[Sequence[float]] | None, present: bool) -> Optional[List[HistogramBin]]:
+def _histogram_or_none(bins: Sequence[Sequence[float]] | None, present: bool) -> list[HistogramBin] | None:
     if not present:
         return None
     if not bins:
@@ -39,7 +39,7 @@ def _histogram_or_none(bins: Sequence[Sequence[float]] | None, present: bool) ->
     return _histogram_from_seq(bins)
 
 
-def _safe_percentiles(data: Dict[str, float]) -> LengthPercentiles:
+def _safe_percentiles(data: dict[str, float]) -> LengthPercentiles:
     return LengthPercentiles(
         p1=data.get("p1"),
         p5=data.get("p5"),
@@ -51,7 +51,7 @@ def _safe_percentiles(data: Dict[str, float]) -> LengthPercentiles:
     )
 
 
-def parse_nanoq_json(payload: str | Dict) -> NanoqStats:
+def parse_nanoq_json(payload: str | dict) -> NanoqStats:
     """
     Parse nanoq --stats --json output.
     The JSON schema can vary by version; we defensively access keys.
@@ -143,7 +143,7 @@ def parse_nanoq_json(payload: str | Dict) -> NanoqStats:
     )
 
 
-def parse_read_length_distribution(payload: str | Dict) -> ReadLengthDistribution:
+def parse_read_length_distribution(payload: str | dict) -> ReadLengthDistribution:
     data = json.loads(payload) if isinstance(payload, str) else payload
     stats = parse_nanoq_json(data)
     return ReadLengthDistribution(
@@ -153,7 +153,7 @@ def parse_read_length_distribution(payload: str | Dict) -> ReadLengthDistributio
     )
 
 
-def parse_qscore_distribution(payload: str | Dict) -> QScoreDistribution:
+def parse_qscore_distribution(payload: str | dict) -> QScoreDistribution:
     data = json.loads(payload) if isinstance(payload, str) else payload
     stats = parse_nanoq_json(data)
     return QScoreDistribution(
@@ -166,9 +166,9 @@ def parse_qscore_distribution(payload: str | Dict) -> QScoreDistribution:
 
 
 def parse_cramino_json(
-    payload: str | Dict,
-    length_bins: Optional[List[HistogramBin]] = None,
-    length_bins_scaled: Optional[List[HistogramBin]] = None,
+    payload: str | dict,
+    length_bins: list[HistogramBin] | None = None,
+    length_bins_scaled: list[HistogramBin] | None = None,
 ) -> CraminoStats:
     """
     Parse cramino JSON output (e.g., --format json), supporting both count and scaled histograms.
@@ -228,8 +228,8 @@ def parse_mosdepth_summary(text: str, file_path: str, threshold: float | int | N
     Parse mosdepth .summary.txt output.
     Expected columns: chrom, length, bases, mean
     """
-    coverage_by_contig = []
-    coverage_distribution = []
+    coverage_by_contig: list[CoverageByContig] = []
+    coverage_distribution: list[CoverageByContig] = []
     for line in text.splitlines():
         if not line.strip() or line.startswith("chrom"):
             continue
@@ -249,7 +249,7 @@ def parse_mosdepth_summary(text: str, file_path: str, threshold: float | int | N
         sum((c.mean_depth) * (c.length or 0) for c in coverage_by_contig) / total_len if total_len else unweighted_mean
     )
 
-    low_cov: List[LowCoverageRegion] = []
+    low_cov: list[LowCoverageRegion] = []
     if threshold is not None:
         for c in coverage_by_contig:
             if c.mean_depth < float(threshold):
@@ -278,11 +278,11 @@ def parse_error_profile(text: str, file_path: str) -> ErrorProfile:
     Parse error-related metrics from samtools stats output.
     Falls back gracefully when metrics are absent.
     """
-    metrics: Dict[str, str] = {}
-    coverage_hist: List[HistogramBin] = []
-    gc_cov: List[HistogramBin] = []
-    mismatch_by_cycle: Dict[int, float] = {}
-    insert_hist: List[HistogramBin] = []
+    metrics: dict[str, str] = {}
+    coverage_hist: list[HistogramBin] = []
+    gc_cov: list[HistogramBin] = []
+    mismatch_by_cycle: dict[int, float] = {}
+    insert_hist: list[HistogramBin] = []
     pattern = re.compile(r"^SN\t(.+?):\t(.+)")
     for line in text.splitlines():
         if line.startswith("COV\t"):
@@ -364,8 +364,8 @@ def parse_error_profile(text: str, file_path: str) -> ErrorProfile:
     )
 
 
-def _parse_tag_fields(parts: Sequence[str]) -> Dict[str, str]:
-    fields: Dict[str, str] = {}
+def _parse_tag_fields(parts: Sequence[str]) -> dict[str, str]:
+    fields: dict[str, str] = {}
     for part in parts:
         if ":" not in part:
             continue
@@ -378,12 +378,12 @@ def parse_alignment_header(header_text: str, file_path: str, fmt: str) -> Header
     """
     Parse SAM/BAM/CRAM header text into structured metadata.
     """
-    references: List[ReferenceRecord] = []
-    programs: List[ProgramRecord] = []
-    samples: List[SampleRecord] = []
-    comments: List[str] = []
-    metadata: Dict[str, str] = {}
-    header_other: Dict[str, str] = {}
+    references: list[ReferenceRecord] = []
+    programs: list[ProgramRecord] = []
+    samples: list[SampleRecord] = []
+    comments: list[str] = []
+    metadata: dict[str, str] = {}
+    header_other: dict[str, str] = {}
 
     for line in header_text.splitlines():
         if not line.startswith("@"):
@@ -471,14 +471,14 @@ def parse_alignment_header(header_text: str, file_path: str, fmt: str) -> Header
     )
 
 
-def _parse_angle_bracket_fields(value: str) -> Dict[str, str]:
+def _parse_angle_bracket_fields(value: str) -> dict[str, str]:
     """
     Parse VCF-style key/value lists inside angle brackets, respecting quoted commas.
     """
     if value.startswith("<") and value.endswith(">"):
         value = value[1:-1]
 
-    fields: Dict[str, str] = {}
+    fields: dict[str, str] = {}
     current = []
     in_quotes = False
 
@@ -507,13 +507,13 @@ def parse_vcf_header(header_text: str, file_path: str) -> HeaderMetadata:
     Parse VCF header text into structured metadata.
     Only header lines (## / #CHROM) are required.
     """
-    references: List[ReferenceRecord] = []
-    info_fields: List[VCFFieldDef] = []
-    format_fields: List[VCFFieldDef] = []
-    filter_fields: List[VCFFieldDef] = []
-    samples: List[SampleRecord] = []
-    metadata: Dict[str, str] = {}
-    comments: List[str] = []
+    references: list[ReferenceRecord] = []
+    info_fields: list[VCFFieldDef] = []
+    format_fields: list[VCFFieldDef] = []
+    filter_fields: list[VCFFieldDef] = []
+    samples: list[SampleRecord] = []
+    metadata: dict[str, str] = {}
+    comments: list[str] = []
 
     for line in header_text.splitlines():
         if not line.startswith("#"):
@@ -590,7 +590,7 @@ def parse_vcf_header(header_text: str, file_path: str) -> HeaderMetadata:
 
 def summarize_header(metadata: HeaderMetadata) -> str:
     """Generate a concise human-friendly summary for a header."""
-    parts: List[str] = []
+    parts: list[str] = []
     parts.append(f"{metadata.format.upper()} header")
     if metadata.references:
         contigs = ", ".join(ref.name for ref in metadata.references[:3])
