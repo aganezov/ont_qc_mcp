@@ -1,7 +1,10 @@
 import json
 import shutil
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+
+import pytest
 
 from ont_qc_mcp.parsers import (
     parse_alignment_header,
@@ -91,8 +94,8 @@ def test_parse_nanoq_json_real_fixture():
     assert parsed.mean_len > 0
     assert parsed.median_len > 0
     # Histogram is absent in this nanoq version but parser should not crash.
-    assert parsed.length_histogram == []
-    assert parsed.qscore_histogram == []
+    assert parsed.length_histogram is None
+    assert parsed.qscore_histogram is None
 
 
 def test_parse_cramino_json_real_fixture():
@@ -107,6 +110,7 @@ def test_parse_cramino_json_real_fixture():
     assert parsed.length_histogram is None or isinstance(parsed.length_histogram, list)
 
 
+@pytest.mark.integration
 def test_parse_nanoq_json_real_cli(sample_fastq):
     if not shutil.which("nanoq"):
         pytest.skip("nanoq not available")
@@ -122,6 +126,7 @@ def test_parse_nanoq_json_real_cli(sample_fastq):
     assert parsed.mean_qscore is not None
 
 
+@pytest.mark.integration
 def test_parse_cramino_json_real_cli(sample_bam):
     if not shutil.which("cramino"):
         pytest.skip("cramino not available")
@@ -304,5 +309,47 @@ def test_fastq_histogram_tools_reuse_nanoq_cache(monkeypatch, tmp_path):
     m_tools.qscore_distribution(str(fastq_path), flags={"min_len": 10})
     assert call_count["n"] == 2
 
+    m_tools._NANOQ_CACHE.clear()
+
+
+def test_nanoq_cache_thread_safe(monkeypatch, tmp_path):
+    from ont_qc_mcp import tools as m_tools
+    from ont_qc_mcp.schemas import LengthPercentiles, NanoqStats
+
+    m_tools._NANOQ_CACHE.clear()
+
+    fastq_path = tmp_path / "reads.fastq"
+    fastq_path.write_text("@r1\nACGT\n+\n!!!!\n")
+
+    call_count = {"n": 0}
+
+    def fake_nanoq(path, tool_paths, flags=None, exec_cfg=None):
+        call_count["n"] += 1
+        return NanoqStats(
+            file=str(path),
+            read_count=1,
+            total_bases=4,
+            min_len=4,
+            max_len=4,
+            mean_len=4.0,
+            median_len=4.0,
+            n50=None,
+            mean_qscore=12.0,
+            median_qscore=12.0,
+            gc_content=None,
+            length_percentiles=LengthPercentiles(p50=4),
+            length_histogram=[],
+            qscore_histogram=[],
+        )
+
+    monkeypatch.setattr(m_tools, "nanoq_stats", fake_nanoq)
+
+    def run_cached():
+        return m_tools.qscore_distribution(str(fastq_path))
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        list(executor.map(lambda _: run_cached(), range(8)))
+
+    assert call_count["n"] == 1
     m_tools._NANOQ_CACHE.clear()
 

@@ -8,16 +8,16 @@
       "samtools": true
     },
     "resolved_paths": {
-      "nanoq": "/Users/saganezov/.cargo/bin/nanoq",
-      "chopper": "/Users/saganezov/miniforge3/envs/ont-qc-mcp/bin/chopper",
-      "cramino": "/Users/saganezov/miniforge3/envs/ont-qc-mcp/bin/cramino",
-      "mosdepth": "/Users/saganezov/miniforge3/envs/ont-qc-mcp/bin/mosdepth",
-      "samtools": "/Users/saganezov/miniforge3/envs/ont-qc-mcp/bin/samtools"
+      "nanoq": "/opt/tools/bin/nanoq",
+      "chopper": "/opt/tools/bin/chopper",
+      "cramino": "/opt/tools/bin/cramino",
+      "mosdepth": "/opt/tools/bin/mosdepth",
+      "samtools": "/opt/tools/bin/samtools"
     },
     "missing": []
   },
   "qc_reads_fastq_tool": {
-    "file": "unknown",
+    "file": "tests/fixtures/real/haplotag.large.fq.gz",
     "read_count": 221,
     "total_bases": 1268233,
     "min_len": 1065,
@@ -57,7 +57,7 @@
     "output_fastq": "/var/folders/4l/8gfmmd1x1y90k1932xrwqt1w0000gn/T/tmprc7p563l.fastq"
   },
   "read_length_distribution_fastq_tool": {
-    "file": "unknown",
+    "file": "tests/fixtures/real/haplotag.large.fq.gz",
     "percentiles": {
       "p1": null,
       "p5": null,
@@ -70,14 +70,14 @@
     "histogram": []
   },
   "qscore_distribution_fastq_tool": {
-    "file": "unknown",
+    "file": "tests/fixtures/real/haplotag.large.fq.gz",
     "mean_qscore": 33.0001,
     "median_qscore": 33.00012,
     "histogram": [],
     "per_position_mean": null
   },
   "read_length_distribution_bam_tool": {
-    "file": "unknown",
+    "file": "tests/fixtures/real/haplotag.large.bam",
     "percentiles": {
       "p1": null,
       "p5": null,
@@ -90,7 +90,7 @@
     "histogram": []
   },
   "qscore_distribution_bam_tool": {
-    "file": "unknown",
+    "file": "tests/fixtures/real/haplotag.large.bam",
     "mean_qscore": 33.0001,
     "median_qscore": 33.00012,
     "histogram": [],
@@ -99,8 +99,8 @@
   "qc_alignment_tool": {
     "file": "tests/fixtures/real/haplotag.large.bam",
     "total_reads": 221,
-    "mapped": 0,
-    "unmapped": 0,
+    "mapped": null,
+    "unmapped": null,
     "primary": null,
     "secondary": null,
     "supplementary": null,
@@ -234,8 +234,8 @@
     "alignment": {
       "file": "tests/fixtures/real/haplotag.large.bam",
       "total_reads": 221,
-      "mapped": 0,
-      "unmapped": 0,
+      "mapped": null,
+      "unmapped": null,
       "primary": null,
       "secondary": null,
       "supplementary": null,
@@ -344,8 +344,8 @@
     "alignment": {
       "file": "tests/fixtures/synthetic/highdepth.bam",
       "total_reads": 50,
-      "mapped": 0,
-      "unmapped": 0,
+      "mapped": null,
+      "unmapped": null,
       "primary": null,
       "secondary": null,
       "supplementary": null,

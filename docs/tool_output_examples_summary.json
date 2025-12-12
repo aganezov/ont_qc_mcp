@@ -8,11 +8,11 @@
       "samtools": true
     },
     "resolved_paths": {
-      "nanoq": "/Users/saganezov/.cargo/bin/nanoq",
-      "chopper": "/Users/saganezov/miniforge3/envs/ont-qc-mcp/bin/chopper",
-      "cramino": "/Users/saganezov/miniforge3/envs/ont-qc-mcp/bin/cramino",
-      "mosdepth": "/Users/saganezov/miniforge3/envs/ont-qc-mcp/bin/mosdepth",
-      "samtools": "/Users/saganezov/miniforge3/envs/ont-qc-mcp/bin/samtools"
+      "nanoq": "/opt/tools/bin/nanoq",
+      "chopper": "/opt/tools/bin/chopper",
+      "cramino": "/opt/tools/bin/cramino",
+      "mosdepth": "/opt/tools/bin/mosdepth",
+      "samtools": "/opt/tools/bin/samtools"
     },
     "missing": []
   },
@@ -82,8 +82,8 @@
   },
   "qc_alignment_tool": {
     "total_reads": 221,
-    "mapped": 0,
-    "unmapped": 0,
+    "mapped": null,
+    "unmapped": null,
     "mean_length": 5110.343891402715,
     "median_length": 4142.0,
     "n50": 6828,
@@ -176,7 +176,7 @@
       "coverage",
       "errors"
     ],
-    "alignment_mapped": 0,
+    "alignment_mapped": null,
     "coverage_mean_depth": 0.0
   },
   "alignment_summary_tool_highdepth": {
@@ -189,7 +189,7 @@
       "coverage",
       "errors"
     ],
-    "alignment_mapped": 0,
+    "alignment_mapped": null,
     "coverage_mean_depth": 5.0
   },
   "header_metadata_tool_bam": {

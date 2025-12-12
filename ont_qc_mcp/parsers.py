@@ -31,6 +31,14 @@ def _histogram_from_seq(bins: Sequence[Sequence[float]]) -> List[HistogramBin]:
     return histogram
 
 
+def _histogram_or_none(bins: Sequence[Sequence[float]] | None, present: bool) -> Optional[List[HistogramBin]]:
+    if not present:
+        return None
+    if not bins:
+        return []
+    return _histogram_from_seq(bins)
+
+
 def _safe_percentiles(data: Dict[str, float]) -> LengthPercentiles:
     return LengthPercentiles(
         p1=data.get("p1"),
@@ -48,7 +56,10 @@ def parse_nanoq_json(payload: str | Dict) -> NanoqStats:
     Parse nanoq --stats --json output.
     The JSON schema can vary by version; we defensively access keys.
     """
-    data = json.loads(payload) if isinstance(payload, str) else payload
+    try:
+        data = json.loads(payload) if isinstance(payload, str) else payload
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid nanoq JSON: {exc}") from exc
     summary = data.get("summary", data)
 
     # nanoq >=0.10 emits flat keys; older versions nest under summary.reads.length/qscore.
@@ -79,14 +90,36 @@ def parse_nanoq_json(payload: str | Dict) -> NanoqStats:
     if not isinstance(qscore_info, dict):
         qscore_info = {}
 
-    length_bins_raw = length_info.get("hist") or length_info.get("histogram") or []
-    qscore_bins_raw = qscore_info.get("hist") or qscore_info.get("histogram") or []
+    length_bins_present = isinstance(length_info, dict) and (
+        "hist" in length_info or "histogram" in length_info
+    )
+    qscore_bins_present = isinstance(qscore_info, dict) and (
+        "hist" in qscore_info or "histogram" in qscore_info
+    )
+    length_bins_raw = None
+    qscore_bins_raw = None
+    if isinstance(length_info, dict):
+        length_bins_raw = length_info.get("hist")
+        if length_bins_raw is None:
+            length_bins_raw = length_info.get("histogram")
+    if isinstance(qscore_info, dict):
+        qscore_bins_raw = qscore_info.get("hist")
+        if qscore_bins_raw is None:
+            qscore_bins_raw = qscore_info.get("histogram")
 
-    percentiles = _safe_percentiles(length_info.get("percentiles", {})) if isinstance(length_info, dict) else None
+    percentiles = (
+        _safe_percentiles(length_info.get("percentiles", {}))
+        if isinstance(length_info, dict) and "percentiles" in length_info
+        else None
+    ) if isinstance(length_info, dict) else None
 
     # Fallbacks to keep previous defaults when values are missing.
     read_count = read_stats.get("count", read_stats.get("reads", 0) or 0) if isinstance(read_stats, dict) else int(raw_reads or 0)
     total_bases = read_stats.get("bases", read_stats.get("total_bases", 0) or 0) if isinstance(read_stats, dict) else summary.get("bases", 0)
+
+    for name, val in (("read_count", read_count), ("total_bases", total_bases)):
+        if val is not None and val < 0:
+            raise ValueError(f"Invalid nanoq value: {name} must be non-negative, got {val}")
 
     return NanoqStats(
         file=file_name,
@@ -105,8 +138,8 @@ def parse_nanoq_json(payload: str | Dict) -> NanoqStats:
         else None,
         gc_content=read_stats.get("gc") if isinstance(read_stats, dict) else summary.get("gc"),
         length_percentiles=percentiles,
-        length_histogram=_histogram_from_seq(length_bins_raw),
-        qscore_histogram=_histogram_from_seq(qscore_bins_raw),
+        length_histogram=_histogram_or_none(length_bins_raw, length_bins_present),
+        qscore_histogram=_histogram_or_none(qscore_bins_raw, qscore_bins_present),
     )
 
 
@@ -140,7 +173,10 @@ def parse_cramino_json(
     """
     Parse cramino JSON output (e.g., --format json), supporting both count and scaled histograms.
     """
-    data = json.loads(payload) if isinstance(payload, str) else payload
+    try:
+        data = json.loads(payload) if isinstance(payload, str) else payload
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid cramino JSON: {exc}") from exc
     summary = data.get("summary", data)
     # Support older summary.reads schema and newer cramino >=0.15 schema with alignment_stats/read_stats/identity_stats.
     alignment_stats = summary.get("alignment_stats", {}) if isinstance(summary, dict) else {}
@@ -164,11 +200,14 @@ def parse_cramino_json(
     file_info = summary.get("file_info", {}) if isinstance(summary, dict) else {}
     file_path = file_info.get("path") or file_info.get("name") or summary.get("file", "unknown")
 
+    mapped_val = read_counts.get("mapped") if isinstance(read_counts, dict) else None
+    unmapped_val = read_counts.get("unmapped") if isinstance(read_counts, dict) else None
+
     return CraminoStats(
         file=file_path,
         total_reads=int(read_counts.get("total", read_counts.get("reads", 0) or 0)),
-        mapped=int(read_counts.get("mapped", 0) or 0) if isinstance(read_counts, dict) else 0,
-        unmapped=int(read_counts.get("unmapped", 0) or 0) if isinstance(read_counts, dict) else 0,
+        mapped=int(mapped_val) if mapped_val is not None else None,
+        unmapped=int(unmapped_val) if unmapped_val is not None else None,
         primary=read_counts.get("primary") if isinstance(read_counts, dict) else None,
         secondary=read_counts.get("secondary") if isinstance(read_counts, dict) else None,
         supplementary=read_counts.get("supplementary") if isinstance(read_counts, dict) else None,
@@ -258,14 +297,13 @@ def parse_error_profile(text: str, file_path: str) -> ErrorProfile:
             continue
         if line.startswith("GCD\t"):
             parts = line.strip().split("\t")
-            if len(parts) >= 3:
+            if len(parts) >= 4 and parts[3].isdigit():
                 try:
                     gc_pct = float(parts[1])
-                    depth = float(parts[2])
-                    count = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
+                    count = int(parts[3])
                 except ValueError:
                     continue
-                gc_cov.append(HistogramBin(start=gc_pct, end=gc_pct, count=count or int(depth)))
+                gc_cov.append(HistogramBin(start=gc_pct, end=gc_pct, count=count))
             continue
         if line.startswith("MPC\t"):
             parts = line.strip().split("\t")
@@ -589,4 +627,17 @@ def summarize_header(metadata: HeaderMetadata) -> str:
     summary = "; ".join(parts)
     metadata.summary = summary
     return summary
+
+
+__all__ = [
+    "parse_alignment_header",
+    "parse_cramino_json",
+    "parse_error_profile",
+    "parse_mosdepth_summary",
+    "parse_nanoq_json",
+    "parse_qscore_distribution",
+    "parse_read_length_distribution",
+    "parse_vcf_header",
+    "summarize_header",
+]
 

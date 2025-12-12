@@ -7,7 +7,7 @@
   - BAM: `tests/fixtures/real/haplotag.large.bam`
   - VCF: `tests/fixtures/real/haplotag.large.vcf.gz`
   - High-depth BAM: `tests/fixtures/synthetic/highdepth.bam` (50 x 100bp reads over 1kb)
-- Notes: nanoq v0.10.0 JSON omits histogram blocks, so histograms stay empty though length/quality stats are present. Cramino’s current JSON lacks mapped/unmapped counts, so those remain zero even though identity metrics are populated. The real BAM is extremely downsampled; coverage is near-zero there, but the synthetic BAM shows non-zero coverage.
+- Notes: nanoq v0.10.0 JSON omits histogram blocks, so histograms stay empty though length/quality stats are present. Cramino’s current JSON lacks mapped/unmapped counts, so those are `null` even though identity metrics are populated. The real BAM is extremely downsampled; coverage is near-zero there, but the synthetic BAM shows non-zero coverage.
 
 ## Quick regeneration
 Run this to refresh both JSON files with the real + synthetic fixtures:
@@ -168,7 +168,7 @@ PY
 ## Tool-by-tool examples
 Values come from `docs/tool_output_examples_summary.json` unless noted; see the full JSON for complete payloads.
 
-- **env_status** — call `env_status` (no args). Available: nanoq, chopper, cramino, mosdepth, samtools; resolved paths point to `/Users/saganezov/.cargo/bin/nanoq` and `/Users/saganezov/miniforge3/envs/ont-qc-mcp/bin/*`.
+- **env_status** — call `env_status` (no args). Available: nanoq, chopper, cramino, mosdepth, samtools; resolved paths point to sanitized toolchain paths (e.g., `/opt/tools/bin/nanoq` or `/usr/local/bin/*`).
 
 - **qc_reads_fastq_tool** — call with `{"path": "tests/fixtures/real/haplotag.large.fq.gz"}`.
   - Output excerpt: `read_count=221`, `total_bases=1,268,233`, `mean_len=5738`, `median_len=5087`, `n50=7476`, `mean_qscore≈33`; histograms remain empty in this nanoq build.
@@ -203,7 +203,8 @@ Values come from `docs/tool_output_examples_summary.json` unless noted; see the 
     ```json
     {
       "total_reads": 221,
-      "mapped": 0,
+      "mapped": null,
+      "unmapped": null,
       "length_histogram": [
         {"start": 0.0, "end": 2000.0, "count": 40},
         {"start": 2000.0, "end": 4000.0, "count": 65},
@@ -214,7 +215,7 @@ Values come from `docs/tool_output_examples_summary.json` unless noted; see the 
       "mean_identity": 87.7
     }
     ```
-    The length histogram comes from cramino; mapped/unmapped stay zero because the current cramino JSON lacks those counts even though identity metrics are present.
+    The length histogram comes from cramino; mapped/unmapped are `null` because the current cramino JSON lacks those counts even though identity metrics are present.
 
 - **coverage_stats_tool** — call with the BAM path.
   - Output excerpt: `mean_depth=0.0`, `coverage_distribution=[]`, first contigs show `mean_depth=0.0` (the tiny BAM over chromosome-length references rounds to ~0 depth).
@@ -223,7 +224,7 @@ Values come from `docs/tool_output_examples_summary.json` unless noted; see the 
   - Output excerpt: mismatch/indel rates `null`; `gc_coverage` has three bins (0.0, 22.1, 48.0); coverage histogram empty. This reflects the limited `samtools stats` signal on the tiny BAM.
 
 - **alignment_summary_tool** — call with the BAM path.
-  - Output excerpt: combines the above; `alignment_mapped=0`, `coverage_mean_depth=0.0`, errors `null`.
+  - Output excerpt: combines the above; `alignment_mapped=null`, `coverage_mean_depth=0.0`, errors `null`.
 
 - **alignment_summary_tool (high-depth BAM)** — call with `{"path": "tests/fixtures/synthetic/highdepth.bam"}`.
   - Output excerpt: `coverage_mean_depth=5.0` with non-zero coverage over `chrHD`; alignment section mirrors the synthetic 50 reads.
@@ -236,6 +237,6 @@ Values come from `docs/tool_output_examples_summary.json` unless noted; see the 
 
 ## Notes and gaps
 - nanoq v0.10.0 JSON omits histogram blocks, so histograms/percentiles are empty even though length/quality stats are present.
-- cramino’s current JSON lacks mapped/unmapped counts; identities come through, counts stay zero.
+- cramino’s current JSON lacks mapped/unmapped counts; identities come through, counts are `null`.
 - The real BAM is extremely downsampled relative to whole-genome contig lengths (coverage ~0); the synthetic high-depth BAM is included to show non-zero coverage paths.
 - Flag schemas, recipes, and guidance resources remain available via `tool://flags/{tool}`, `tool://recipes/{tool}`, and `tool://guidance/{tool}`.

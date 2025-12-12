@@ -18,15 +18,25 @@ def _env_int(env_var: str, default: Optional[int]) -> Optional[int]:
         return default
 
 
+def _env_bytes(env_var: str, default: Optional[int]) -> Optional[int]:
+    """
+    Read an integer MB value from env and return bytes. Returns None when unset/invalid.
+    """
+    raw_val = _env_int(env_var, None)
+    if raw_val is None:
+        return default
+    return raw_val * 1024 * 1024
+
+
 @dataclass
 class ToolPaths:
     """Paths to external CLI tools used by the MCP."""
 
-    nanoq: str = _env_or_default("NANOQ", "nanoq")
-    chopper: str = _env_or_default("CHOPPER", "chopper")
-    cramino: str = _env_or_default("CRAMINO", "cramino")
-    mosdepth: str = _env_or_default("MOSDEPTH", "mosdepth")
-    samtools: str = _env_or_default("SAMTOOLS", "samtools")
+    nanoq: str = field(default_factory=lambda: _env_or_default("NANOQ", "nanoq"))
+    chopper: str = field(default_factory=lambda: _env_or_default("CHOPPER", "chopper"))
+    cramino: str = field(default_factory=lambda: _env_or_default("CRAMINO", "cramino"))
+    mosdepth: str = field(default_factory=lambda: _env_or_default("MOSDEPTH", "mosdepth"))
+    samtools: str = field(default_factory=lambda: _env_or_default("SAMTOOLS", "samtools"))
 
     def as_dict(self) -> Dict[str, str]:
         return {
@@ -88,6 +98,8 @@ class ExecutionConfig:
 
     default_threads: int = field(default_factory=lambda: _env_int("MCP_THREADS_DEFAULT", 4))
     default_timeout: int = field(default_factory=lambda: _env_int("MCP_TIMEOUT_DEFAULT", 600))
+    max_file_size_bytes: Optional[int] = field(default_factory=lambda: _env_bytes("MCP_MAX_FILE_MB", None))
+    max_concurrent_operations: Optional[int] = field(default_factory=lambda: _env_int("MCP_MAX_CONCURRENCY", None))
     per_tool_threads: Dict[str, int] = field(
         default_factory=lambda: {
             tool: _env_int(f"MCP_THREADS_{tool.upper()}", None)  # type: ignore[arg-type]
@@ -120,4 +132,7 @@ class ExecutionConfig:
         """
         base = self.per_tool_timeouts.get(tool)
         return base if base is not None else self.default_timeout
+
+
+__all__ = ["ToolPaths", "ExecutionConfig", "DEFAULT_TOOL_TIMEOUTS", "DISABLE_THREADS_DEFAULT"]
 

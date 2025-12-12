@@ -1,5 +1,8 @@
 import gzip
+import logging
 import shutil
+import threading
+from concurrent.futures import Future
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -28,7 +31,10 @@ from .schemas import (
     ReadLengthDistribution,
     LengthPercentiles,
 )
-from .utils import CommandError, _truncate_stderr, format_cmd, run_command
+from .utils import CommandError, _truncate_stderr, format_cmd, report_progress, run_command
+
+
+logger = logging.getLogger(__name__)
 
 
 def env_check(tools: Optional[ToolPaths] = None) -> EnvStatus:
@@ -42,6 +48,8 @@ def env_check(tools: Optional[ToolPaths] = None) -> EnvStatus:
 _EXEC_CFG = ExecutionConfig()
 _NANOQ_CACHE: Dict[tuple, NanoqStats] = {}
 _NANOQ_CACHE_MAX = 8
+_NANOQ_CACHE_LOCK = threading.Lock()
+_NANOQ_INFLIGHT: Dict[tuple, Future] = {}
 
 
 def _nanoq_cache_key(path: Path, flags: Optional[Dict[str, Any]], cfg: ExecutionConfig) -> tuple:
@@ -57,20 +65,66 @@ def _nanoq_cache_key(path: Path, flags: Optional[Dict[str, Any]], cfg: Execution
     )
 
 
+def _validate_input_file(path: Path, cfg: ExecutionConfig, allowed_exts: Optional[tuple[str, ...]] = None) -> None:
+    resolved = path.resolve()
+    if not resolved.exists():
+        raise FileNotFoundError(f"File not found: {resolved}")
+    if not resolved.is_file():
+        raise ValueError(f"Path is not a file: {resolved}")
+    size = resolved.stat().st_size
+    if size == 0:
+        raise ValueError(f"File is empty: {resolved}")
+    if cfg.max_file_size_bytes and size > cfg.max_file_size_bytes:
+        raise ValueError(f"File exceeds configured size limit ({cfg.max_file_size_bytes} bytes): {resolved}")
+    if allowed_exts:
+        lowered_name = resolved.name.lower()
+        if not any(lowered_name.endswith(ext) for ext in allowed_exts):
+            raise ValueError(f"Unexpected file extension for {resolved}; expected one of {allowed_exts}")
+
 def _cached_nanoq_stats(
     path: Path, tools: ToolPaths, flags: Optional[Dict[str, Any]], cfg: ExecutionConfig
 ) -> NanoqStats:
     key = _nanoq_cache_key(path, flags, cfg)
-    cached = _NANOQ_CACHE.get(key)
-    if cached:
-        return cached
+    with _NANOQ_CACHE_LOCK:
+        cached = _NANOQ_CACHE.get(key)
+        if cached:
+            logger.debug("nanoq cache hit for %s", path)
+            return cached
 
-    stats = nanoq_stats(path, tools, flags=flags, exec_cfg=cfg)
-    # Simple bounded cache to avoid unbounded growth.
-    if len(_NANOQ_CACHE) >= _NANOQ_CACHE_MAX:
-        _NANOQ_CACHE.pop(next(iter(_NANOQ_CACHE)))
-    _NANOQ_CACHE[key] = stats
-    return stats
+        future = _NANOQ_INFLIGHT.get(key)
+        if future is None:
+            future = Future()
+            _NANOQ_INFLIGHT[key] = future
+            is_owner = True
+        else:
+            is_owner = False
+
+    if not is_owner:
+        # Another thread is computing this key; wait for it and re-use the result/exception.
+        logger.debug("nanoq cache inflight wait for %s", path)
+        return future.result()
+
+    try:
+        logger.debug("nanoq cache miss, computing for %s", path)
+        stats = nanoq_stats(path, tools, flags=flags, exec_cfg=cfg)
+        if not stats.file or stats.file == "unknown":
+            stats.file = str(path)
+
+        # Simple bounded cache to avoid unbounded growth.
+        with _NANOQ_CACHE_LOCK:
+            if len(_NANOQ_CACHE) >= _NANOQ_CACHE_MAX:
+                _NANOQ_CACHE.pop(next(iter(_NANOQ_CACHE)))
+            _NANOQ_CACHE[key] = stats
+
+        future.set_result(stats)
+        return stats
+    except Exception as exc:
+        future.set_exception(exc)
+        raise
+    finally:
+        with _NANOQ_CACHE_LOCK:
+            if _NANOQ_INFLIGHT.get(key) is future:
+                _NANOQ_INFLIGHT.pop(key, None)
 
 
 def qc_reads(
@@ -82,9 +136,12 @@ def qc_reads(
     tools = tools or ToolPaths()
     cfg = exec_cfg or _EXEC_CFG
     fastq_path = Path(path)
-    if not fastq_path.exists():
-        raise FileNotFoundError(f"FASTQ not found: {fastq_path}")
-    return _cached_nanoq_stats(fastq_path, tools, flags=flags, cfg=cfg)
+    _validate_input_file(fastq_path, cfg, allowed_exts=(".fastq", ".fq", ".fastq.gz", ".fq.gz"))
+    report_progress(f"qc_reads start: {fastq_path}")
+    logger.debug("qc_reads on %s", fastq_path)
+    result = _cached_nanoq_stats(fastq_path, tools, flags=flags, cfg=cfg)
+    report_progress(f"qc_reads done: {fastq_path}")
+    return result
 
 
 def filter_reads(
@@ -97,10 +154,13 @@ def filter_reads(
     tools = tools or ToolPaths()
     cfg = exec_cfg or _EXEC_CFG
     fastq_path = Path(path)
-    if not fastq_path.exists():
-        raise FileNotFoundError(f"FASTQ not found: {fastq_path}")
+    _validate_input_file(fastq_path, cfg, allowed_exts=(".fastq", ".fq", ".fastq.gz", ".fq.gz"))
     output_path = Path(output_fastq) if output_fastq else None
-    return chopper_filter(fastq_path, tools, output_fastq=output_path, flags=flags, exec_cfg=cfg)
+    logger.debug("filter_reads on %s -> %s", fastq_path, output_path or "<temp>")
+    report_progress(f"filter_reads start: {fastq_path}")
+    result = chopper_filter(fastq_path, tools, output_fastq=output_path, flags=flags, exec_cfg=cfg)
+    report_progress(f"filter_reads done: {fastq_path}")
+    return result
 
 
 def read_length_distribution(
@@ -143,8 +203,7 @@ async def read_length_distribution_bam(
 ) -> ReadLengthDistribution:
     tools = tools or ToolPaths()
     aln_path = Path(path)
-    if not aln_path.exists():
-        raise FileNotFoundError(f"Alignment not found: {aln_path}")
+    _validate_input_file(aln_path, exec_cfg or _EXEC_CFG, allowed_exts=(".bam", ".cram", ".sam"))
     stats = await anyio.to_thread.run_sync(
         nanoq_from_bam_streaming, aln_path, tools, flags or {}, exec_cfg or _EXEC_CFG
     )
@@ -163,8 +222,7 @@ async def qscore_distribution_bam(
 ) -> QScoreDistribution:
     tools = tools or ToolPaths()
     aln_path = Path(path)
-    if not aln_path.exists():
-        raise FileNotFoundError(f"Alignment not found: {aln_path}")
+    _validate_input_file(aln_path, exec_cfg or _EXEC_CFG, allowed_exts=(".bam", ".cram", ".sam"))
     stats = await anyio.to_thread.run_sync(
         nanoq_from_bam_streaming, aln_path, tools, flags or {}, exec_cfg or _EXEC_CFG
     )
@@ -186,9 +244,9 @@ def qc_alignment(
 ) -> CraminoStats:
     tools = tools or ToolPaths()
     aln_path = Path(path)
-    if not aln_path.exists():
-        raise FileNotFoundError(f"Alignment not found: {aln_path}")
-    return cramino_stats(
+    _validate_input_file(aln_path, _EXEC_CFG, allowed_exts=(".bam", ".cram", ".sam"))
+    report_progress(f"qc_alignment start: {aln_path}")
+    result = cramino_stats(
         aln_path,
         tools,
         include_hist=include_hist,
@@ -196,6 +254,8 @@ def qc_alignment(
         flags=flags,
         exec_cfg=_EXEC_CFG,
     )
+    report_progress(f"qc_alignment done: {aln_path}")
+    return result
 
 
 def coverage_stats(
@@ -207,9 +267,9 @@ def coverage_stats(
 ) -> MosdepthStats:
     tools = tools or ToolPaths()
     aln_path = Path(path)
-    if not aln_path.exists():
-        raise FileNotFoundError(f"Alignment not found: {aln_path}")
-    return mosdepth_coverage(
+    _validate_input_file(aln_path, _EXEC_CFG, allowed_exts=(".bam", ".cram", ".sam"))
+    report_progress(f"coverage_stats start: {aln_path}")
+    result = mosdepth_coverage(
         aln_path,
         tools,
         window=window,
@@ -217,6 +277,8 @@ def coverage_stats(
         flags=flags,
         exec_cfg=_EXEC_CFG,
     )
+    report_progress(f"coverage_stats done: {aln_path}")
+    return result
 
 
 def alignment_error_profile(
@@ -228,20 +290,23 @@ def alignment_error_profile(
     tools = tools or ToolPaths()
     cfg = exec_cfg or _EXEC_CFG
     aln_path = Path(path)
-    if not aln_path.exists():
-        raise FileNotFoundError(f"Alignment not found: {aln_path}")
+    _validate_input_file(aln_path, cfg, allowed_exts=(".bam", ".cram", ".sam"))
 
     flag_data: Dict[str, Any] = dict(flags or {})
     flag_data.setdefault("threads", cfg.threads_for("samtools"))
     flag_args = build_cli_args("samtools", flag_data)
     cmd = [tools.samtools, "stats", *flag_args, str(aln_path)]
+    report_progress(f"alignment_error_profile start: {aln_path}")
     try:
+        logger.debug("alignment_error_profile via samtools stats: %s", format_cmd(cmd))
         result = run_command(cmd, timeout=cfg.timeout_for("samtools"))
     except CommandError as exc:
         raise RuntimeError(
             f"samtools stats failed: {format_cmd(exc.result.cmd)}\n{_truncate_stderr(exc.result.stderr)}"
         ) from exc
-    return parse_error_profile(result.stdout, file_path=str(aln_path))
+    parsed = parse_error_profile(result.stdout, file_path=str(aln_path))
+    report_progress(f"alignment_error_profile done: {aln_path}")
+    return parsed
 
 
 def alignment_summary(
@@ -258,6 +323,7 @@ def alignment_summary(
     tools: Optional[ToolPaths] = None,
 ) -> QCReport:
     tools = tools or ToolPaths()
+    report_progress(f"alignment_summary start: {path}")
     aln_stats = qc_alignment(path, tools=tools, include_hist=include_hist, use_scaled=use_scaled, flags=cramino_flags)
     coverage = coverage_stats(
         path,
@@ -271,6 +337,7 @@ def alignment_summary(
         if include_error_profile
         else None
     )
+    report_progress(f"alignment_summary done: {path}")
     return QCReport(alignment=aln_stats, coverage=coverage, errors=errors)
 
 
@@ -452,8 +519,7 @@ def header_metadata_lookup(
     tools = tools or ToolPaths()
     cfg = exec_cfg or _EXEC_CFG
     file_path = Path(path)
-    if not file_path.exists():
-        raise FileNotFoundError(f"File not found: {file_path}")
+    _validate_input_file(file_path, cfg)
 
     fmt = _infer_header_format(file_path, file_type)
     if fmt in {"bam", "cram", "sam"}:
@@ -473,4 +539,21 @@ def header_metadata_lookup(
 def serialize_model(model) -> Dict[str, object]:
     """Return a JSON-serializable dict from a pydantic model."""
     return model.model_dump()
+
+
+__all__ = [
+    "alignment_error_profile",
+    "alignment_summary",
+    "coverage_stats",
+    "env_check",
+    "filter_reads",
+    "header_metadata_lookup",
+    "qc_alignment",
+    "qc_reads",
+    "qscore_distribution",
+    "qscore_distribution_bam",
+    "read_length_distribution",
+    "read_length_distribution_bam",
+    "serialize_model",
+]
 

@@ -29,22 +29,27 @@ ont-qc-mcp  # launches the MCP stdio server
 
 ### Consistent environment for tests/tools
 - Use `scripts/with-env.sh` to set PATH and venv for all commands: `scripts/with-env.sh pytest`.
-- It prepends conda CLI tools (`/Users/saganezov/miniforge3/envs/ont-qc-mcp/bin`) and cargo-installed `nanoq` (`/Users/saganezov/.cargo/bin`), then activates `.venv`.
+- It activates `.venv` (if present) and optionally prepends toolchain paths via:
+  - `MCP_TOOLCHAIN_PATH` (directory with nanoq/chopper/cramino/mosdepth/samtools)
+  - `CONDA_PREFIX` (prepends `<conda>/bin` when active)
+  - `CARGO_HOME` or `~/.cargo/bin` (cargo-installed tools)
 - Keep `.venv` in the repo root; if missing, the script warns and continues.
 
 ## MCP tools (high level)
-- `qc_reads`: nanoq read-level QC (counts, lengths, qscore histogram).
-- `filter_reads`: chopper filtering/trimming; returns command + stats.
-- `read_length_distribution`: percentiles + histogram from nanoq.
-- `qscore_distribution`: per-read q-score histogram from nanoq.
-- `qc_alignment`: cramino alignment QC (mapped/unmapped, identity, MAPQ hist; use `use_scaled` for base-weighted bins).
-- `coverage_stats`: mosdepth coverage summary.
-- `alignment_error_profile`: error rates parsed from `samtools stats`.
-- `alignment_summary`: aggregates cramino + mosdepth (+ error profile).
-- `env_status`: report availability and resolved paths for all tools.
+- `env_status`
+- `qc_reads_fastq_tool`: nanoq read-level QC (counts, lengths, qscore histogram).
+- `filter_reads_fastq_tool`: chopper filtering/trimming; returns command + stats.
+- `read_length_distribution_fastq_tool`: percentiles + histogram from nanoq.
+- `qscore_distribution_fastq_tool`: per-read q-score histogram from nanoq.
+- `read_length_distribution_bam_tool`: streaming samtools fastq -> nanoq length stats.
+- `qscore_distribution_bam_tool`: streaming samtools fastq -> nanoq qscore histogram.
+- `qc_alignment_tool`: cramino alignment QC (identity, MAPQ hist; mapped/unmapped may be `null` depending on cramino version; use `use_scaled` for base-weighted bins).
+- `coverage_stats_tool`: mosdepth coverage summary.
+- `alignment_error_profile_tool`: error rates parsed from `samtools stats`.
+- `alignment_summary_tool`: aggregates cramino + mosdepth (+ error profile).
 - `header_metadata_tool`: extract BAM/CRAM/VCF header metadata (contigs, samples, programs) plus a concise summary.
 - Guidance resource: `tool://guidance/{tool}` returns runtime hints, defaults (threads/timeouts), and links to flag schemas/recipes to help orchestration layers decide whether to call a tool.
-- Defaults stay lightweight; heavier steps (error profiles, quantized/threshold coverage) are opt-in via flags.
+- Null/empty semantics: histogram/percentile fields are `null` when the upstream tool omits them; empty lists mean the tool explicitly returned an empty block. Provenance is lightweight by default and can be expanded with `MCP_INCLUDE_PROVENANCE=1`.
 
 ## Execution defaults and configurability
 - CLI calls are executed in worker threads to avoid blocking the MCP event loop.
@@ -59,8 +64,20 @@ ont-qc-mcp  # launches the MCP stdio server
 pip install -e ".[dev]"           # tests + linting/coverage helpers
 pip install -e ".[plots]"         # add matplotlib for PNG histograms
 pip install -e ".[all]"           # everything above in one go
-pytest
+scripts/with-env.sh pytest
 ```
+
+### Helpful wrappers
+- `scripts/with-env.sh <cmd>`: activates `.venv` (if present) and prepends optional toolchain paths. It honors:
+  - `MCP_TOOLCHAIN_PATH` (directory with nanoq/chopper/cramino/mosdepth/samtools)
+  - `CONDA_PREFIX` (prepends `<conda>/bin` when active)
+  - `CARGO_HOME` or `~/.cargo/bin` (cargo-installed tools)
+
+### Common workflows
+- Run the MCP server: `python -m ont_qc_mcp.app_server` (or `ont-qc-mcp` entrypoint)
+- Unit tests only: `scripts/with-env.sh pytest`
+- Full test suite with external CLIs on PATH: `scripts/with-env.sh pytest -m integration` (after CLIs are installed)
+- Regenerate documented tool outputs: see `docs/tool-output-examples.md` for the one-liner
 
 ## Notes
 - Outputs are JSON-first to play well with downstream pipelines.

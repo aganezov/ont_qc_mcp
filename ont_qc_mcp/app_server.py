@@ -1,7 +1,12 @@
 import json
-from typing import List, Optional
+import logging
+import os
+import sys
+from dataclasses import dataclass
+from typing import Callable, Dict, List, Optional
 
 import anyio
+from importlib import metadata
 from mcp import types
 from mcp.server import Server
 from mcp.server.lowlevel.helper_types import ReadResourceContents
@@ -28,9 +33,31 @@ from .tools import (
 
 server = Server("ont-qc-mcp")
 EXEC_CFG = ExecutionConfig()
+logger = logging.getLogger(__name__)
+_INCLUDE_PROVENANCE_VERBOSE = os.getenv("MCP_INCLUDE_PROVENANCE", "0") not in {"", "0", "false", "False"}
+_CONCURRENCY_SEM = anyio.Semaphore(EXEC_CFG.max_concurrent_operations) if EXEC_CFG.max_concurrent_operations else None
 
 
 def _json_content(payload) -> List[types.TextContent]:
+    provenance = {
+        "threads_default": EXEC_CFG.default_threads,
+        "per_tool_timeouts": EXEC_CFG.per_tool_timeouts,
+    }
+    if _INCLUDE_PROVENANCE_VERBOSE:
+        pkg_version = None
+        try:
+            pkg_version = metadata.version("ont_qc_mcp")
+        except metadata.PackageNotFoundError:
+            pkg_version = None
+        provenance.update(
+            {
+                "resolved_paths": ToolPaths().resolved(),
+                "python_version": sys.version.split()[0],
+                "package_version": pkg_version,
+            }
+        )
+    if isinstance(payload, dict):
+        payload = {**payload, "provenance": provenance}
     return [
         types.TextContent(
             type="text",
@@ -178,6 +205,17 @@ async def header_metadata_tool(
         lambda: header_metadata_lookup(path, file_type=file_type, flags=flags, tools=ToolPaths(), max_lines=max_lines)
     )
     payload = serialize_model(meta)
+    payload["provenance"] = {
+        "threads_default": EXEC_CFG.default_threads,
+        "per_tool_timeouts": EXEC_CFG.per_tool_timeouts,
+    }
+    if _INCLUDE_PROVENANCE_VERBOSE:
+        payload["provenance"]["resolved_paths"] = ToolPaths().resolved()
+        payload["provenance"]["python_version"] = sys.version.split()[0]
+        try:
+            payload["provenance"]["package_version"] = metadata.version("ont_qc_mcp")
+        except metadata.PackageNotFoundError:
+            payload["provenance"]["package_version"] = None
     summary = meta.summary or ""
     return [
         types.TextContent(type="text", text=summary),
@@ -189,158 +227,18 @@ async def header_metadata_tool(
     ]
 
 
+@dataclass(frozen=True)
+class ToolSpec:
+    name: str
+    description: str
+    handler: Callable
+    schema: Dict
+    metadata: Dict[str, object]
+
+
 # Common schema fragments
 _PATH_PROP = {"type": "string", "description": "Path to the input file"}
 _FLAGS_PROP = {"type": "object", "description": "Optional CLI flags to pass to the underlying tool"}
-
-TOOL_SCHEMAS: dict[str, dict] = {
-    "env_status": {
-        "type": "object",
-        "properties": {},
-    },
-    "qc_alignment_tool": {
-        "type": "object",
-        "properties": {
-            "path": {**_PATH_PROP, "description": "Path to BAM/CRAM alignment file"},
-            "include_hist": {"type": "boolean", "description": "Include histogram data", "default": True},
-            "use_scaled": {"type": "boolean", "description": "Use scaled histogram bins", "default": False},
-            "flags": _FLAGS_PROP,
-        },
-        "required": ["path"],
-    },
-    "qc_reads_fastq_tool": {
-        "type": "object",
-        "properties": {
-            "path": {**_PATH_PROP, "description": "Path to FASTQ file"},
-            "flags": _FLAGS_PROP,
-        },
-        "required": ["path"],
-    },
-    "filter_reads_fastq_tool": {
-        "type": "object",
-        "properties": {
-            "path": {**_PATH_PROP, "description": "Path to input FASTQ file"},
-            "output_fastq": {"type": "string", "description": "Path for filtered output FASTQ"},
-            "flags": _FLAGS_PROP,
-        },
-        "required": ["path"],
-    },
-    "read_length_distribution_fastq_tool": {
-        "type": "object",
-        "properties": {
-            "path": {**_PATH_PROP, "description": "Path to FASTQ file"},
-            "flags": _FLAGS_PROP,
-        },
-        "required": ["path"],
-    },
-    "read_length_distribution_bam_tool": {
-        "type": "object",
-        "properties": {
-            "path": {**_PATH_PROP, "description": "Path to BAM/CRAM alignment file"},
-            "flags": _FLAGS_PROP,
-        },
-        "required": ["path"],
-    },
-    "qscore_distribution_fastq_tool": {
-        "type": "object",
-        "properties": {
-            "path": {**_PATH_PROP, "description": "Path to FASTQ file"},
-            "flags": _FLAGS_PROP,
-        },
-        "required": ["path"],
-    },
-    "qscore_distribution_bam_tool": {
-        "type": "object",
-        "properties": {
-            "path": {**_PATH_PROP, "description": "Path to BAM/CRAM alignment file"},
-            "flags": _FLAGS_PROP,
-        },
-        "required": ["path"],
-    },
-    "coverage_stats_tool": {
-        "type": "object",
-        "properties": {
-            "path": {**_PATH_PROP, "description": "Path to BAM/CRAM alignment file"},
-            "window": {"type": "integer", "description": "Window size for coverage calculation"},
-            "low_cov_threshold": {
-                "type": "number",
-                "description": "Mark contigs with mean depth below this threshold",
-            },
-            "flags": _FLAGS_PROP,
-        },
-        "required": ["path"],
-    },
-    "alignment_error_profile_tool": {
-        "type": "object",
-        "properties": {
-            "path": {**_PATH_PROP, "description": "Path to BAM/CRAM alignment file"},
-            "flags": _FLAGS_PROP,
-        },
-        "required": ["path"],
-    },
-    "alignment_summary_tool": {
-        "type": "object",
-        "properties": {
-            "path": {**_PATH_PROP, "description": "Path to BAM/CRAM alignment file"},
-            "include_coverage": {"type": "boolean", "description": "Include coverage stats", "default": True},
-            "include_hist": {"type": "boolean", "description": "Include histogram data", "default": True},
-            "use_scaled": {"type": "boolean", "description": "Use scaled histogram bins", "default": False},
-            "include_error_profile": {
-                "type": "boolean",
-                "description": "Include samtools stats error profile",
-                "default": False,
-            },
-            "coverage_window": {"type": "integer", "description": "Window size for coverage calculation"},
-            "coverage_low_cov_threshold": {
-                "type": "number",
-                "description": "Mark contigs with mean depth below this threshold",
-            },
-            "coverage_flags": {"type": "object", "description": "Flags for mosdepth coverage tool"},
-            "cramino_flags": {"type": "object", "description": "Flags for cramino alignment tool"},
-            "error_profile_flags": {"type": "object", "description": "Flags for samtools stats error profile"},
-        },
-        "required": ["path"],
-    },
-    "header_metadata_tool": {
-        "type": "object",
-        "properties": {
-            "path": {**_PATH_PROP, "description": "Path to BAM/CRAM/VCF file"},
-            "file_type": {
-                "type": "string",
-                "enum": ["bam", "cram", "sam", "vcf"],
-                "description": "Override detected file type",
-            },
-            "flags": {
-                "type": "object",
-                "description": "Optional flags for samtools when reading BAM/CRAM headers",
-            },
-            "max_lines": {
-                "type": "integer",
-                "description": "Maximum number of VCF header lines to read (guards huge headers)",
-                "minimum": 1,
-                "default": 2000,
-            },
-        },
-        "required": ["path"],
-    },
-}
-
-TOOL_HANDLERS: dict[str, tuple[str, callable]] = {
-    "env_status": ("Check availability of required CLI tools", env_status),
-    "qc_alignment_tool": ("Run cramino stats on a BAM/CRAM alignment", qc_alignment_tool),
-    # FASTQ variants
-    "qc_reads_fastq_tool": ("Run nanoq stats on a FASTQ file", qc_reads_tool),
-    "filter_reads_fastq_tool": ("Filter/trim FASTQ reads with chopper", filter_reads_tool),
-    "read_length_distribution_fastq_tool": ("FASTQ: length percentiles/histogram via nanoq", read_length_distribution_tool),
-    "qscore_distribution_fastq_tool": ("FASTQ: q-score histogram via nanoq", qscore_distribution_tool),
-    # BAM/CRAM variants
-    "read_length_distribution_bam_tool": ("BAM/CRAM: length percentiles/histogram via samtools fastq -> nanoq streaming", read_length_distribution_bam_tool),
-    "qscore_distribution_bam_tool": ("BAM/CRAM: q-score histogram via samtools fastq -> nanoq streaming", qscore_distribution_bam_tool),
-    "coverage_stats_tool": ("Compute coverage with mosdepth (BAM/CRAM)", coverage_stats_tool),
-    "alignment_error_profile_tool": ("Parse error profile from samtools stats (BAM/CRAM)", alignment_error_profile_tool),
-    "alignment_summary_tool": ("Aggregate cramino + mosdepth + samtools stats (BAM/CRAM)", alignment_summary_tool),
-    "header_metadata_tool": ("Extract BAM/CRAM/VCF header metadata", header_metadata_tool),
-}
 
 def _max_threads(*vals: int | None) -> int:
     candidates = [v for v in vals if v is not None]
@@ -358,96 +256,251 @@ _SUMMARY_THREADS = _max_threads(
     EXEC_CFG.threads_for("samtools"),
 )
 
-TOOL_METADATA: dict[str, dict] = {
-    "env_status": {
-        "runtime_hint": "instant (<1s)",
-        "io_hint": "No inputs; checks PATH for required CLI tools",
-        "timeout_seconds": 30,
-    },
-    "qc_alignment_tool": {
-        "runtime_hint": "medium (≈1-3 min for 1-5 GB BAM/CRAM)",
-        "io_hint": "Reads BAM/CRAM; optional histograms",
-        "default_threads": EXEC_CFG.threads_for("cramino"),
-        "timeout_seconds": EXEC_CFG.timeout_for("cramino"),
-        "when_to_use": "Alignment-level stats via cramino; use when you need read-length/identity summaries.",
-    },
-    "qc_reads_fastq_tool": {
-        "runtime_hint": "fast-medium (tens of seconds for 1-2 GB FASTQ)",
-        "io_hint": "Reads FASTQ; returns read-level QC metrics",
-        "default_threads": EXEC_CFG.threads_for("nanoq"),
-        "timeout_seconds": EXEC_CFG.timeout_for("nanoq"),
-        "when_to_use": "Quick QC for raw reads with nanoq; combine with recipes for strict/lenient QC.",
-    },
-    "filter_reads_fastq_tool": {
-        "runtime_hint": "medium (minutes for multi-GB FASTQ, depends on flags)",
-        "io_hint": "Reads FASTQ, writes filtered FASTQ, emits JSON stats",
-        "default_threads": EXEC_CFG.threads_for("chopper"),
-        "timeout_seconds": EXEC_CFG.timeout_for("chopper"),
-        "when_to_use": "Trim/filter ONT reads with chopper; specify output_fastq if persistence is needed.",
-    },
-    "read_length_distribution_fastq_tool": {
-        "runtime_hint": "fast-medium (reuses nanoq stats; tens of seconds)",
-        "io_hint": "Reads FASTQ; returns percentiles + histogram",
-        "default_threads": EXEC_CFG.threads_for("nanoq"),
-        "timeout_seconds": EXEC_CFG.timeout_for("nanoq"),
-        "when_to_use": "Get length percentiles/histogram without full QC payload.",
-    },
-    "read_length_distribution_bam_tool": {
-        "runtime_hint": "medium (streams BAM/CRAM through samtools fastq + nanoq)",
-        "io_hint": "Streams BAM/CRAM to FASTQ; returns percentiles + histogram",
-        "default_threads": EXEC_CFG.threads_for("nanoq"),
-        "timeout_seconds": max(EXEC_CFG.timeout_for("samtools"), EXEC_CFG.timeout_for("nanoq")),
-        "when_to_use": "Length percentiles/histogram from BAM/CRAM when FASTQ is not available.",
-    },
-    "qscore_distribution_fastq_tool": {
-        "runtime_hint": "fast-medium (reuses nanoq stats; tens of seconds)",
-        "io_hint": "Reads FASTQ; returns q-score histogram",
-        "default_threads": EXEC_CFG.threads_for("nanoq"),
-        "timeout_seconds": EXEC_CFG.timeout_for("nanoq"),
-        "when_to_use": "Retrieve q-score distribution quickly; same cost as qc_reads.",
-    },
-    "qscore_distribution_bam_tool": {
-        "runtime_hint": "medium (streams BAM/CRAM through samtools fastq + nanoq)",
-        "io_hint": "Streams BAM/CRAM to FASTQ; returns q-score histogram",
-        "default_threads": EXEC_CFG.threads_for("nanoq"),
-        "timeout_seconds": max(EXEC_CFG.timeout_for("samtools"), EXEC_CFG.timeout_for("nanoq")),
-        "when_to_use": "Q-score distribution from BAM/CRAM when FASTQ is not available.",
-    },
-    "coverage_stats_tool": {
-        "runtime_hint": "medium-heavy (minutes; depends on BAM/CRAM size and window)",
-        "io_hint": "Reads BAM/CRAM; writes temporary outputs only",
-        "default_threads": EXEC_CFG.threads_for("mosdepth"),
-        "timeout_seconds": EXEC_CFG.timeout_for("mosdepth"),
-        "when_to_use": "Depth-of-coverage summaries via mosdepth; tune window/quantize/fast-mode to control cost.",
-    },
-    "alignment_error_profile_tool": {
-        "runtime_hint": "medium (1-3 min; scales with BAM/CRAM size)",
-        "io_hint": "Reads BAM/CRAM; uses samtools stats",
-        "default_threads": EXEC_CFG.threads_for("samtools"),
-        "timeout_seconds": EXEC_CFG.timeout_for("samtools"),
-        "when_to_use": "Base error profile and indel/substitution rates from samtools stats; opt-in to avoid extra cost.",
-    },
-    "alignment_summary_tool": {
-        "runtime_hint": "composite (bounded by cramino + mosdepth + samtools)",
-        "io_hint": "Reads BAM/CRAM; aggregates multiple tools",
-        "default_threads": _SUMMARY_THREADS,
-        "timeout_seconds": _SUMMARY_TIMEOUT,
-        "when_to_use": "One-shot QC combining alignment, coverage, and optional error profile (opt-in).",
-    },
-    "header_metadata_tool": {
-        "runtime_hint": "fast (header-only; seconds)",
-        "io_hint": "Reads header via samtools (BAM/CRAM) or text (VCF)",
-        "default_threads": EXEC_CFG.threads_for("samtools"),
-        "timeout_seconds": EXEC_CFG.timeout_for("samtools"),
-        "when_to_use": "Summarize contigs/samples/programs without full QC run.",
-    },
-}
+_TOOL_SPECS = [
+    ToolSpec(
+        name="env_status",
+        description="Check availability of required CLI tools",
+        handler=env_status,
+        schema={"type": "object", "properties": {}},
+        metadata={"runtime_hint": "instant (<1s)", "io_hint": "No inputs; checks PATH for required CLI tools", "timeout_seconds": 30},
+    ),
+    ToolSpec(
+        name="qc_alignment_tool",
+        description="Run cramino stats on a BAM/CRAM alignment",
+        handler=qc_alignment_tool,
+        schema={
+            "type": "object",
+            "properties": {
+                "path": {**_PATH_PROP, "description": "Path to BAM/CRAM alignment file"},
+                "include_hist": {"type": "boolean", "description": "Include histogram data", "default": True},
+                "use_scaled": {"type": "boolean", "description": "Use scaled histogram bins", "default": False},
+                "flags": _FLAGS_PROP,
+            },
+            "required": ["path"],
+        },
+        metadata={
+            "runtime_hint": "medium (≈1-3 min for 1-5 GB BAM/CRAM)",
+            "io_hint": "Reads BAM/CRAM; optional histograms",
+            "default_threads": EXEC_CFG.threads_for("cramino"),
+            "timeout_seconds": EXEC_CFG.timeout_for("cramino"),
+            "when_to_use": "Alignment-level stats via cramino; use when you need read-length/identity summaries.",
+        },
+    ),
+    ToolSpec(
+        name="qc_reads_fastq_tool",
+        description="Run nanoq stats on a FASTQ file",
+        handler=qc_reads_tool,
+        schema={
+            "type": "object",
+            "properties": {"path": {**_PATH_PROP, "description": "Path to FASTQ file"}, "flags": _FLAGS_PROP},
+            "required": ["path"],
+        },
+        metadata={
+            "runtime_hint": "fast-medium (tens of seconds for 1-2 GB FASTQ)",
+            "io_hint": "Reads FASTQ; returns read-level QC metrics",
+            "default_threads": EXEC_CFG.threads_for("nanoq"),
+            "timeout_seconds": EXEC_CFG.timeout_for("nanoq"),
+            "when_to_use": "Quick QC for raw reads with nanoq; combine with recipes for strict/lenient QC.",
+        },
+    ),
+    ToolSpec(
+        name="filter_reads_fastq_tool",
+        description="Filter/trim FASTQ reads with chopper",
+        handler=filter_reads_tool,
+        schema={
+            "type": "object",
+            "properties": {
+                "path": {**_PATH_PROP, "description": "Path to input FASTQ file"},
+                "output_fastq": {"type": "string", "description": "Path for filtered output FASTQ"},
+                "flags": _FLAGS_PROP,
+            },
+            "required": ["path"],
+        },
+        metadata={
+            "runtime_hint": "medium (minutes for multi-GB FASTQ, depends on flags)",
+            "io_hint": "Reads FASTQ, writes filtered FASTQ, emits JSON stats",
+            "default_threads": EXEC_CFG.threads_for("chopper"),
+            "timeout_seconds": EXEC_CFG.timeout_for("chopper"),
+            "when_to_use": "Trim/filter ONT reads with chopper; specify output_fastq if persistence is needed.",
+        },
+    ),
+    ToolSpec(
+        name="read_length_distribution_fastq_tool",
+        description="FASTQ: length percentiles/histogram via nanoq",
+        handler=read_length_distribution_tool,
+        schema={
+            "type": "object",
+            "properties": {"path": {**_PATH_PROP, "description": "Path to FASTQ file"}, "flags": _FLAGS_PROP},
+            "required": ["path"],
+        },
+        metadata={
+            "runtime_hint": "fast-medium (reuses nanoq stats; tens of seconds)",
+            "io_hint": "Reads FASTQ; returns percentiles + histogram",
+            "default_threads": EXEC_CFG.threads_for("nanoq"),
+            "timeout_seconds": EXEC_CFG.timeout_for("nanoq"),
+            "when_to_use": "Get length percentiles/histogram without full QC payload.",
+        },
+    ),
+    ToolSpec(
+        name="read_length_distribution_bam_tool",
+        description="BAM/CRAM: length percentiles/histogram via samtools fastq -> nanoq streaming",
+        handler=read_length_distribution_bam_tool,
+        schema={
+            "type": "object",
+            "properties": {"path": {**_PATH_PROP, "description": "Path to BAM/CRAM alignment file"}, "flags": _FLAGS_PROP},
+            "required": ["path"],
+        },
+        metadata={
+            "runtime_hint": "medium (streams BAM/CRAM through samtools fastq + nanoq)",
+            "io_hint": "Streams BAM/CRAM to FASTQ; returns percentiles + histogram",
+            "default_threads": EXEC_CFG.threads_for("nanoq"),
+            "timeout_seconds": max(EXEC_CFG.timeout_for("samtools"), EXEC_CFG.timeout_for("nanoq")),
+            "when_to_use": "Length percentiles/histogram from BAM/CRAM when FASTQ is not available.",
+        },
+    ),
+    ToolSpec(
+        name="qscore_distribution_fastq_tool",
+        description="FASTQ: q-score histogram via nanoq",
+        handler=qscore_distribution_tool,
+        schema={
+            "type": "object",
+            "properties": {"path": {**_PATH_PROP, "description": "Path to FASTQ file"}, "flags": _FLAGS_PROP},
+            "required": ["path"],
+        },
+        metadata={
+            "runtime_hint": "fast-medium (reuses nanoq stats; tens of seconds)",
+            "io_hint": "Reads FASTQ; returns q-score histogram",
+            "default_threads": EXEC_CFG.threads_for("nanoq"),
+            "timeout_seconds": EXEC_CFG.timeout_for("nanoq"),
+            "when_to_use": "Retrieve q-score distribution quickly; same cost as qc_reads.",
+        },
+    ),
+    ToolSpec(
+        name="qscore_distribution_bam_tool",
+        description="BAM/CRAM: q-score histogram via samtools fastq -> nanoq streaming",
+        handler=qscore_distribution_bam_tool,
+        schema={
+            "type": "object",
+            "properties": {"path": {**_PATH_PROP, "description": "Path to BAM/CRAM alignment file"}, "flags": _FLAGS_PROP},
+            "required": ["path"],
+        },
+        metadata={
+            "runtime_hint": "medium (streams BAM/CRAM through samtools fastq + nanoq)",
+            "io_hint": "Streams BAM/CRAM to FASTQ; returns q-score histogram",
+            "default_threads": EXEC_CFG.threads_for("nanoq"),
+            "timeout_seconds": max(EXEC_CFG.timeout_for("samtools"), EXEC_CFG.timeout_for("nanoq")),
+            "when_to_use": "Q-score distribution from BAM/CRAM when FASTQ is not available.",
+        },
+    ),
+    ToolSpec(
+        name="coverage_stats_tool",
+        description="Compute coverage with mosdepth (BAM/CRAM)",
+        handler=coverage_stats_tool,
+        schema={
+            "type": "object",
+            "properties": {
+                "path": {**_PATH_PROP, "description": "Path to BAM/CRAM alignment file"},
+                "window": {"type": "integer", "description": "Window size for coverage calculation"},
+                "low_cov_threshold": {"type": "number", "description": "Mark contigs with mean depth below this threshold"},
+                "flags": _FLAGS_PROP,
+            },
+            "required": ["path"],
+        },
+        metadata={
+            "runtime_hint": "medium-heavy (minutes; depends on BAM/CRAM size and window)",
+            "io_hint": "Reads BAM/CRAM; writes temporary outputs only",
+            "default_threads": EXEC_CFG.threads_for("mosdepth"),
+            "timeout_seconds": EXEC_CFG.timeout_for("mosdepth"),
+            "when_to_use": "Depth-of-coverage summaries via mosdepth; tune window/quantize/fast-mode to control cost.",
+        },
+    ),
+    ToolSpec(
+        name="alignment_error_profile_tool",
+        description="Parse error profile from samtools stats (BAM/CRAM)",
+        handler=alignment_error_profile_tool,
+        schema={
+            "type": "object",
+            "properties": {"path": {**_PATH_PROP, "description": "Path to BAM/CRAM alignment file"}, "flags": _FLAGS_PROP},
+            "required": ["path"],
+        },
+        metadata={
+            "runtime_hint": "medium (1-3 min; scales with BAM/CRAM size)",
+            "io_hint": "Reads BAM/CRAM; uses samtools stats",
+            "default_threads": EXEC_CFG.threads_for("samtools"),
+            "timeout_seconds": EXEC_CFG.timeout_for("samtools"),
+            "when_to_use": "Base error profile and indel/substitution rates from samtools stats; opt-in to avoid extra cost.",
+        },
+    ),
+    ToolSpec(
+        name="alignment_summary_tool",
+        description="Aggregate cramino + mosdepth + samtools stats (BAM/CRAM)",
+        handler=alignment_summary_tool,
+        schema={
+            "type": "object",
+            "properties": {
+                "path": {**_PATH_PROP, "description": "Path to BAM/CRAM alignment file"},
+                "include_coverage": {"type": "boolean", "description": "Include coverage stats", "default": True},
+                "include_hist": {"type": "boolean", "description": "Include histogram data", "default": True},
+                "use_scaled": {"type": "boolean", "description": "Use scaled histogram bins", "default": False},
+                "include_error_profile": {
+                    "type": "boolean",
+                    "description": "Include samtools stats error profile",
+                    "default": False,
+                },
+                "coverage_window": {"type": "integer", "description": "Window size for coverage calculation"},
+                "coverage_low_cov_threshold": {
+                    "type": "number",
+                    "description": "Mark contigs with mean depth below this threshold",
+                },
+                "coverage_flags": {"type": "object", "description": "Flags for mosdepth coverage tool"},
+                "cramino_flags": {"type": "object", "description": "Flags for cramino alignment tool"},
+                "error_profile_flags": {"type": "object", "description": "Flags for samtools stats error profile"},
+            },
+            "required": ["path"],
+        },
+        metadata={
+            "runtime_hint": "composite (bounded by cramino + mosdepth + samtools)",
+            "io_hint": "Reads BAM/CRAM; aggregates multiple tools",
+            "default_threads": _SUMMARY_THREADS,
+            "timeout_seconds": _SUMMARY_TIMEOUT,
+            "when_to_use": "One-shot QC combining alignment, coverage, and optional error profile (opt-in).",
+        },
+    ),
+    ToolSpec(
+        name="header_metadata_tool",
+        description="Extract BAM/CRAM/VCF header metadata",
+        handler=header_metadata_tool,
+        schema={
+            "type": "object",
+            "properties": {
+                "path": {**_PATH_PROP, "description": "Path to BAM/CRAM/VCF file"},
+                "file_type": {"type": "string", "enum": ["bam", "cram", "sam", "vcf"], "description": "Override detected file type"},
+                "flags": {"type": "object", "description": "Optional flags for samtools when reading BAM/CRAM headers"},
+                "max_lines": {
+                    "type": "integer",
+                    "description": "Maximum number of VCF header lines to read (guards huge headers)",
+                    "minimum": 1,
+                    "default": 2000,
+                },
+            },
+            "required": ["path"],
+        },
+        metadata={
+            "runtime_hint": "fast (header-only; seconds)",
+            "io_hint": "Reads header via samtools (BAM/CRAM) or text (VCF)",
+            "default_threads": EXEC_CFG.threads_for("samtools"),
+            "timeout_seconds": EXEC_CFG.timeout_for("samtools"),
+            "when_to_use": "Summarize contigs/samples/programs without full QC run.",
+        },
+    ),
+]
+
+TOOL_SPECS: Dict[str, ToolSpec] = {spec.name: spec for spec in _TOOL_SPECS}
 
 
-def _tool_description(name: str, base_desc: str) -> str:
-    meta = TOOL_METADATA.get(name)
-    if not meta:
-        return base_desc
+def _tool_description(spec: ToolSpec) -> str:
+    meta = spec.metadata or {}
+    base_desc = spec.description
 
     parts = []
     if runtime := meta.get("runtime_hint"):
@@ -460,11 +513,22 @@ def _tool_description(name: str, base_desc: str) -> str:
     return f"{base_desc} ({suffix})" if suffix else base_desc
 
 
-def _error_result(kind: str, message: str) -> types.CallToolResult:
+def _error_result(kind: str, message: str, tool: Optional[str] = None, details: Optional[dict] = None) -> types.CallToolResult:
     """Return a structured MCP error payload."""
-    prefix = f"{kind}: " if kind else ""
+    payload = {
+        "kind": kind,
+        "message": message,
+        "tool": tool,
+        "details": details or {},
+    }
     return types.CallToolResult(
-        content=[types.TextContent(type="text", text=f"{prefix}{message}")],
+        content=[
+            types.TextContent(
+                type="text",
+                text=json.dumps(payload, ensure_ascii=False, indent=2),
+                media_type="application/json",
+            )
+        ],
         isError=True,
     )
 
@@ -472,33 +536,42 @@ def _error_result(kind: str, message: str) -> types.CallToolResult:
 async def list_tools() -> list[types.Tool]:
     return [
         types.Tool(
-            name=name,
-            description=_tool_description(name, description),
-            inputSchema=TOOL_SCHEMAS[name],
+            name=spec.name,
+            description=_tool_description(spec),
+            inputSchema=spec.schema,
         )
-        for name, (description, _) in TOOL_HANDLERS.items()
+        for spec in _TOOL_SPECS
     ]
 
 
 @server.call_tool(validate_input=True)
 async def dispatch_tool(name: str, arguments: Optional[dict]) -> types.CallToolResult:
-    handler_entry = TOOL_HANDLERS.get(name)
-    if handler_entry is None:
-        return _error_result("validation", f"Unknown tool: {name}")
+    spec = TOOL_SPECS.get(name)
+    if spec is None:
+        return _error_result("validation", f"Unknown tool: {name}", tool=name)
 
-    _, handler = handler_entry
     try:
-        result = await handler(**(arguments or {}))
+        logger.info("Calling tool %s with args=%s", name, arguments)
+        if _CONCURRENCY_SEM:
+            async with _CONCURRENCY_SEM:
+                result = await spec.handler(**(arguments or {}))
+        else:
+            result = await spec.handler(**(arguments or {}))
     except FlagValidationError as exc:
-        return _error_result("validation", str(exc))
+        logger.warning("Validation error for %s: %s", name, exc)
+        return _error_result("validation", str(exc), tool=name)
     except FileNotFoundError as exc:
-        return _error_result("not_found", str(exc))
+        logger.warning("Not found for %s: %s", name, exc)
+        return _error_result("not_found", str(exc), tool=name)
     except ValueError as exc:
-        return _error_result("validation", str(exc))
+        logger.warning("Validation error for %s: %s", name, exc)
+        return _error_result("validation", str(exc), tool=name)
     except TypeError as exc:
-        return _error_result("validation", f"Invalid arguments for {name}: {exc}")
+        logger.warning("Type error for %s: %s", name, exc)
+        return _error_result("validation", f"Invalid arguments for {name}: {exc}", tool=name)
     except Exception as exc:  # pragma: no cover
-        return _error_result("runtime", str(exc))
+        logger.exception("Runtime error for %s", name)
+        return _error_result("runtime", str(exc), tool=name)
 
     if isinstance(result, types.CallToolResult):
         return result
@@ -548,7 +621,7 @@ async def list_resources() -> list[types.Resource]:
                     mimeType="application/json",
                 )
             )
-    for tool_name in TOOL_HANDLERS.keys():
+    for tool_name in TOOL_SPECS.keys():
         resources.append(
             types.Resource(
                 name=f"{tool_name} guidance",
@@ -575,12 +648,14 @@ async def read_resource(uri: str):
 
     if uri_str.startswith("tool://guidance/"):
         tool = uri_str.split("tool://guidance/", 1)[1]
-        meta = TOOL_METADATA.get(tool, {})
-        base_desc = TOOL_HANDLERS.get(tool, ("", None))[0] if tool in TOOL_HANDLERS else ""
+        spec = TOOL_SPECS.get(tool)
+        if spec is None:
+            raise FileNotFoundError(f"Unknown resource URI: {uri_str}")
+        meta = spec.metadata or {}
         payload = json.dumps(
             {
                 "tool": tool,
-                "description": base_desc,
+                "description": spec.description,
                 "runtime_hint": meta.get("runtime_hint"),
                 "io_hint": meta.get("io_hint"),
                 "defaults": {
