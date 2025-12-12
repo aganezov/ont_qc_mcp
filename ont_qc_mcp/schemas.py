@@ -1,12 +1,12 @@
-from typing import Dict, List, Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
 
 class EnvStatus(BaseModel):
-    available: Dict[str, bool]
-    resolved_paths: Dict[str, str]
-    missing: List[str]
+    available: dict[str, bool]
+    resolved_paths: dict[str, str]
+    missing: list[str]
 
 
 class HistogramBin(BaseModel):
@@ -16,13 +16,13 @@ class HistogramBin(BaseModel):
 
 
 class LengthPercentiles(BaseModel):
-    p1: Optional[float] = None
-    p5: Optional[float] = None
-    p25: Optional[float] = None
-    p50: Optional[float] = None
-    p75: Optional[float] = None
-    p95: Optional[float] = None
-    p99: Optional[float] = None
+    p1: float | None = None
+    p5: float | None = None
+    p25: float | None = None
+    p50: float | None = None
+    p75: float | None = None
+    p95: float | None = None
+    p99: float | None = None
 
 
 class NanoqStats(BaseModel):
@@ -33,62 +33,62 @@ class NanoqStats(BaseModel):
     max_len: int
     mean_len: float
     median_len: float
-    n50: Optional[int] = None
-    mean_qscore: Optional[float] = None
-    median_qscore: Optional[float] = None
-    gc_content: Optional[float] = Field(default=None, description="GC proportion (0-1)")
-    length_percentiles: Optional[LengthPercentiles] = None
-    length_histogram: Optional[List[HistogramBin]] = None
-    qscore_histogram: Optional[List[HistogramBin]] = None
+    n50: int | None = None
+    mean_qscore: float | None = None
+    median_qscore: float | None = None
+    gc_content: float | None = Field(default=None, description="GC proportion (0-1)")
+    length_percentiles: LengthPercentiles | None = None
+    length_histogram: list[HistogramBin] | None = None
+    qscore_histogram: list[HistogramBin] | None = None
 
 
 class ReadLengthDistribution(BaseModel):
     file: str
     percentiles: LengthPercentiles
-    histogram: List[HistogramBin]
+    histogram: list[HistogramBin]
 
 
 class QScoreDistribution(BaseModel):
     file: str
-    mean_qscore: Optional[float] = None
-    median_qscore: Optional[float] = None
-    histogram: List[HistogramBin]
-    per_position_mean: Optional[List[float]] = Field(default=None, description="Mean Q per cycle (sampled)")
+    mean_qscore: float | None = None
+    median_qscore: float | None = None
+    histogram: list[HistogramBin]
+    per_position_mean: list[float] | None = Field(default=None, description="Mean Q per cycle (sampled)")
 
 
 class ChopperReport(BaseModel):
-    input_reads: Optional[int] = None
-    output_reads: Optional[int] = None
-    filtered_reads: Optional[int] = None
-    command: List[str]
-    params: Dict[str, object] = Field(default_factory=dict)
-    output_fastq: Optional[str] = None
+    input_reads: int | None = None
+    output_reads: int | None = None
+    filtered_reads: int | None = None
+    command: list[str]
+    params: dict[str, object] = Field(default_factory=dict)
+    output_fastq: str | None = None
 
 
 class CraminoStats(BaseModel):
     file: str
     total_reads: int
-    mapped: Optional[int] = None
-    unmapped: Optional[int] = None
-    primary: Optional[int] = None
-    secondary: Optional[int] = None
-    supplementary: Optional[int] = None
-    mean_length: Optional[float] = None
-    median_length: Optional[float] = None
-    n50: Optional[int] = None
-    mean_identity: Optional[float] = None
-    median_identity: Optional[float] = None
-    length_histogram: Optional[List[HistogramBin]] = None  # count-based bins
-    length_histogram_scaled: Optional[List[HistogramBin]] = None  # reserved for future scaled support
-    mapq_histogram: Optional[List[HistogramBin]] = None  # count-based bins
-    mapq_histogram_scaled: Optional[List[HistogramBin]] = None  # base-weighted bins when --scaled
+    mapped: int | None = None
+    unmapped: int | None = None
+    primary: int | None = None
+    secondary: int | None = None
+    supplementary: int | None = None
+    mean_length: float | None = None
+    median_length: float | None = None
+    n50: int | None = None
+    mean_identity: float | None = None
+    median_identity: float | None = None
+    length_histogram: list[HistogramBin] | None = None  # count-based bins
+    length_histogram_scaled: list[HistogramBin] | None = None  # reserved for future scaled support
+    mapq_histogram: list[HistogramBin] | None = None  # count-based bins
+    mapq_histogram_scaled: list[HistogramBin] | None = None  # base-weighted bins when --scaled
 
 
 class CoverageByContig(BaseModel):
     contig: str
     mean_depth: float
-    median_depth: Optional[float] = None
-    length: Optional[int] = None
+    median_depth: float | None = None
+    length: int | None = None
 
 
 class LowCoverageRegion(BaseModel):
@@ -101,98 +101,98 @@ class LowCoverageRegion(BaseModel):
 class MosdepthStats(BaseModel):
     file: str
     mean_depth: float
-    mean_depth_unweighted: Optional[float] = None
-    median_depth: Optional[float] = None
-    coverage_distribution: List[HistogramBin] = Field(default_factory=list)
-    coverage_by_contig: List[CoverageByContig] = Field(default_factory=list)
-    low_coverage_regions: List[LowCoverageRegion] = Field(default_factory=list)
+    mean_depth_unweighted: float | None = None
+    median_depth: float | None = None
+    coverage_distribution: list[HistogramBin] = Field(default_factory=list)
+    coverage_by_contig: list[CoverageByContig] = Field(default_factory=list)
+    low_coverage_regions: list[LowCoverageRegion] = Field(default_factory=list)
 
 
 class ErrorProfile(BaseModel):
     file: str
-    mismatch_rate: Optional[float] = None
-    insertion_rate: Optional[float] = None
-    deletion_rate: Optional[float] = None
-    error_by_position: Optional[List[float]] = Field(default=None, description="Error rate per position (sampled)")
-    coverage_histogram: Optional[List[HistogramBin]] = Field(
+    mismatch_rate: float | None = None
+    insertion_rate: float | None = None
+    deletion_rate: float | None = None
+    error_by_position: list[float] | None = Field(default=None, description="Error rate per position (sampled)")
+    coverage_histogram: list[HistogramBin] | None = Field(
         default=None, description="Coverage distribution from samtools stats (depth -> bases)"
     )
-    gc_coverage: Optional[List[HistogramBin]] = Field(
+    gc_coverage: list[HistogramBin] | None = Field(
         default=None, description="GC coverage distribution (GC% -> depth/bases)"
     )
-    mismatch_by_cycle: Optional[List[float]] = Field(
+    mismatch_by_cycle: list[float] | None = Field(
         default=None, description="Mismatch rate per cycle from samtools stats"
     )
-    insert_size_histogram: Optional[List[HistogramBin]] = Field(
+    insert_size_histogram: list[HistogramBin] | None = Field(
         default=None, description="Insert size distribution when available"
     )
 
 
 class ProgramRecord(BaseModel):
     id: str
-    name: Optional[str] = None
-    version: Optional[str] = None
-    command: Optional[str] = None
-    previous_id: Optional[str] = None
-    other: Dict[str, str] = Field(default_factory=dict)
+    name: str | None = None
+    version: str | None = None
+    command: str | None = None
+    previous_id: str | None = None
+    other: dict[str, str] = Field(default_factory=dict)
 
 
 class ReferenceRecord(BaseModel):
     name: str
-    length: Optional[int] = None
-    assembly: Optional[str] = None
-    uri: Optional[str] = None
-    md5: Optional[str] = None
-    other: Dict[str, str] = Field(default_factory=dict)
+    length: int | None = None
+    assembly: str | None = None
+    uri: str | None = None
+    md5: str | None = None
+    other: dict[str, str] = Field(default_factory=dict)
 
 
 class SampleRecord(BaseModel):
     name: str
-    read_group_id: Optional[str] = None
-    library: Optional[str] = None
-    platform: Optional[str] = None
-    platform_unit: Optional[str] = None
-    sequencing_center: Optional[str] = None
-    run_date: Optional[str] = None
-    flowcell_id: Optional[str] = None
-    platform_model: Optional[str] = None
-    description: Optional[str] = None
-    other: Dict[str, str] = Field(default_factory=dict)
+    read_group_id: str | None = None
+    library: str | None = None
+    platform: str | None = None
+    platform_unit: str | None = None
+    sequencing_center: str | None = None
+    run_date: str | None = None
+    flowcell_id: str | None = None
+    platform_model: str | None = None
+    description: str | None = None
+    other: dict[str, str] = Field(default_factory=dict)
 
 
 class VCFFieldDef(BaseModel):
     id: str
-    number: Optional[str] = None
-    type: Optional[str] = None
-    description: Optional[str] = None
+    number: str | None = None
+    type: str | None = None
+    description: str | None = None
     category: Literal["INFO", "FORMAT", "FILTER"]
-    other: Dict[str, str] = Field(default_factory=dict)
+    other: dict[str, str] = Field(default_factory=dict)
 
 
 class HeaderMetadata(BaseModel):
     file: str
     format: str
-    references: List[ReferenceRecord] = Field(default_factory=list)
-    programs: List[ProgramRecord] = Field(default_factory=list)
-    samples: List[SampleRecord] = Field(default_factory=list)
-    metadata: Dict[str, str] = Field(default_factory=dict)
-    info_fields: List[VCFFieldDef] = Field(default_factory=list)
-    format_fields: List[VCFFieldDef] = Field(default_factory=list)
-    filter_fields: List[VCFFieldDef] = Field(default_factory=list)
-    header_other: Dict[str, str] = Field(default_factory=dict)
-    comments: List[str] = Field(default_factory=list)
+    references: list[ReferenceRecord] = Field(default_factory=list)
+    programs: list[ProgramRecord] = Field(default_factory=list)
+    samples: list[SampleRecord] = Field(default_factory=list)
+    metadata: dict[str, str] = Field(default_factory=dict)
+    info_fields: list[VCFFieldDef] = Field(default_factory=list)
+    format_fields: list[VCFFieldDef] = Field(default_factory=list)
+    filter_fields: list[VCFFieldDef] = Field(default_factory=list)
+    header_other: dict[str, str] = Field(default_factory=dict)
+    comments: list[str] = Field(default_factory=list)
     raw_header: str
-    summary: Optional[str] = None
+    summary: str | None = None
 
 
 class QCReport(BaseModel):
-    reads: Optional[NanoqStats] = None
-    read_lengths: Optional[ReadLengthDistribution] = None
-    qscores: Optional[QScoreDistribution] = None
-    chopper: Optional[ChopperReport] = None
-    alignment: Optional[CraminoStats] = None
-    coverage: Optional[MosdepthStats] = None
-    errors: Optional[ErrorProfile] = None
+    reads: NanoqStats | None = None
+    read_lengths: ReadLengthDistribution | None = None
+    qscores: QScoreDistribution | None = None
+    chopper: ChopperReport | None = None
+    alignment: CraminoStats | None = None
+    coverage: MosdepthStats | None = None
+    errors: ErrorProfile | None = None
 
 
 __all__ = [

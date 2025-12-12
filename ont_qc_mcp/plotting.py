@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import List, Optional
 
 from .schemas import HistogramBin
 
@@ -13,11 +12,11 @@ def _ensure_matplotlib():
 
 
 def _plot_histogram(
-    bins: List[HistogramBin],
+    bins: list[HistogramBin],
     xlabel: str,
     ylabel: str,
     title: str,
-    output_path: Optional[str],
+    output_path: str | None,
 ) -> str:
     _ensure_matplotlib()
     import matplotlib.pyplot as plt
@@ -43,12 +42,12 @@ def _plot_histogram(
     return str(output_path)
 
 
-def plot_length_histogram(bins: List[HistogramBin], output_path: Optional[str] = None) -> str:
+def plot_length_histogram(bins: list[HistogramBin], output_path: str | None = None) -> str:
     """Save a length histogram PNG and return its path."""
     return _plot_histogram(bins, xlabel="Read length (bp)", ylabel="Count", title="read_length_histogram", output_path=output_path)
 
 
-def plot_qscore_histogram(bins: List[HistogramBin], output_path: Optional[str] = None) -> str:
+def plot_qscore_histogram(bins: list[HistogramBin], output_path: str | None = None) -> str:
     """Save a q-score histogram PNG and return its path."""
     return _plot_histogram(bins, xlabel="Q-score", ylabel="Count", title="qscore_histogram", output_path=output_path)
 
