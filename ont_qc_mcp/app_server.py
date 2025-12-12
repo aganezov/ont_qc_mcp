@@ -3,7 +3,7 @@ import logging
 import os
 import sys
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, cast
 
 import anyio
 from importlib import metadata
@@ -11,6 +11,7 @@ from mcp import types
 from mcp.server import Server
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.stdio import stdio_server
+from pydantic import AnyUrl
 
 from .cli_wrappers import FlagValidationError
 from .config import ExecutionConfig, ToolPaths
@@ -39,7 +40,7 @@ _CONCURRENCY_SEM = anyio.Semaphore(EXEC_CFG.max_concurrent_operations) if EXEC_C
 
 
 def _json_content(payload) -> list[types.TextContent]:
-    provenance = {
+    provenance: dict[str, object] = {
         "threads_default": EXEC_CFG.default_threads,
         "per_tool_timeouts": EXEC_CFG.per_tool_timeouts,
     }
@@ -58,13 +59,7 @@ def _json_content(payload) -> list[types.TextContent]:
         )
     if isinstance(payload, dict):
         payload = {**payload, "provenance": provenance}
-    return [
-        types.TextContent(
-            type="text",
-            text=json.dumps(payload, ensure_ascii=False, indent=2),
-            media_type="application/json",
-        )
-    ]
+    return [types.TextContent(type="text", text=json.dumps(payload, ensure_ascii=False, indent=2))]
 
 
 async def env_status() -> list[types.TextContent]:
@@ -205,25 +200,22 @@ async def header_metadata_tool(
         lambda: header_metadata_lookup(path, file_type=file_type, flags=flags, tools=ToolPaths(), max_lines=max_lines)
     )
     payload = serialize_model(meta)
-    payload["provenance"] = {
+    provenance: dict[str, object] = {
         "threads_default": EXEC_CFG.default_threads,
         "per_tool_timeouts": EXEC_CFG.per_tool_timeouts,
     }
     if _INCLUDE_PROVENANCE_VERBOSE:
-        payload["provenance"]["resolved_paths"] = ToolPaths().resolved()
-        payload["provenance"]["python_version"] = sys.version.split()[0]
+        provenance["resolved_paths"] = ToolPaths().resolved()
+        provenance["python_version"] = sys.version.split()[0]
         try:
-            payload["provenance"]["package_version"] = metadata.version("ont_qc_mcp")
+            provenance["package_version"] = metadata.version("ont_qc_mcp")
         except metadata.PackageNotFoundError:
-            payload["provenance"]["package_version"] = None
+            provenance["package_version"] = None
+    payload["provenance"] = provenance
     summary = meta.summary or ""
     return [
         types.TextContent(type="text", text=summary),
-        types.TextContent(
-            type="text",
-            text=json.dumps(payload, ensure_ascii=False, indent=2),
-            media_type="application/json",
-        ),
+        types.TextContent(type="text", text=json.dumps(payload, ensure_ascii=False, indent=2)),
     ]
 
 
@@ -435,7 +427,10 @@ _TOOL_SPECS = [
         handler=alignment_error_profile_tool,
         schema={
             "type": "object",
-            "properties": {"path": {**_PATH_PROP, "description": "Path to BAM/CRAM alignment file"}, "flags": _FLAGS_PROP},
+            "properties": {
+                "path": {**_PATH_PROP, "description": "Path to BAM/CRAM alignment file"},
+                "flags": _FLAGS_PROP,
+            },
             "required": ["path"],
         },
         metadata={
@@ -539,7 +534,9 @@ def _tool_description(spec: ToolSpec) -> str:
     return f"{base_desc} ({suffix})" if suffix else base_desc
 
 
-def _error_result(kind: str, message: str, tool: str | None = None, details: dict | None = None) -> types.CallToolResult:
+def _error_result(
+    kind: str, message: str, tool: str | None = None, details: dict | None = None
+) -> types.CallToolResult:
     """Return a structured MCP error payload."""
     payload = {
         "kind": kind,
@@ -548,13 +545,7 @@ def _error_result(kind: str, message: str, tool: str | None = None, details: dic
         "details": details or {},
     }
     return types.CallToolResult(
-        content=[
-            types.TextContent(
-                type="text",
-                text=json.dumps(payload, ensure_ascii=False, indent=2),
-                media_type="application/json",
-            )
-        ],
+        content=[types.TextContent(type="text", text=json.dumps(payload, ensure_ascii=False, indent=2))],
         isError=True,
     )
 
@@ -609,16 +600,19 @@ async def dispatch_tool(name: str, arguments: dict | None) -> types.CallToolResu
 async def list_resource_templates() -> list[types.ResourceTemplate]:
     return [
         types.ResourceTemplate(
+            name="tool-flags",
             uriTemplate="tool://flags/{tool}",
             description="Flag schemas for supported CLI tools",
             mimeType="application/json",
         ),
         types.ResourceTemplate(
+            name="tool-recipes",
             uriTemplate="tool://recipes/{tool}",
             description="Flag recipes/presets for supported CLI tools",
             mimeType="application/json",
         ),
         types.ResourceTemplate(
+            name="tool-guidance",
             uriTemplate="tool://guidance/{tool}",
             description="Runtime guidance and defaults for supported tools",
             mimeType="application/json",
@@ -633,7 +627,7 @@ async def list_resources() -> list[types.Resource]:
         resources.append(
             types.Resource(
                 name=f"{tool} flags",
-                uri=f"tool://flags/{tool}",
+                uri=cast(AnyUrl, f"tool://flags/{tool}"),
                 description=f"{tool} flag schema",
                 mimeType="application/json",
             )
@@ -642,7 +636,7 @@ async def list_resources() -> list[types.Resource]:
             resources.append(
                 types.Resource(
                     name=f"{tool} recipes",
-                    uri=f"tool://recipes/{tool}",
+                    uri=cast(AnyUrl, f"tool://recipes/{tool}"),
                     description=f"{tool} flag recipes",
                     mimeType="application/json",
                 )
@@ -651,7 +645,7 @@ async def list_resources() -> list[types.Resource]:
         resources.append(
             types.Resource(
                 name=f"{tool_name} guidance",
-                uri=f"tool://guidance/{tool_name}",
+                uri=cast(AnyUrl, f"tool://guidance/{tool_name}"),
                 description="Runtime guidance and defaults for tool selection",
                 mimeType="application/json",
             )

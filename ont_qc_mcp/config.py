@@ -1,5 +1,6 @@
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from shutil import which
 
 
@@ -27,15 +28,49 @@ def _env_bytes(env_var: str, default: int | None) -> int | None:
     return raw_val * 1024 * 1024
 
 
+_CONDA_ENV_BIN = Path("/Users/saganezov/miniforge3/envs/ont-qc-mcp/bin")
+_CARGO_BIN = Path.home() / ".cargo" / "bin"
+
+
+def _preferred_tool_path(env_var: str, candidates: list[str | Path], fallback: str) -> str:
+    override = os.getenv(env_var)
+    if override:
+        return override
+    for candidate in candidates:
+        if candidate and Path(candidate).exists():
+            return str(Path(candidate))
+    return fallback
+
+
 @dataclass
 class ToolPaths:
     """Paths to external CLI tools used by the MCP."""
 
-    nanoq: str = field(default_factory=lambda: _env_or_default("NANOQ", "nanoq"))
-    chopper: str = field(default_factory=lambda: _env_or_default("CHOPPER", "chopper"))
-    cramino: str = field(default_factory=lambda: _env_or_default("CRAMINO", "cramino"))
-    mosdepth: str = field(default_factory=lambda: _env_or_default("MOSDEPTH", "mosdepth"))
-    samtools: str = field(default_factory=lambda: _env_or_default("SAMTOOLS", "samtools"))
+    nanoq: str = field(
+        default_factory=lambda: _preferred_tool_path(
+            "NANOQ", [(_CARGO_BIN / "nanoq"), (_CONDA_ENV_BIN / "nanoq")], "nanoq"
+        )
+    )
+    chopper: str = field(
+        default_factory=lambda: _preferred_tool_path(
+            "CHOPPER", [(_CONDA_ENV_BIN / "chopper")], "chopper"
+        )
+    )
+    cramino: str = field(
+        default_factory=lambda: _preferred_tool_path(
+            "CRAMINO", [(_CONDA_ENV_BIN / "cramino")], "cramino"
+        )
+    )
+    mosdepth: str = field(
+        default_factory=lambda: _preferred_tool_path(
+            "MOSDEPTH", [(_CONDA_ENV_BIN / "mosdepth")], "mosdepth"
+        )
+    )
+    samtools: str = field(
+        default_factory=lambda: _preferred_tool_path(
+            "SAMTOOLS", [(_CONDA_ENV_BIN / "samtools")], "samtools"
+        )
+    )
 
     def as_dict(self) -> dict[str, str]:
         return {
@@ -95,21 +130,22 @@ class ExecutionConfig:
     a tool name is not present in the per_tool_timeouts mapping.
     """
 
-    default_threads: int = field(default_factory=lambda: _env_int("MCP_THREADS_DEFAULT", 4))
-    default_timeout: int = field(default_factory=lambda: _env_int("MCP_TIMEOUT_DEFAULT", 600))
+    default_threads: int | None = field(default_factory=lambda: _env_int("MCP_THREADS_DEFAULT", 4))
+    default_timeout: int | None = field(default_factory=lambda: _env_int("MCP_TIMEOUT_DEFAULT", 600))
     max_file_size_bytes: int | None = field(default_factory=lambda: _env_bytes("MCP_MAX_FILE_MB", None))
     max_concurrent_operations: int | None = field(default_factory=lambda: _env_int("MCP_MAX_CONCURRENCY", None))
     per_tool_threads: dict[str, int] = field(
         default_factory=lambda: {
-            tool: _env_int(f"MCP_THREADS_{tool.upper()}", None)  # type: ignore[arg-type]
+            tool: value
             for tool in DEFAULT_TOOL_TIMEOUTS.keys()
-            if os.getenv(f"MCP_THREADS_{tool.upper()}") is not None
+            if (value := _env_int(f"MCP_THREADS_{tool.upper()}", None)) is not None
         }
     )
     per_tool_timeouts: dict[str, int] = field(
         default_factory=lambda: {
-            tool: _env_int(f"MCP_TIMEOUT_{tool.upper()}", DEFAULT_TOOL_TIMEOUTS[tool])
+            tool: value
             for tool in DEFAULT_TOOL_TIMEOUTS.keys()
+            if (value := _env_int(f"MCP_TIMEOUT_{tool.upper()}", DEFAULT_TOOL_TIMEOUTS[tool])) is not None
         }
     )
 
@@ -130,7 +166,7 @@ class ExecutionConfig:
         is used only if the tool name is absent from `per_tool_timeouts`.
         """
         base = self.per_tool_timeouts.get(tool)
-        return base if base is not None else self.default_timeout
+        return base if base is not None else (self.default_timeout or DEFAULT_TOOL_TIMEOUTS.get(tool, 600))
 
 
 __all__ = ["ToolPaths", "ExecutionConfig", "DEFAULT_TOOL_TIMEOUTS", "DISABLE_THREADS_DEFAULT"]

@@ -43,7 +43,9 @@ def test_parse_nanoq_json():
     assert parsed.file == "reads.fastq"
     assert parsed.read_count == 5
     assert parsed.total_bases == 5000
+    assert parsed.length_percentiles is not None
     assert parsed.length_percentiles.p50 == 900
+    assert parsed.qscore_histogram is not None
     assert parsed.qscore_histogram[0].count == 2
 
 
@@ -64,6 +66,7 @@ def test_parse_cramino_json():
     assert parsed.file == "align.bam"
     assert parsed.total_reads == 10
     assert parsed.mapped == 9
+    assert parsed.mapq_histogram is not None
     assert parsed.mapq_histogram[-1].count == 3
 
 
@@ -128,10 +131,17 @@ def test_parse_nanoq_json_real_cli(sample_fastq):
 
 @pytest.mark.integration
 def test_parse_cramino_json_real_cli(sample_bam):
-    if not shutil.which("cramino"):
-        pytest.skip("cramino not available")
+    from ont_qc_mcp.config import ToolPaths
+
+    cramino_path = Path(ToolPaths().cramino)
+    if not cramino_path.exists():
+        which_path = shutil.which("cramino")
+        if not which_path:
+            pytest.skip("cramino not available")
+        cramino_path = Path(which_path)
+
     result = subprocess.run(
-        ["cramino", "--format", "json", str(sample_bam)],
+        [str(cramino_path), "--format", "json", str(sample_bam)],
         check=True,
         capture_output=True,
         text=True,
@@ -148,6 +158,7 @@ def test_parse_mosdepth_summary():
     assert parsed.file == "align.bam"
     assert len(parsed.coverage_by_contig) == 2
     assert abs(parsed.mean_depth - 8.3333333333) < 1e-6
+    assert parsed.mean_depth_unweighted is not None
     assert abs(parsed.mean_depth_unweighted - 7.5) < 1e-6
 
 

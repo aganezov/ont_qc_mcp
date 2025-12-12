@@ -30,7 +30,7 @@ def test_cramino_flags_applied_once(monkeypatch):
     monkeypatch.setattr("ont_qc_mcp.cli_wrappers.run_command", fake_run)
     cramino_stats(Path("dummy.bam"), ToolPaths(), include_hist=True, use_scaled=False, flags={"threads": 4})
     cmd = captured["cmd"]
-    assert cmd[0] == "cramino"
+    assert Path(cmd[0]).name == "cramino"
     assert cmd.count("--hist-count") == 1
     hist_idx = cmd.index("--hist-count")
     assert hist_idx + 1 < len(cmd) and cmd[hist_idx + 1].endswith(".cramino.hist.tsv")

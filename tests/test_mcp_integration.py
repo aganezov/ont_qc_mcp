@@ -5,11 +5,14 @@ These tests spawn the server as a subprocess and communicate via MCP protocol.
 """
 
 import json
+from typing import cast
 
 import anyio
 import pytest
+from mcp import types
 from mcp.client.session import ClientSession
 from mcp.client.stdio import stdio_client
+from pydantic import AnyUrl
 
 from ont_qc_mcp.tools import env_check
 
@@ -24,6 +27,14 @@ def _require_tools(tools: list[str] | None = None):
     missing = [tool for tool in tools if not env_status.available.get(tool)]
     if missing:
         pytest.skip(f"Required CLI tools missing: {', '.join(missing)}")
+
+
+def _text_content(content: types.Content) -> types.TextContent:
+    return cast(types.TextContent, content)
+
+
+def _text_resource(content: types.ResourceContents) -> types.TextResourceContents:
+    return cast(types.TextResourceContents, content)
 
 
 def test_initialize_and_list_tools(mcp_server_params):
@@ -87,13 +98,13 @@ def test_list_and_read_resources(mcp_server_params):
                 assert "tool://flags/nanoq" in uris
                 assert "tool://recipes/nanoq" in uris
 
-                flags = await session.read_resource("tool://flags/nanoq")
-                flag_payload = json.loads(flags.contents[0].text)
+                flags = await session.read_resource(cast(AnyUrl, "tool://flags/nanoq"))
+                flag_payload = json.loads(_text_resource(flags.contents[0]).text)
                 assert flag_payload["tool"] == "nanoq"
                 assert flag_payload["flags"]
 
-                recipes = await session.read_resource("tool://recipes/nanoq")
-                recipe_payload = json.loads(recipes.contents[0].text)
+                recipes = await session.read_resource(cast(AnyUrl, "tool://recipes/nanoq"))
+                recipe_payload = json.loads(_text_resource(recipes.contents[0]).text)
                 assert recipe_payload["tool"] == "nanoq"
                 assert recipe_payload["recipes"]
 
@@ -110,7 +121,7 @@ def test_env_status_tool(mcp_server_params):
 
                 result = await session.call_tool("env_status")
                 assert not result.isError, f"Tool error: {result.content}"
-                payload = json.loads(result.content[0].text)
+                payload = json.loads(_text_content(result.content[0]).text)
                 assert "available" in payload
                 assert isinstance(payload["available"], dict)
 
@@ -128,8 +139,8 @@ def test_alignment_workflow_smoke(mcp_server_params, sample_bam):
                 await session.initialize()
 
                 qc = await session.call_tool("qc_alignment_tool", {"path": str(sample_bam)})
-                assert not qc.isError, f"qc_alignment_tool failed: {qc.content[0].text}"
-                qc_payload = json.loads(qc.content[0].text)
+                assert not qc.isError, f"qc_alignment_tool failed: {_text_content(qc.content[0]).text}"
+                qc_payload = json.loads(_text_content(qc.content[0]).text)
                 assert qc_payload["length_histogram"], "Expected length_histogram from cramino"
                 assert qc_payload.get("total_reads", 0) > 0
                 assert qc_payload.get("mean_identity") is not None
@@ -137,7 +148,7 @@ def test_alignment_workflow_smoke(mcp_server_params, sample_bam):
                 coverage = await session.call_tool("coverage_stats_tool", {"path": str(sample_bam)})
                 assert not coverage.isError
 
-                coverage_data = json.loads(coverage.content[0].text)
+                coverage_data = json.loads(_text_content(coverage.content[0]).text)
                 assert coverage_data
 
     anyio.run(_test)
@@ -166,7 +177,7 @@ def test_header_metadata_tool_vcf(mcp_server_params, tmp_path):
                 )
                 assert not result.isError
                 assert result.content
-                payload = json.loads(result.content[1].text)
+                payload = json.loads(_text_content(result.content[1]).text)
                 assert payload["format"] == "vcf"
                 assert payload["samples"][0]["name"] == "sample1"
 
@@ -185,7 +196,7 @@ def test_header_metadata_tool_real_vcf(mcp_server_params, sample_vcf):
                 )
                 assert not result.isError
                 assert result.content
-                payload = json.loads(result.content[1].text)
+                payload = json.loads(_text_content(result.content[1]).text)
                 assert payload["format"] == "vcf"
                 assert payload["samples"]
                 assert payload["references"]
@@ -204,7 +215,7 @@ def test_qc_reads_tool_real_fastq(mcp_server_params, sample_fastq):
                 await session.initialize()
                 result = await session.call_tool("qc_reads_fastq_tool", {"path": str(sample_fastq)})
                 assert not result.isError
-                payload = json.loads(result.content[0].text)
+                payload = json.loads(_text_content(result.content[0]).text)
                 assert payload["file"]
                 assert payload["read_count"] > 0
                 assert payload.get("mean_len", 0) > 0
@@ -223,7 +234,7 @@ def test_read_length_distribution_tool_real_fastq(mcp_server_params, sample_fast
                 await session.initialize()
                 result = await session.call_tool("read_length_distribution_fastq_tool", {"path": str(sample_fastq)})
                 assert not result.isError
-                payload = json.loads(result.content[0].text)
+                payload = json.loads(_text_content(result.content[0]).text)
                 assert payload["percentiles"]
                 assert payload["histogram"] is not None
 
@@ -241,7 +252,7 @@ def test_qscore_distribution_tool_real_fastq(mcp_server_params, sample_fastq):
                 await session.initialize()
                 result = await session.call_tool("qscore_distribution_fastq_tool", {"path": str(sample_fastq)})
                 assert not result.isError
-                payload = json.loads(result.content[0].text)
+                payload = json.loads(_text_content(result.content[0]).text)
                 assert payload["histogram"] is not None
 
     anyio.run(_test)
@@ -260,7 +271,7 @@ def test_read_length_distribution_bam_tool(mcp_server_params, sample_bam):
                     "read_length_distribution_bam_tool", {"path": str(sample_bam)}
                 )
                 assert not result.isError
-                payload = json.loads(result.content[0].text)
+                payload = json.loads(_text_content(result.content[0]).text)
                 assert payload["file"]
                 assert payload["percentiles"] is not None
                 assert payload["histogram"] is not None
@@ -281,7 +292,7 @@ def test_qscore_distribution_bam_tool(mcp_server_params, sample_bam):
                     "qscore_distribution_bam_tool", {"path": str(sample_bam)}
                 )
                 assert not result.isError
-                payload = json.loads(result.content[0].text)
+                payload = json.loads(_text_content(result.content[0]).text)
                 assert payload["histogram"] is not None
 
     anyio.run(_test)
@@ -302,7 +313,7 @@ def test_filter_reads_tool_real_fastq(mcp_server_params, sample_fastq, tmp_path)
                     "filter_reads_fastq_tool", {"path": str(sample_fastq), "output_fastq": str(output_fastq)}
                 )
                 assert not result.isError
-                payload = json.loads(result.content[0].text)
+                payload = json.loads(_text_content(result.content[0]).text)
                 assert payload["command"]
                 assert output_fastq.exists()
 
@@ -322,7 +333,7 @@ def test_header_metadata_tool_real_bam(mcp_server_params, sample_bam):
                     "header_metadata_tool", {"path": str(sample_bam), "file_type": "bam"}
                 )
                 assert not result.isError
-                payload = json.loads(result.content[1].text)
+                payload = json.loads(_text_content(result.content[1]).text)
                 assert payload["format"] == "bam"
                 assert payload["references"]
                 assert payload["programs"] is not None
@@ -343,7 +354,7 @@ def test_alignment_error_profile_tool_real_bam(mcp_server_params, sample_bam):
                     "alignment_error_profile_tool", {"path": str(sample_bam)}
                 )
                 assert not result.isError
-                payload = json.loads(result.content[0].text)
+                payload = json.loads(_text_content(result.content[0]).text)
                 assert "mismatch_rate" in payload
 
     anyio.run(_test)
@@ -360,7 +371,7 @@ def test_alignment_summary_tool_real_bam(mcp_server_params, sample_bam):
                 await session.initialize()
                 result = await session.call_tool("alignment_summary_tool", {"path": str(sample_bam)})
                 assert not result.isError
-                payload = json.loads(result.content[0].text)
+                payload = json.loads(_text_content(result.content[0]).text)
                 assert payload["alignment"]
                 assert payload["coverage"]
                 assert payload["alignment"].get("total_reads", 0) > 0
@@ -379,7 +390,7 @@ def test_alignment_summary_tool_highdepth_bam(mcp_server_params, sample_bam_high
                 await session.initialize()
                 result = await session.call_tool("alignment_summary_tool", {"path": str(sample_bam_highdepth)})
                 assert not result.isError
-                payload = json.loads(result.content[0].text)
+                payload = json.loads(_text_content(result.content[0]).text)
                 assert payload["coverage"]["mean_depth"] > 0
                 assert payload["alignment"].get("total_reads", 0) >= 50
 
@@ -398,7 +409,7 @@ def test_missing_fastq_returns_not_found_error(mcp_server_params, tmp_path):
                 result = await session.call_tool("qc_reads_fastq_tool", {"path": str(missing_fastq)})
                 assert result.isError
                 assert result.content
-                assert "not_found" in result.content[0].text
+                assert "not_found" in _text_content(result.content[0]).text
 
     anyio.run(_test)
 
@@ -415,7 +426,7 @@ def test_invalid_flags_return_validation_error(mcp_server_params, sample_fastq):
                 )
                 assert result.isError
                 assert result.content
-                assert "validation" in result.content[0].text
+                assert "validation" in _text_content(result.content[0]).text
 
     anyio.run(_test)
 
@@ -445,7 +456,7 @@ def test_bam_streaming_timeout_surface_runtime_error(mcp_server_params, tmp_path
                 )
                 assert result.isError
                 assert result.content
-                payload = result.content[0].text
+                payload = _text_content(result.content[0]).text
                 # Accept runtime/timeout errors and environments lacking samtools/nanoq.
                 assert "runtime" in payload or "Timeout" in payload or "not_found" in payload
 

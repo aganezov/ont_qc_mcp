@@ -292,11 +292,13 @@ def nanoq_from_bam_streaming(
     nano_cmd += build_cli_args("nanoq", {k: v for k, v in nanoq_flags.items() if k != "threads"})
 
     # Run samtools fastq -> nanoq via async to avoid deadlocks on pipes.
-    import subprocess
+    import subprocess  # nosec B404: required to orchestrate child processes
 
     logger.debug("Starting samtools|nanoq streaming pipeline: %s | %s", format_cmd(sam_cmd), format_cmd(nano_cmd))
-    sam_proc = subprocess.Popen(sam_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    nano_proc = subprocess.Popen(
+    sam_proc = subprocess.Popen(  # nosec B603: trusted command construction, shell=False
+        sam_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
+    nano_proc = subprocess.Popen(  # nosec B603: trusted command construction, shell=False
         nano_cmd,
         stdin=sam_proc.stdout,
         stdout=subprocess.PIPE,
@@ -329,18 +331,18 @@ def nanoq_from_bam_streaming(
         for proc in (nano_proc, sam_proc):
             try:
                 proc.terminate()
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Ignore terminate error for %s: %s", proc, exc)
         for proc in (nano_proc, sam_proc):
             try:
                 proc.kill()
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Ignore kill error for %s: %s", proc, exc)
         for proc in (nano_proc, sam_proc):
             try:
                 proc.wait(timeout=1)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Ignore wait error for %s: %s", proc, exc)
         return RuntimeError(reason)
 
     try:

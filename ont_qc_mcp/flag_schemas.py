@@ -66,7 +66,13 @@ TOOL_FLAGS: dict[str, list[FlagDef]] = {
         FlagDef(param="window", name="--by", type="int", description="Window size", aliases=["by"]),
         FlagDef(param="mapq", name="--mapq", type="int", description="Minimum MAPQ to include"),
         FlagDef(param="flag", name="--flag", type="int", description="Include reads with SAM flag filter"),
-        FlagDef(param="fast_mode", name="--fast-mode", short="-x", type="bool", description="Skip overlap correction (faster)"),
+        FlagDef(
+            param="fast_mode",
+            name="--fast-mode",
+            short="-x",
+            type="bool",
+            description="Skip overlap correction (faster)",
+        ),
         FlagDef(
             param="quantize",
             name="--quantize",

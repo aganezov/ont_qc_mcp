@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import anyio
+from pydantic import BaseModel
 
 from .cli_wrappers import (
     build_cli_args,
@@ -49,7 +50,7 @@ _EXEC_CFG = ExecutionConfig()
 _NANOQ_CACHE: dict[tuple, NanoqStats] = {}
 _NANOQ_CACHE_MAX = 8
 _NANOQ_CACHE_LOCK = threading.Lock()
-_NANOQ_INFLIGHT: dict[tuple, Future] = {}
+_NANOQ_INFLIGHT: dict[tuple, Future[NanoqStats]] = {}
 
 
 def _nanoq_cache_key(path: Path, flags: dict[str, Any] | None, cfg: ExecutionConfig) -> tuple:
@@ -93,7 +94,7 @@ def _cached_nanoq_stats(
 
         future = _NANOQ_INFLIGHT.get(key)
         if future is None:
-            future = Future()
+            future = Future[NanoqStats]()
             _NANOQ_INFLIGHT[key] = future
             is_owner = True
         else:
@@ -536,7 +537,7 @@ def header_metadata_lookup(
     return metadata
 
 
-def serialize_model(model) -> dict[str, object]:
+def serialize_model(model: BaseModel) -> dict[str, object]:
     """Return a JSON-serializable dict from a pydantic model."""
     return model.model_dump()
 

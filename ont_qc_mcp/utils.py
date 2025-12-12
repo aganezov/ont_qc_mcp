@@ -2,7 +2,7 @@ import json
 import logging
 import os
 import shlex
-import subprocess
+import subprocess  # nosec B404: intentional use for CLI execution
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -92,7 +92,7 @@ def run_command(
         logger.debug("Running command: %s", format_cmd(cmd))
         if stdout_path is not None:
             out_file = Path(stdout_path).open("w", encoding="utf-8")
-            process = subprocess.run(
+            process = subprocess.run(  # nosec B603: commands built from trusted args, shell=False
                 cmd,
                 check=False,
                 text=True,
@@ -102,7 +102,7 @@ def run_command(
                 stdin=stdin,
             )
         else:
-            process = subprocess.run(
+            process = subprocess.run(  # nosec B603: commands built from trusted args, shell=False
                 cmd,
                 check=False,
                 text=True,
@@ -185,7 +185,8 @@ def run_command_with_retry(
                 break
             logger.warning("Retrying command (attempt %s/%s): %s", attempt + 1, max_attempts, format_cmd(cmd))
             time.sleep(backoff_seconds * (2 ** (attempt - 1)))
-    assert last_error is not None
+    if last_error is None:
+        raise RuntimeError("Command retry exhausted without captured error")
     raise last_error
 
 

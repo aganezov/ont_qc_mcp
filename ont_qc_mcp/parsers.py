@@ -1,6 +1,6 @@
 import json
 import re
-from typing import Sequence
+from typing import Literal, Sequence, cast
 
 from .schemas import (
     CraminoStats,
@@ -237,7 +237,7 @@ def parse_mosdepth_summary(text: str, file_path: str, threshold: float | int | N
     Expected columns: chrom, length, bases, mean
     """
     coverage_by_contig: list[CoverageByContig] = []
-    coverage_distribution: list[CoverageByContig] = []
+    coverage_distribution: list[HistogramBin] = []
     for line in text.splitlines():
         if not line.strip() or line.startswith("chrom"):
             continue
@@ -487,7 +487,7 @@ def _parse_angle_bracket_fields(value: str) -> dict[str, str]:
         value = value[1:-1]
 
     fields: dict[str, str] = {}
-    current = []
+    current: list[str] = []
     in_quotes = False
 
     for char in value:
@@ -562,7 +562,7 @@ def parse_vcf_header(header_text: str, file_path: str) -> HeaderMetadata:
                     number=attrs.get("Number"),
                     type=attrs.get("Type"),
                     description=attrs.get("Description"),
-                    category=key_upper,
+                    category=cast(Literal["INFO", "FORMAT", "FILTER"], key_upper),
                     other=other_fields,
                 )
                 if key_upper == "INFO":
