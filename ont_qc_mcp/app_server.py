@@ -2,6 +2,9 @@ import json
 import logging
 import os
 import sys
+import time
+import uuid
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Callable, cast
 
@@ -25,6 +28,7 @@ from .tools import (
     qc_alignment,
     qc_reads,
     header_metadata_lookup,
+    get_nanoq_cache_stats,
     qscore_distribution,
     qscore_distribution_bam,
     read_length_distribution,
@@ -35,15 +39,49 @@ from .tools import (
 server = Server("ont-qc-mcp")
 EXEC_CFG = ExecutionConfig()
 logger = logging.getLogger(__name__)
-_INCLUDE_PROVENANCE_VERBOSE = os.getenv("MCP_INCLUDE_PROVENANCE", "0") not in {"", "0", "false", "False"}
+_USE_JSON_LOG = os.getenv("MCP_LOG_FORMAT", "0").lower() in {"1", "true", "json", "structured"}
+_ENABLE_CACHE_STATS = os.getenv("MCP_CACHE_STATS", "0").lower() not in {"", "0", "false", "False"}
+_INCLUDE_PROVENANCE_VERBOSE = os.getenv("MCP_INCLUDE_PROVENANCE", "0").lower() not in {"", "0", "false", "False"}
+_REQUEST_ID: ContextVar[str] = ContextVar("request_id", default="")
+_REQUEST_START: ContextVar[float] = ContextVar("request_start", default=0.0)
+_TOOL_PATHS: ToolPaths | None = None
 _CONCURRENCY_SEM = anyio.Semaphore(EXEC_CFG.max_concurrent_operations) if EXEC_CFG.max_concurrent_operations else None
 
 
-def _json_content(payload) -> list[types.TextContent]:
+def _tool_paths() -> ToolPaths:
+    """Return a memoized ToolPaths instance to avoid redundant resolution."""
+    global _TOOL_PATHS
+    if _TOOL_PATHS is None:
+        _TOOL_PATHS = ToolPaths()
+    return _TOOL_PATHS
+
+
+def _log_event(level: int, message: str, **fields) -> None:
+    request_id = _REQUEST_ID.get()
+    if request_id:
+        fields.setdefault("request_id", request_id)
+    if _USE_JSON_LOG:
+        logger.log(level, json.dumps({"event": message, **fields}, ensure_ascii=False))
+    else:
+        extras = " ".join(f"{k}={v}" for k, v in fields.items() if v is not None)
+        prefix = f"[{request_id}] " if request_id else ""
+        suffix = f" | {extras}" if extras else ""
+        logger.log(level, "%s%s%s", prefix, message, suffix)
+
+
+def _build_provenance(tool_name: str | None = None) -> dict[str, object]:
     provenance: dict[str, object] = {
         "threads_default": EXEC_CFG.default_threads,
         "per_tool_timeouts": EXEC_CFG.per_tool_timeouts,
+        "request_id": _REQUEST_ID.get() or None,
+        "concurrency_limit": EXEC_CFG.max_concurrent_operations,
     }
+    start = _REQUEST_START.get()
+    if start:
+        provenance["duration_seconds"] = round(time.monotonic() - start, 3)
+    if tool_name:
+        provenance["effective_threads"] = EXEC_CFG.threads_for(tool_name)
+        provenance["effective_timeout"] = EXEC_CFG.timeout_for(tool_name)
     if _INCLUDE_PROVENANCE_VERBOSE:
         pkg_version = None
         try:
@@ -52,20 +90,24 @@ def _json_content(payload) -> list[types.TextContent]:
             pkg_version = None
         provenance.update(
             {
-                "resolved_paths": ToolPaths().resolved(),
+                "resolved_paths": _tool_paths().resolved(),
                 "python_version": sys.version.split()[0],
                 "package_version": pkg_version,
             }
         )
+    return provenance
+
+
+def _json_content(payload, tool_name: str | None = None) -> list[types.TextContent]:
     if isinstance(payload, dict):
-        payload = {**payload, "provenance": provenance}
+        payload = {**payload, "provenance": _build_provenance(tool_name)}
     return [types.TextContent(type="text", text=json.dumps(payload, ensure_ascii=False, indent=2))]
 
 
 async def env_status() -> list[types.TextContent]:
     """Check availability of required CLI tools."""
-    status = env_check()
-    return _json_content(serialize_model(status))
+    status = env_check(_tool_paths())
+    return _json_content(serialize_model(status), tool_name="env_status")
 
 
 async def qc_alignment_tool(
@@ -78,19 +120,19 @@ async def qc_alignment_tool(
     stats = await anyio.to_thread.run_sync(
         lambda: qc_alignment(
             path,
-            tools=ToolPaths(),
+            tools=_tool_paths(),
             include_hist=include_hist,
             use_scaled=use_scaled,
             flags=flags,
         )
     )
-    return _json_content(serialize_model(stats))
+    return _json_content(serialize_model(stats), tool_name="cramino")
 
 
 async def qc_reads_tool(path: str, flags: dict | None = None) -> list[types.TextContent]:
     """Run nanoq stats on a FASTQ file."""
-    stats = await anyio.to_thread.run_sync(lambda: qc_reads(path, tools=ToolPaths(), flags=flags))
-    return _json_content(serialize_model(stats))
+    stats = await anyio.to_thread.run_sync(lambda: qc_reads(path, tools=_tool_paths(), flags=flags))
+    return _json_content(serialize_model(stats), tool_name="nanoq")
 
 
 async def filter_reads_tool(
@@ -100,35 +142,33 @@ async def filter_reads_tool(
 ) -> list[types.TextContent]:
     """Filter/trim reads with chopper."""
     report = await anyio.to_thread.run_sync(
-        lambda: filter_reads(path, tools=ToolPaths(), output_fastq=output_fastq, flags=flags)
+        lambda: filter_reads(path, tools=_tool_paths(), output_fastq=output_fastq, flags=flags)
     )
-    return _json_content(serialize_model(report))
+    return _json_content(serialize_model(report), tool_name="chopper")
 
 
 async def read_length_distribution_tool(path: str, flags: dict | None = None) -> list[types.TextContent]:
     """Return length percentiles/histogram from nanoq."""
-    report = await anyio.to_thread.run_sync(
-        lambda: read_length_distribution(path, tools=ToolPaths(), flags=flags)
-    )
-    return _json_content(serialize_model(report))
+    report = await anyio.to_thread.run_sync(lambda: read_length_distribution(path, tools=_tool_paths(), flags=flags))
+    return _json_content(serialize_model(report), tool_name="nanoq")
 
 
 async def qscore_distribution_tool(path: str, flags: dict | None = None) -> list[types.TextContent]:
     """Return q-score distribution/histogram from nanoq."""
-    report = await anyio.to_thread.run_sync(lambda: qscore_distribution(path, tools=ToolPaths(), flags=flags))
-    return _json_content(serialize_model(report))
+    report = await anyio.to_thread.run_sync(lambda: qscore_distribution(path, tools=_tool_paths(), flags=flags))
+    return _json_content(serialize_model(report), tool_name="nanoq")
 
 
 async def read_length_distribution_bam_tool(path: str, flags: dict | None = None) -> list[types.TextContent]:
     """Return length percentiles/histogram from BAM/CRAM via streaming nanoq."""
-    report = await read_length_distribution_bam(path, tools=ToolPaths(), flags=flags)
-    return _json_content(serialize_model(report))
+    report = await read_length_distribution_bam(path, tools=_tool_paths(), flags=flags)
+    return _json_content(serialize_model(report), tool_name="nanoq")
 
 
 async def qscore_distribution_bam_tool(path: str, flags: dict | None = None) -> list[types.TextContent]:
     """Return q-score distribution/histogram from BAM/CRAM via streaming nanoq."""
-    report = await qscore_distribution_bam(path, tools=ToolPaths(), flags=flags)
-    return _json_content(serialize_model(report))
+    report = await qscore_distribution_bam(path, tools=_tool_paths(), flags=flags)
+    return _json_content(serialize_model(report), tool_name="nanoq")
 
 
 async def coverage_stats_tool(
@@ -141,21 +181,19 @@ async def coverage_stats_tool(
     report = await anyio.to_thread.run_sync(
         lambda: coverage_stats(
             path,
-            tools=ToolPaths(),
+            tools=_tool_paths(),
             window=window,
             low_cov_threshold=low_cov_threshold,
             flags=flags,
         )
     )
-    return _json_content(serialize_model(report))
+    return _json_content(serialize_model(report), tool_name="mosdepth")
 
 
 async def alignment_error_profile_tool(path: str, flags: dict | None = None) -> list[types.TextContent]:
     """Parse error profile from samtools stats."""
-    report = await anyio.to_thread.run_sync(
-        lambda: alignment_error_profile(path, tools=ToolPaths(), flags=flags)
-    )
-    return _json_content(serialize_model(report))
+    report = await anyio.to_thread.run_sync(lambda: alignment_error_profile(path, tools=_tool_paths(), flags=flags))
+    return _json_content(serialize_model(report), tool_name="samtools")
 
 
 async def alignment_summary_tool(
@@ -183,10 +221,10 @@ async def alignment_summary_tool(
             coverage_flags=coverage_flags,
             cramino_flags=cramino_flags,
             error_profile_flags=error_profile_flags,
-            tools=ToolPaths(),
+            tools=_tool_paths(),
         )
     )
-    return _json_content(serialize_model(report))
+    return _json_content(serialize_model(report), tool_name="alignment_summary_tool")
 
 
 async def header_metadata_tool(
@@ -197,21 +235,10 @@ async def header_metadata_tool(
 ) -> list[types.TextContent]:
     """Extract header metadata from BAM/CRAM/VCF and return JSON + summary."""
     meta = await anyio.to_thread.run_sync(
-        lambda: header_metadata_lookup(path, file_type=file_type, flags=flags, tools=ToolPaths(), max_lines=max_lines)
+        lambda: header_metadata_lookup(path, file_type=file_type, flags=flags, tools=_tool_paths(), max_lines=max_lines)
     )
     payload = serialize_model(meta)
-    provenance: dict[str, object] = {
-        "threads_default": EXEC_CFG.default_threads,
-        "per_tool_timeouts": EXEC_CFG.per_tool_timeouts,
-    }
-    if _INCLUDE_PROVENANCE_VERBOSE:
-        provenance["resolved_paths"] = ToolPaths().resolved()
-        provenance["python_version"] = sys.version.split()[0]
-        try:
-            provenance["package_version"] = metadata.version("ont_qc_mcp")
-        except metadata.PackageNotFoundError:
-            provenance["package_version"] = None
-    payload["provenance"] = provenance
+    payload["provenance"] = _build_provenance("header_metadata_tool")
     summary = meta.summary or ""
     return [
         types.TextContent(type="text", text=summary),
@@ -231,6 +258,7 @@ class ToolSpec:
 # Common schema fragments
 _PATH_PROP = {"type": "string", "description": "Path to the input file"}
 _FLAGS_PROP = {"type": "object", "description": "Optional CLI flags to pass to the underlying tool"}
+
 
 def _max_threads(*vals: int | None) -> int:
     candidates = [v for v in vals if v is not None]
@@ -396,7 +424,9 @@ _TOOL_SPECS = [
     ),
     ToolSpec(
         name="coverage_stats_tool",
-        description="Compute coverage with mosdepth (BAM/CRAM)",
+        description=(
+            "Compute coverage with mosdepth (BAM/CRAM). Parses summary.txt only; ignores per-base/quantized outputs."
+        ),
         handler=coverage_stats_tool,
         schema={
             "type": "object",
@@ -417,7 +447,8 @@ _TOOL_SPECS = [
             "default_threads": EXEC_CFG.threads_for("mosdepth"),
             "timeout_seconds": EXEC_CFG.timeout_for("mosdepth"),
             "when_to_use": (
-                "Depth-of-coverage summaries via mosdepth; tune window/quantize/fast-mode to control cost."
+                "Depth-of-coverage summaries via mosdepth (summary.txt only); "
+                "tune window/quantize/fast-mode to control cost."
             ),
         },
     ),
@@ -475,9 +506,7 @@ _TOOL_SPECS = [
             "io_hint": "Reads BAM/CRAM; aggregates multiple tools",
             "default_threads": _SUMMARY_THREADS,
             "timeout_seconds": _SUMMARY_TIMEOUT,
-            "when_to_use": (
-                "One-shot QC combining alignment, coverage, and optional error profile (opt-in)."
-            ),
+            "when_to_use": ("One-shot QC combining alignment, coverage, and optional error profile (opt-in)."),
         },
     ),
     ToolSpec(
@@ -538,16 +567,20 @@ def _error_result(
     kind: str, message: str, tool: str | None = None, details: dict | None = None
 ) -> types.CallToolResult:
     """Return a structured MCP error payload."""
+    request_id = _REQUEST_ID.get()
     payload = {
         "kind": kind,
         "message": message,
         "tool": tool,
         "details": details or {},
     }
+    if request_id:
+        payload["request_id"] = request_id
     return types.CallToolResult(
         content=[types.TextContent(type="text", text=json.dumps(payload, ensure_ascii=False, indent=2))],
         isError=True,
     )
+
 
 @server.list_tools()
 async def list_tools() -> list[types.Tool]:
@@ -567,28 +600,46 @@ async def dispatch_tool(name: str, arguments: dict | None) -> types.CallToolResu
     if spec is None:
         return _error_result("validation", f"Unknown tool: {name}", tool=name)
 
+    request_id = str(uuid.uuid4())[:8]
+    _REQUEST_ID.set(request_id)
+    _REQUEST_START.set(time.monotonic())
+    threads_hint = EXEC_CFG.threads_for(name)
+    timeout_hint = EXEC_CFG.timeout_for(name)
+
+    _log_event(
+        logging.INFO,
+        "tool_call_start",
+        tool=name,
+        args=arguments,
+        threads=threads_hint,
+        timeout=timeout_hint,
+        concurrency_limit=EXEC_CFG.max_concurrent_operations,
+    )
+
     try:
-        logger.info("Calling tool %s with args=%s", name, arguments)
         if _CONCURRENCY_SEM:
             async with _CONCURRENCY_SEM:
                 result = await spec.handler(**(arguments or {}))
         else:
             result = await spec.handler(**(arguments or {}))
     except FlagValidationError as exc:
-        logger.warning("Validation error for %s: %s", name, exc)
+        _log_event(logging.WARNING, "validation_error", tool=name, error=str(exc))
         return _error_result("validation", str(exc), tool=name)
     except FileNotFoundError as exc:
-        logger.warning("Not found for %s: %s", name, exc)
+        _log_event(logging.WARNING, "not_found", tool=name, error=str(exc))
         return _error_result("not_found", str(exc), tool=name)
     except ValueError as exc:
-        logger.warning("Validation error for %s: %s", name, exc)
+        _log_event(logging.WARNING, "validation_error", tool=name, error=str(exc))
         return _error_result("validation", str(exc), tool=name)
     except TypeError as exc:
-        logger.warning("Type error for %s: %s", name, exc)
+        _log_event(logging.WARNING, "type_error", tool=name, error=str(exc))
         return _error_result("validation", f"Invalid arguments for {name}: {exc}", tool=name)
     except Exception as exc:  # pragma: no cover
-        logger.exception("Runtime error for %s", name)
+        _log_event(logging.ERROR, "runtime_error", tool=name, error=str(exc))
         return _error_result("runtime", str(exc), tool=name)
+    finally:
+        duration_ms = round((time.monotonic() - _REQUEST_START.get()) * 1000, 2)
+        _log_event(logging.INFO, "tool_call_finished", tool=name, duration_ms=duration_ms)
 
     if isinstance(result, types.CallToolResult):
         return result
@@ -598,7 +649,7 @@ async def dispatch_tool(name: str, arguments: dict | None) -> types.CallToolResu
 
 @server.list_resource_templates()
 async def list_resource_templates() -> list[types.ResourceTemplate]:
-    return [
+    templates = [
         types.ResourceTemplate(
             name="tool-flags",
             uriTemplate="tool://flags/{tool}",
@@ -618,6 +669,16 @@ async def list_resource_templates() -> list[types.ResourceTemplate]:
             mimeType="application/json",
         ),
     ]
+    if _ENABLE_CACHE_STATS:
+        templates.append(
+            types.ResourceTemplate(
+                name="cache-stats",
+                uriTemplate="tool://stats/cache",
+                description="Cache hit/miss/eviction counters for streaming nanoq",
+                mimeType="application/json",
+            )
+        )
+    return templates
 
 
 @server.list_resources()
@@ -647,6 +708,15 @@ async def list_resources() -> list[types.Resource]:
                 name=f"{tool_name} guidance",
                 uri=cast(AnyUrl, f"tool://guidance/{tool_name}"),
                 description="Runtime guidance and defaults for tool selection",
+                mimeType="application/json",
+            )
+        )
+    if _ENABLE_CACHE_STATS:
+        resources.append(
+            types.Resource(
+                name="nanoq cache stats",
+                uri=cast(AnyUrl, "tool://stats/cache"),
+                description="Cache hit/miss/eviction counters for nanoq",
                 mimeType="application/json",
             )
         )
@@ -688,6 +758,13 @@ async def read_resource(uri: str):
             },
             indent=2,
         )
+        return [ReadResourceContents(content=payload, mime_type="application/json")]
+
+    if uri_str == "tool://stats/cache":
+        if not _ENABLE_CACHE_STATS:
+            raise FileNotFoundError(f"Unknown resource URI: {uri_str}")
+        stats = get_nanoq_cache_stats()
+        payload = json.dumps({"nanoq_cache": stats}, indent=2)
         return [ReadResourceContents(content=payload, mime_type="application/json")]
 
     raise FileNotFoundError(f"Unknown resource URI: {uri_str}")

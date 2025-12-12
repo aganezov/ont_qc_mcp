@@ -28,17 +28,31 @@ def _env_bytes(env_var: str, default: int | None) -> int | None:
     return raw_val * 1024 * 1024
 
 
-_CONDA_ENV_BIN = Path("/Users/saganezov/miniforge3/envs/ont-qc-mcp/bin")
+def _conda_env_bin() -> Path | None:
+    """
+    Resolve the active conda env bin directory when CONDA_PREFIX is set.
+    Returns None when no conda environment is active.
+    """
+    prefix = os.getenv("CONDA_PREFIX")
+    if not prefix:
+        return None
+    return Path(prefix) / "bin"
+
+
+_CONDA_ENV_BIN = _conda_env_bin()
 _CARGO_BIN = Path.home() / ".cargo" / "bin"
 
 
-def _preferred_tool_path(env_var: str, candidates: list[str | Path], fallback: str) -> str:
+def _preferred_tool_path(env_var: str, candidates: list[str | Path | None], fallback: str) -> str:
     override = os.getenv(env_var)
     if override:
         return override
     for candidate in candidates:
-        if candidate and Path(candidate).exists():
-            return str(Path(candidate))
+        if not candidate:
+            continue
+        candidate_path = Path(candidate)
+        if candidate_path.exists():
+            return str(candidate_path)
     return fallback
 
 
@@ -48,27 +62,37 @@ class ToolPaths:
 
     nanoq: str = field(
         default_factory=lambda: _preferred_tool_path(
-            "NANOQ", [(_CARGO_BIN / "nanoq"), (_CONDA_ENV_BIN / "nanoq")], "nanoq"
+            "NANOQ",
+            [(_CARGO_BIN / "nanoq"), (_CONDA_ENV_BIN / "nanoq") if _CONDA_ENV_BIN else None],
+            "nanoq",
         )
     )
     chopper: str = field(
         default_factory=lambda: _preferred_tool_path(
-            "CHOPPER", [(_CONDA_ENV_BIN / "chopper")], "chopper"
+            "CHOPPER",
+            [(_CONDA_ENV_BIN / "chopper") if _CONDA_ENV_BIN else None],
+            "chopper",
         )
     )
     cramino: str = field(
         default_factory=lambda: _preferred_tool_path(
-            "CRAMINO", [(_CONDA_ENV_BIN / "cramino")], "cramino"
+            "CRAMINO",
+            [(_CONDA_ENV_BIN / "cramino") if _CONDA_ENV_BIN else None],
+            "cramino",
         )
     )
     mosdepth: str = field(
         default_factory=lambda: _preferred_tool_path(
-            "MOSDEPTH", [(_CONDA_ENV_BIN / "mosdepth")], "mosdepth"
+            "MOSDEPTH",
+            [(_CONDA_ENV_BIN / "mosdepth") if _CONDA_ENV_BIN else None],
+            "mosdepth",
         )
     )
     samtools: str = field(
         default_factory=lambda: _preferred_tool_path(
-            "SAMTOOLS", [(_CONDA_ENV_BIN / "samtools")], "samtools"
+            "SAMTOOLS",
+            [(_CONDA_ENV_BIN / "samtools") if _CONDA_ENV_BIN else None],
+            "samtools",
         )
     )
 
@@ -133,7 +157,7 @@ class ExecutionConfig:
     default_threads: int | None = field(default_factory=lambda: _env_int("MCP_THREADS_DEFAULT", 4))
     default_timeout: int | None = field(default_factory=lambda: _env_int("MCP_TIMEOUT_DEFAULT", 600))
     max_file_size_bytes: int | None = field(default_factory=lambda: _env_bytes("MCP_MAX_FILE_MB", None))
-    max_concurrent_operations: int | None = field(default_factory=lambda: _env_int("MCP_MAX_CONCURRENCY", None))
+    max_concurrent_operations: int | None = field(default_factory=lambda: _env_int("MCP_MAX_CONCURRENCY", 4))
     per_tool_threads: dict[str, int] = field(
         default_factory=lambda: {
             tool: value
@@ -170,4 +194,3 @@ class ExecutionConfig:
 
 
 __all__ = ["ToolPaths", "ExecutionConfig", "DEFAULT_TOOL_TIMEOUTS", "DISABLE_THREADS_DEFAULT"]
-

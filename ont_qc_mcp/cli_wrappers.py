@@ -170,22 +170,29 @@ def chopper_filter(
     except CommandError as exc:
         # Fallback for older chopper versions: no subcommand, no JSON; stream stdout directly to output_fastq.
         stderr_text = exc.result.stderr or ""
-        capability_error = (
+        exit_code = exc.result.returncode
+        capability_error = exit_code in (1, 2) and (
             "report-json" in stderr_text
-            or "filter" in stderr_text.lower()
-            or "unknown command" in stderr_text.lower()
+            or ("unknown" in stderr_text.lower() and "command" in stderr_text.lower())
+            or ("unrecognized" in stderr_text.lower() and "option" in stderr_text.lower())
+            or "unexpected argument" in stderr_text.lower()
         )
         if not capability_error:
             if created_temp_output and output_fastq.exists():
                 output_fastq.unlink(missing_ok=True)
             raise RuntimeError(
-                f"chopper failed: {format_cmd(exc.result.cmd)}\n{_truncate_stderr(stderr_text)}"
+                f"chopper failed (exit {exit_code}): {format_cmd(exc.result.cmd)}\n{_truncate_stderr(stderr_text)}"
             ) from exc
 
         fallback_cmd: list[str] = [tools.chopper, "--input", str(input_fastq), *flag_args]
         try:
             command_executed = fallback_cmd
-            logger.warning("Falling back to legacy chopper invocation: %s", format_cmd(fallback_cmd))
+            logger.warning(
+                "Falling back to legacy chopper invocation (exit=%d): %s; stderr=%s",
+                exit_code,
+                format_cmd(fallback_cmd),
+                _truncate_stderr(stderr_text, max_lines=5),
+            )
             run_command_with_retry(
                 fallback_cmd, timeout=timeout, stdout_path=output_fastq, max_attempts=2, backoff_seconds=0.5
             )
@@ -348,9 +355,17 @@ def nanoq_from_bam_streaming(
     try:
         nano_out, nano_err = nano_proc.communicate(timeout=overall_timeout)
     except subprocess.TimeoutExpired:
+        sam_running = sam_proc.poll() is None
+        nano_running = nano_proc.poll() is None
+        hung_stage = (
+            "samtools" if sam_running and not nano_running else "nanoq" if nano_running and not sam_running else "both"
+        )
+        stderr_context = "\n".join(list(stderr_tail)[-10:]) if stderr_tail else "(no stderr captured)"
         raise _terminate_pipeline(
-            f"Timeout while running samtools|nanoq pipeline (>{overall_timeout}s). "
-            f"samtools cmd: {format_cmd(sam_cmd)}; nanoq cmd: {format_cmd(nano_cmd)}"
+            f"Timeout while running samtools|nanoq pipeline (>{overall_timeout}s); "
+            f"likely hung at {hung_stage}. "
+            f"samtools cmd: {format_cmd(sam_cmd)}; nanoq cmd: {format_cmd(nano_cmd)}; "
+            f"samtools stderr tail:\n{stderr_context}"
         )
 
     remaining = max(0.0, overall_timeout - (time.monotonic() - start_time))
@@ -358,8 +373,7 @@ def nanoq_from_bam_streaming(
         _, sam_err = sam_proc.communicate(timeout=remaining or 0.1)
     except subprocess.TimeoutExpired:
         raise _terminate_pipeline(
-            f"Timeout waiting for samtools fastq to exit (>{overall_timeout}s). "
-            f"cmd: {format_cmd(sam_cmd)}"
+            f"Timeout waiting for samtools fastq to exit (>{overall_timeout}s). " f"cmd: {format_cmd(sam_cmd)}"
         )
     finally:
         if stderr_thread:
@@ -367,9 +381,7 @@ def nanoq_from_bam_streaming(
 
     sam_rc = sam_proc.returncode
     sam_err_text = (
-        sam_err.decode("utf-8", errors="replace")
-        if isinstance(sam_err, (bytes, bytearray))
-        else (sam_err or "")
+        sam_err.decode("utf-8", errors="replace") if isinstance(sam_err, (bytes, bytearray)) else (sam_err or "")
     )
     if stderr_tail:
         tail_text = "\n".join(stderr_tail)

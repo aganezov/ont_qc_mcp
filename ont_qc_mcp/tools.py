@@ -51,6 +51,7 @@ _NANOQ_CACHE: dict[tuple, NanoqStats] = {}
 _NANOQ_CACHE_MAX = 8
 _NANOQ_CACHE_LOCK = threading.Lock()
 _NANOQ_INFLIGHT: dict[tuple, Future[NanoqStats]] = {}
+_NANOQ_CACHE_STATS: dict[str, int] = {"hits": 0, "misses": 0, "evictions": 0}
 
 
 def _nanoq_cache_key(path: Path, flags: dict[str, Any] | None, cfg: ExecutionConfig) -> tuple:
@@ -82,14 +83,14 @@ def _validate_input_file(path: Path, cfg: ExecutionConfig, allowed_exts: tuple[s
         if not any(lowered_name.endswith(ext) for ext in allowed_exts):
             raise ValueError(f"Unexpected file extension for {resolved}; expected one of {allowed_exts}")
 
-def _cached_nanoq_stats(
-    path: Path, tools: ToolPaths, flags: dict[str, Any] | None, cfg: ExecutionConfig
-) -> NanoqStats:
+
+def _cached_nanoq_stats(path: Path, tools: ToolPaths, flags: dict[str, Any] | None, cfg: ExecutionConfig) -> NanoqStats:
     key = _nanoq_cache_key(path, flags, cfg)
     with _NANOQ_CACHE_LOCK:
         cached = _NANOQ_CACHE.get(key)
         if cached:
-            logger.debug("nanoq cache hit for %s", path)
+            _NANOQ_CACHE_STATS["hits"] += 1
+            logger.debug("nanoq cache hit for %s (hits=%d)", path, _NANOQ_CACHE_STATS["hits"])
             return cached
 
         future = _NANOQ_INFLIGHT.get(key)
@@ -107,6 +108,8 @@ def _cached_nanoq_stats(
 
     try:
         logger.debug("nanoq cache miss, computing for %s", path)
+        with _NANOQ_CACHE_LOCK:
+            _NANOQ_CACHE_STATS["misses"] += 1
         stats = nanoq_stats(path, tools, flags=flags, exec_cfg=cfg)
         if not stats.file or stats.file == "unknown":
             stats.file = str(path)
@@ -114,7 +117,10 @@ def _cached_nanoq_stats(
         # Simple bounded cache to avoid unbounded growth.
         with _NANOQ_CACHE_LOCK:
             if len(_NANOQ_CACHE) >= _NANOQ_CACHE_MAX:
-                _NANOQ_CACHE.pop(next(iter(_NANOQ_CACHE)))
+                evicted_key = next(iter(_NANOQ_CACHE))
+                _NANOQ_CACHE.pop(evicted_key)
+                _NANOQ_CACHE_STATS["evictions"] += 1
+                logger.debug("nanoq cache eviction (evictions=%d)", _NANOQ_CACHE_STATS["evictions"])
             _NANOQ_CACHE[key] = stats
 
         future.set_result(stats)
@@ -128,6 +134,19 @@ def _cached_nanoq_stats(
                 _NANOQ_INFLIGHT.pop(key, None)
 
 
+def get_nanoq_cache_stats() -> dict[str, int]:
+    """Return a snapshot of cache hit/miss/eviction counters and sizes."""
+    with _NANOQ_CACHE_LOCK:
+        return {
+            "hits": _NANOQ_CACHE_STATS.get("hits", 0),
+            "misses": _NANOQ_CACHE_STATS.get("misses", 0),
+            "evictions": _NANOQ_CACHE_STATS.get("evictions", 0),
+            "size": len(_NANOQ_CACHE),
+            "inflight": len(_NANOQ_INFLIGHT),
+            "max_size": _NANOQ_CACHE_MAX,
+        }
+
+
 def qc_reads(
     path: str,
     tools: ToolPaths | None = None,
@@ -137,7 +156,11 @@ def qc_reads(
     tools = tools or ToolPaths()
     cfg = exec_cfg or _EXEC_CFG
     fastq_path = Path(path)
-    _validate_input_file(fastq_path, cfg, allowed_exts=(".fastq", ".fq", ".fastq.gz", ".fq.gz"))
+    _validate_input_file(
+        fastq_path,
+        cfg,
+        allowed_exts=(".fastq", ".fq", ".fastq.gz", ".fq.gz", ".fastq.bgz", ".fq.bgz"),
+    )
     report_progress(f"qc_reads start: {fastq_path}")
     logger.debug("qc_reads on %s", fastq_path)
     result = _cached_nanoq_stats(fastq_path, tools, flags=flags, cfg=cfg)
@@ -155,7 +178,11 @@ def filter_reads(
     tools = tools or ToolPaths()
     cfg = exec_cfg or _EXEC_CFG
     fastq_path = Path(path)
-    _validate_input_file(fastq_path, cfg, allowed_exts=(".fastq", ".fq", ".fastq.gz", ".fq.gz"))
+    _validate_input_file(
+        fastq_path,
+        cfg,
+        allowed_exts=(".fastq", ".fq", ".fastq.gz", ".fq.gz", ".fastq.bgz", ".fq.bgz"),
+    )
     output_path = Path(output_fastq) if output_fastq else None
     logger.debug("filter_reads on %s -> %s", fastq_path, output_path or "<temp>")
     report_progress(f"filter_reads start: {fastq_path}")
@@ -322,19 +349,25 @@ def alignment_summary(
     cramino_flags: dict[str, Any] | None = None,
     error_profile_flags: dict[str, Any] | None = None,
     tools: ToolPaths | None = None,
+    exec_cfg: ExecutionConfig | None = None,
 ) -> QCReport:
     tools = tools or ToolPaths()
+    cfg = exec_cfg or _EXEC_CFG
     report_progress(f"alignment_summary start: {path}")
     aln_stats = qc_alignment(path, tools=tools, include_hist=include_hist, use_scaled=use_scaled, flags=cramino_flags)
-    coverage = coverage_stats(
-        path,
-        tools=tools,
-        window=coverage_window,
-        low_cov_threshold=coverage_low_cov_threshold,
-        flags=coverage_flags,
-    ) if include_coverage else None
+    coverage = (
+        coverage_stats(
+            path,
+            tools=tools,
+            window=coverage_window,
+            low_cov_threshold=coverage_low_cov_threshold,
+            flags=coverage_flags,
+        )
+        if include_coverage
+        else None
+    )
     errors = (
-        alignment_error_profile(path, tools=tools, flags=error_profile_flags, exec_cfg=_EXEC_CFG)
+        alignment_error_profile(path, tools=tools, flags=error_profile_flags, exec_cfg=cfg)
         if include_error_profile
         else None
     )
@@ -397,7 +430,7 @@ def _sniff_header_format(file_path: Path) -> str | None:
     if is_gzip:
         try:
             with gzip.open(file_path, "rt", encoding="utf-8", errors="replace") as gf:
-                for _ in range(8):
+                for _ in range(4):
                     line = gf.readline()
                     if not line:
                         break
@@ -432,15 +465,16 @@ def _infer_header_format(file_path: Path, file_type: str | None) -> str:
     if declared:
         if sniffed and sniffed != declared:
             raise ValueError(
-                f"Provided file_type '{declared}' disagrees with detected format '{sniffed}' for {file_path}"
+                f"File type mismatch for {file_path}: you specified file_type='{declared}' "
+                f"but magic bytes/header indicate '{sniffed}'. Verify the file or pass the correct file_type."
             )
         return declared
 
     if sniffed:
         if ext_guess and sniffed != ext_guess:
             raise ValueError(
-                f"File extension suggests '{ext_guess}' but contents look like '{sniffed}' for {file_path}. "
-                "Pass file_type to override if this is intentional."
+                f"File extension suggests '{ext_guess}' but contents look like '{sniffed}' for {file_path}'. "
+                "Pass file_type to override if intentional, or check the input for corruption."
             )
         return sniffed
 
@@ -556,5 +590,5 @@ __all__ = [
     "read_length_distribution",
     "read_length_distribution_bam",
     "serialize_model",
+    "get_nanoq_cache_stats",
 ]
-

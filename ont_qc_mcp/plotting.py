@@ -8,7 +8,10 @@ def _ensure_matplotlib():
         import matplotlib  # noqa: F401
         import matplotlib.pyplot as plt  # noqa: F401
     except ImportError as exc:  # pragma: no cover
-        raise RuntimeError("matplotlib is required for plotting; install with [plots] extra") from exc
+        raise RuntimeError(
+            "matplotlib is required for plotting. "
+            "Install with: pip install 'ont-qc-mcp[plots]' or pip install \"matplotlib>=3.8\"."
+        ) from exc
 
 
 def _plot_histogram(

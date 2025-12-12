@@ -5,6 +5,8 @@ These tests spawn the server as a subprocess and communicate via MCP protocol.
 """
 
 import json
+import importlib
+import ont_qc_mcp
 from typing import cast
 
 import anyio
@@ -160,7 +162,7 @@ def test_header_metadata_tool_vcf(mcp_server_params, tmp_path):
         [
             "##fileformat=VCFv4.3",
             "##source=test-suite",
-            '##contig=<ID=chr1,length=5000>',
+            "##contig=<ID=chr1,length=5000>",
             '##INFO=<ID=DP,Number=1,Type=Integer,Description="Depth">',
             "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsample1",
         ]
@@ -172,9 +174,7 @@ def test_header_metadata_tool_vcf(mcp_server_params, tmp_path):
         async with stdio_client(mcp_server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                result = await session.call_tool(
-                    "header_metadata_tool", {"path": str(vcf_path), "file_type": "vcf"}
-                )
+                result = await session.call_tool("header_metadata_tool", {"path": str(vcf_path), "file_type": "vcf"})
                 assert not result.isError
                 assert result.content
                 payload = json.loads(_text_content(result.content[1]).text)
@@ -191,9 +191,7 @@ def test_header_metadata_tool_real_vcf(mcp_server_params, sample_vcf):
         async with stdio_client(mcp_server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                result = await session.call_tool(
-                    "header_metadata_tool", {"path": str(sample_vcf), "file_type": "vcf"}
-                )
+                result = await session.call_tool("header_metadata_tool", {"path": str(sample_vcf), "file_type": "vcf"})
                 assert not result.isError
                 assert result.content
                 payload = json.loads(_text_content(result.content[1]).text)
@@ -267,9 +265,7 @@ def test_read_length_distribution_bam_tool(mcp_server_params, sample_bam):
         async with stdio_client(mcp_server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                result = await session.call_tool(
-                    "read_length_distribution_bam_tool", {"path": str(sample_bam)}
-                )
+                result = await session.call_tool("read_length_distribution_bam_tool", {"path": str(sample_bam)})
                 assert not result.isError
                 payload = json.loads(_text_content(result.content[0]).text)
                 assert payload["file"]
@@ -288,9 +284,7 @@ def test_qscore_distribution_bam_tool(mcp_server_params, sample_bam):
         async with stdio_client(mcp_server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                result = await session.call_tool(
-                    "qscore_distribution_bam_tool", {"path": str(sample_bam)}
-                )
+                result = await session.call_tool("qscore_distribution_bam_tool", {"path": str(sample_bam)})
                 assert not result.isError
                 payload = json.loads(_text_content(result.content[0]).text)
                 assert payload["histogram"] is not None
@@ -329,9 +323,7 @@ def test_header_metadata_tool_real_bam(mcp_server_params, sample_bam):
         async with stdio_client(mcp_server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                result = await session.call_tool(
-                    "header_metadata_tool", {"path": str(sample_bam), "file_type": "bam"}
-                )
+                result = await session.call_tool("header_metadata_tool", {"path": str(sample_bam), "file_type": "bam"})
                 assert not result.isError
                 payload = json.loads(_text_content(result.content[1]).text)
                 assert payload["format"] == "bam"
@@ -350,9 +342,7 @@ def test_alignment_error_profile_tool_real_bam(mcp_server_params, sample_bam):
         async with stdio_client(mcp_server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                result = await session.call_tool(
-                    "alignment_error_profile_tool", {"path": str(sample_bam)}
-                )
+                result = await session.call_tool("alignment_error_profile_tool", {"path": str(sample_bam)})
                 assert not result.isError
                 payload = json.loads(_text_content(result.content[0]).text)
                 assert "mismatch_rate" in payload
@@ -451,9 +441,7 @@ def test_bam_streaming_timeout_surface_runtime_error(mcp_server_params, tmp_path
         async with stdio_client(mcp_server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                result = await session.call_tool(
-                    "read_length_distribution_bam_tool", {"path": str(dummy_bam)}
-                )
+                result = await session.call_tool("read_length_distribution_bam_tool", {"path": str(dummy_bam)})
                 assert result.isError
                 assert result.content
                 payload = _text_content(result.content[0]).text
@@ -461,3 +449,26 @@ def test_bam_streaming_timeout_surface_runtime_error(mcp_server_params, tmp_path
                 assert "runtime" in payload or "Timeout" in payload or "not_found" in payload
 
     anyio.run(_test)
+
+
+def test_alignment_summary_serial_with_concurrency_1(monkeypatch):
+    """Ensure MCP_MAX_CONCURRENCY=1 serializes calls without deadlock."""
+    monkeypatch.setenv("MCP_MAX_CONCURRENCY", "1")
+    srv = importlib.reload(ont_qc_mcp.app_server)
+
+    async def _run():
+        results: list[types.CallToolResult] = []
+
+        async def call_tool():
+            res = await srv.dispatch_tool("env_status", {})
+            results.append(res)
+
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(call_tool)
+            tg.start_soon(call_tool)
+
+        return results
+
+    outputs = anyio.run(_run)
+    assert len(outputs) == 2
+    assert all(not r.isError for r in outputs)
