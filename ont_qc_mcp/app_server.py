@@ -3,7 +3,7 @@ import logging
 import os
 import sys
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional
+from typing import Callable
 
 import anyio
 from importlib import metadata
@@ -38,7 +38,7 @@ _INCLUDE_PROVENANCE_VERBOSE = os.getenv("MCP_INCLUDE_PROVENANCE", "0") not in {"
 _CONCURRENCY_SEM = anyio.Semaphore(EXEC_CFG.max_concurrent_operations) if EXEC_CFG.max_concurrent_operations else None
 
 
-def _json_content(payload) -> List[types.TextContent]:
+def _json_content(payload) -> list[types.TextContent]:
     provenance = {
         "threads_default": EXEC_CFG.default_threads,
         "per_tool_timeouts": EXEC_CFG.per_tool_timeouts,
@@ -67,7 +67,7 @@ def _json_content(payload) -> List[types.TextContent]:
     ]
 
 
-async def env_status() -> List[types.TextContent]:
+async def env_status() -> list[types.TextContent]:
     """Check availability of required CLI tools."""
     status = env_check()
     return _json_content(serialize_model(status))
@@ -77,8 +77,8 @@ async def qc_alignment_tool(
     path: str,
     include_hist: bool = True,
     use_scaled: bool = False,
-    flags: Optional[dict] = None,
-) -> List[types.TextContent]:
+    flags: dict | None = None,
+) -> list[types.TextContent]:
     """Run cramino stats on a BAM/CRAM alignment."""
     stats = await anyio.to_thread.run_sync(
         lambda: qc_alignment(
@@ -92,7 +92,7 @@ async def qc_alignment_tool(
     return _json_content(serialize_model(stats))
 
 
-async def qc_reads_tool(path: str, flags: Optional[dict] = None) -> List[types.TextContent]:
+async def qc_reads_tool(path: str, flags: dict | None = None) -> list[types.TextContent]:
     """Run nanoq stats on a FASTQ file."""
     stats = await anyio.to_thread.run_sync(lambda: qc_reads(path, tools=ToolPaths(), flags=flags))
     return _json_content(serialize_model(stats))
@@ -100,9 +100,9 @@ async def qc_reads_tool(path: str, flags: Optional[dict] = None) -> List[types.T
 
 async def filter_reads_tool(
     path: str,
-    output_fastq: Optional[str] = None,
-    flags: Optional[dict] = None,
-) -> List[types.TextContent]:
+    output_fastq: str | None = None,
+    flags: dict | None = None,
+) -> list[types.TextContent]:
     """Filter/trim reads with chopper."""
     report = await anyio.to_thread.run_sync(
         lambda: filter_reads(path, tools=ToolPaths(), output_fastq=output_fastq, flags=flags)
@@ -110,7 +110,7 @@ async def filter_reads_tool(
     return _json_content(serialize_model(report))
 
 
-async def read_length_distribution_tool(path: str, flags: Optional[dict] = None) -> List[types.TextContent]:
+async def read_length_distribution_tool(path: str, flags: dict | None = None) -> list[types.TextContent]:
     """Return length percentiles/histogram from nanoq."""
     report = await anyio.to_thread.run_sync(
         lambda: read_length_distribution(path, tools=ToolPaths(), flags=flags)
@@ -118,19 +118,19 @@ async def read_length_distribution_tool(path: str, flags: Optional[dict] = None)
     return _json_content(serialize_model(report))
 
 
-async def qscore_distribution_tool(path: str, flags: Optional[dict] = None) -> List[types.TextContent]:
+async def qscore_distribution_tool(path: str, flags: dict | None = None) -> list[types.TextContent]:
     """Return q-score distribution/histogram from nanoq."""
     report = await anyio.to_thread.run_sync(lambda: qscore_distribution(path, tools=ToolPaths(), flags=flags))
     return _json_content(serialize_model(report))
 
 
-async def read_length_distribution_bam_tool(path: str, flags: Optional[dict] = None) -> List[types.TextContent]:
+async def read_length_distribution_bam_tool(path: str, flags: dict | None = None) -> list[types.TextContent]:
     """Return length percentiles/histogram from BAM/CRAM via streaming nanoq."""
     report = await read_length_distribution_bam(path, tools=ToolPaths(), flags=flags)
     return _json_content(serialize_model(report))
 
 
-async def qscore_distribution_bam_tool(path: str, flags: Optional[dict] = None) -> List[types.TextContent]:
+async def qscore_distribution_bam_tool(path: str, flags: dict | None = None) -> list[types.TextContent]:
     """Return q-score distribution/histogram from BAM/CRAM via streaming nanoq."""
     report = await qscore_distribution_bam(path, tools=ToolPaths(), flags=flags)
     return _json_content(serialize_model(report))
@@ -138,10 +138,10 @@ async def qscore_distribution_bam_tool(path: str, flags: Optional[dict] = None) 
 
 async def coverage_stats_tool(
     path: str,
-    window: Optional[int] = None,
-    low_cov_threshold: Optional[float] = None,
-    flags: Optional[dict] = None,
-) -> List[types.TextContent]:
+    window: int | None = None,
+    low_cov_threshold: float | None = None,
+    flags: dict | None = None,
+) -> list[types.TextContent]:
     """Compute coverage with mosdepth."""
     report = await anyio.to_thread.run_sync(
         lambda: coverage_stats(
@@ -155,7 +155,7 @@ async def coverage_stats_tool(
     return _json_content(serialize_model(report))
 
 
-async def alignment_error_profile_tool(path: str, flags: Optional[dict] = None) -> List[types.TextContent]:
+async def alignment_error_profile_tool(path: str, flags: dict | None = None) -> list[types.TextContent]:
     """Parse error profile from samtools stats."""
     report = await anyio.to_thread.run_sync(
         lambda: alignment_error_profile(path, tools=ToolPaths(), flags=flags)
@@ -169,12 +169,12 @@ async def alignment_summary_tool(
     include_hist: bool = True,
     use_scaled: bool = False,
     include_error_profile: bool = False,
-    coverage_window: Optional[int] = None,
-    coverage_low_cov_threshold: Optional[float] = None,
-    coverage_flags: Optional[dict] = None,
-    cramino_flags: Optional[dict] = None,
-    error_profile_flags: Optional[dict] = None,
-) -> List[types.TextContent]:
+    coverage_window: int | None = None,
+    coverage_low_cov_threshold: float | None = None,
+    coverage_flags: dict | None = None,
+    cramino_flags: dict | None = None,
+    error_profile_flags: dict | None = None,
+) -> list[types.TextContent]:
     """Aggregate cramino stats + mosdepth + samtools error profile."""
     report = await anyio.to_thread.run_sync(
         lambda: alignment_summary(
@@ -196,10 +196,10 @@ async def alignment_summary_tool(
 
 async def header_metadata_tool(
     path: str,
-    file_type: Optional[str] = None,
-    flags: Optional[dict] = None,
-    max_lines: Optional[int] = None,
-) -> List[types.TextContent]:
+    file_type: str | None = None,
+    flags: dict | None = None,
+    max_lines: int | None = None,
+) -> list[types.TextContent]:
     """Extract header metadata from BAM/CRAM/VCF and return JSON + summary."""
     meta = await anyio.to_thread.run_sync(
         lambda: header_metadata_lookup(path, file_type=file_type, flags=flags, tools=ToolPaths(), max_lines=max_lines)
@@ -232,8 +232,8 @@ class ToolSpec:
     name: str
     description: str
     handler: Callable
-    schema: Dict
-    metadata: Dict[str, object]
+    schema: dict
+    metadata: dict[str, object]
 
 
 # Common schema fragments
@@ -495,7 +495,7 @@ _TOOL_SPECS = [
     ),
 ]
 
-TOOL_SPECS: Dict[str, ToolSpec] = {spec.name: spec for spec in _TOOL_SPECS}
+TOOL_SPECS: dict[str, ToolSpec] = {spec.name: spec for spec in _TOOL_SPECS}
 
 
 def _tool_description(spec: ToolSpec) -> str:
@@ -513,7 +513,7 @@ def _tool_description(spec: ToolSpec) -> str:
     return f"{base_desc} ({suffix})" if suffix else base_desc
 
 
-def _error_result(kind: str, message: str, tool: Optional[str] = None, details: Optional[dict] = None) -> types.CallToolResult:
+def _error_result(kind: str, message: str, tool: str | None = None, details: dict | None = None) -> types.CallToolResult:
     """Return a structured MCP error payload."""
     payload = {
         "kind": kind,
@@ -545,7 +545,7 @@ async def list_tools() -> list[types.Tool]:
 
 
 @server.call_tool(validate_input=True)
-async def dispatch_tool(name: str, arguments: Optional[dict]) -> types.CallToolResult:
+async def dispatch_tool(name: str, arguments: dict | None) -> types.CallToolResult:
     spec = TOOL_SPECS.get(name)
     if spec is None:
         return _error_result("validation", f"Unknown tool: {name}", tool=name)
