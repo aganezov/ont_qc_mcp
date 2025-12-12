@@ -68,8 +68,8 @@ class ChopperReport(BaseModel):
 class CraminoStats(BaseModel):
     file: str
     total_reads: int
-    mapped: int
-    unmapped: int
+    mapped: Optional[int] = None
+    unmapped: Optional[int] = None
     primary: Optional[int] = None
     secondary: Optional[int] = None
     supplementary: Optional[int] = None
@@ -193,4 +193,26 @@ class QCReport(BaseModel):
     alignment: Optional[CraminoStats] = None
     coverage: Optional[MosdepthStats] = None
     errors: Optional[ErrorProfile] = None
+
+
+__all__ = [
+    "ChopperReport",
+    "CoverageByContig",
+    "CraminoStats",
+    "EnvStatus",
+    "ErrorProfile",
+    "HeaderMetadata",
+    "HistogramBin",
+    "LengthPercentiles",
+    "LowCoverageRegion",
+    "MosdepthStats",
+    "NanoqStats",
+    "ProgramRecord",
+    "QCReport",
+    "QScoreDistribution",
+    "ReadLengthDistribution",
+    "ReferenceRecord",
+    "SampleRecord",
+    "VCFFieldDef",
+]
 

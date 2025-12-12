@@ -12,12 +12,20 @@ def _ensure_matplotlib():
         raise RuntimeError("matplotlib is required for plotting; install with [plots] extra") from exc
 
 
-def _plot_histogram(bins: List[HistogramBin], xlabel: str, ylabel: str, title: str, output_path: Optional[str]) -> str:
+def _plot_histogram(
+    bins: List[HistogramBin],
+    xlabel: str,
+    ylabel: str,
+    title: str,
+    output_path: Optional[str],
+) -> str:
     _ensure_matplotlib()
     import matplotlib.pyplot as plt
 
     if output_path is None:
         output_path = f"{title.replace(' ', '_').lower()}.png"
+    else:
+        output_path = str(output_path)
 
     centers = [(b.start + b.end) / 2.0 for b in bins]
     widths = [b.end - b.start for b in bins]
@@ -32,7 +40,7 @@ def _plot_histogram(bins: List[HistogramBin], xlabel: str, ylabel: str, title: s
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output_path, dpi=150)
     plt.close()
-    return output_path
+    return str(output_path)
 
 
 def plot_length_histogram(bins: List[HistogramBin], output_path: Optional[str] = None) -> str:
@@ -43,3 +51,6 @@ def plot_length_histogram(bins: List[HistogramBin], output_path: Optional[str] =
 def plot_qscore_histogram(bins: List[HistogramBin], output_path: Optional[str] = None) -> str:
     """Save a q-score histogram PNG and return its path."""
     return _plot_histogram(bins, xlabel="Q-score", ylabel="Count", title="qscore_histogram", output_path=output_path)
+
+
+__all__ = ["plot_length_histogram", "plot_qscore_histogram"]

@@ -96,3 +96,6 @@ def get_tool_flags(tool: str) -> List[FlagDef]:
 def get_tool_recipes(tool: str) -> Dict[str, Dict[str, Any]]:
     """Return recipes for a tool (empty dict if unknown)."""
     return RECIPES.get(tool, {})
+
+
+__all__ = ["FlagDef", "TOOL_FLAGS", "RECIPES", "get_tool_flags", "get_tool_recipes"]
