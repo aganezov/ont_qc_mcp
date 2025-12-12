@@ -5,7 +5,7 @@ import time
 from collections import deque
 from pathlib import Path
 from threading import Thread
-from typing import Any, Deque, Dict, List, Optional, Sequence
+from typing import Any, Sequence
 
 from .config import ExecutionConfig, ToolPaths
 from .flag_schemas import FlagDef, get_tool_flags
@@ -41,8 +41,8 @@ def _select_flag_name(flag: FlagDef) -> str:
 
 
 def _prepare_execution(
-    tool: str, flags: Optional[Dict[str, Any]], exec_cfg: Optional[ExecutionConfig]
-) -> tuple[Dict[str, Any], int]:
+    tool: str, flags: dict[str, Any] | None, exec_cfg: ExecutionConfig | None
+) -> tuple[dict[str, Any], int]:
     """Merge user flags with defaults and return timeout."""
     cfg = exec_cfg or ExecutionConfig()
     merged = dict(flags or {})
@@ -55,7 +55,7 @@ def _prepare_execution(
 logger = logging.getLogger(__name__)
 
 
-def build_cli_args(tool: str, flags: Optional[Dict[str, Any]]) -> List[str]:
+def build_cli_args(tool: str, flags: dict[str, Any] | None) -> list[str]:
     """
     Validate and convert an MCP flags dict into CLI args.
 
@@ -65,12 +65,12 @@ def build_cli_args(tool: str, flags: Optional[Dict[str, Any]]) -> List[str]:
         return []
 
     flag_defs = get_tool_flags(tool)
-    lookup: Dict[str, FlagDef] = {}
+    lookup: dict[str, FlagDef] = {}
     for fd in flag_defs:
         for key in fd.all_keys():
             lookup[key] = fd
 
-    args: List[str] = []
+    args: list[str] = []
     for key, value in flags.items():
         if key not in lookup:
             raise FlagValidationError(f"Unknown flag for {tool}: {key}")
@@ -105,8 +105,8 @@ def build_cli_args(tool: str, flags: Optional[Dict[str, Any]]) -> List[str]:
 def nanoq_stats(
     path: Path,
     tools: ToolPaths,
-    flags: Optional[Dict[str, Any]] = None,
-    exec_cfg: Optional[ExecutionConfig] = None,
+    flags: dict[str, Any] | None = None,
+    exec_cfg: ExecutionConfig | None = None,
 ) -> NanoqStats:
     """
     Run nanoq --stats --json for fast read-level metrics.
@@ -124,9 +124,9 @@ def nanoq_stats(
 def chopper_filter(
     input_fastq: Path,
     tools: ToolPaths,
-    output_fastq: Optional[Path] = None,
-    flags: Optional[Dict[str, Any]] = None,
-    exec_cfg: Optional[ExecutionConfig] = None,
+    output_fastq: Path | None = None,
+    flags: dict[str, Any] | None = None,
+    exec_cfg: ExecutionConfig | None = None,
 ) -> ChopperReport:
     """
     Run chopper for ONT-oriented filtering/trimming.
@@ -143,14 +143,14 @@ def chopper_filter(
         created_temp_output = True
 
     report_data: dict = {}
-    json_path: Optional[Path] = None
+    json_path: Path | None = None
 
     # Preferred path: newer chopper with filter/report-json support.
-    command_executed: List[str] = []
+    command_executed: list[str] = []
     try:
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as json_fp:
             json_path = Path(json_fp.name)
-        cmd: List[str] = [
+        cmd: list[str] = [
             tools.chopper,
             "filter",
             "--input",
@@ -178,7 +178,7 @@ def chopper_filter(
                 f"chopper failed: {format_cmd(exc.result.cmd)}\n{_truncate_stderr(stderr_text)}"
             ) from exc
 
-        fallback_cmd: List[str] = [tools.chopper, "--input", str(input_fastq), *flag_args]
+        fallback_cmd: list[str] = [tools.chopper, "--input", str(input_fastq), *flag_args]
         try:
             command_executed = fallback_cmd
             logger.warning("Falling back to legacy chopper invocation: %s", format_cmd(fallback_cmd))
@@ -212,16 +212,16 @@ def cramino_stats(
     tools: ToolPaths,
     include_hist: bool = True,
     use_scaled: bool = False,
-    flags: Optional[Dict[str, Any]] = None,
-    exec_cfg: Optional[ExecutionConfig] = None,
+    flags: dict[str, Any] | None = None,
+    exec_cfg: ExecutionConfig | None = None,
 ) -> CraminoStats:
     """
     Run cramino with JSON output for alignment-level stats.
     """
-    flag_data: Dict[str, Any] = dict(flags or {})
-    hist_count_path: Optional[Path] = None
-    hist_args: List[str] = []
-    length_bins: List[HistogramBin] = []
+    flag_data: dict[str, Any] = dict(flags or {})
+    hist_count_path: Path | None = None
+    hist_args: list[str] = []
+    length_bins: list[HistogramBin] = []
     report_progress(f"cramino start: {path}")
 
     if include_hist:
@@ -236,7 +236,7 @@ def cramino_stats(
 
     flag_data, timeout = _prepare_execution("cramino", flag_data, exec_cfg)
     flag_args = build_cli_args("cramino", flag_data)
-    cmd: List[str] = [tools.cramino, *flag_args, *hist_args, str(path)]
+    cmd: list[str] = [tools.cramino, *flag_args, *hist_args, str(path)]
     try:
         logger.debug("Executing cramino: %s", format_cmd(cmd))
         result = run_command(cmd, timeout=timeout)
@@ -263,8 +263,8 @@ def cramino_stats(
 def nanoq_from_bam_streaming(
     path: Path,
     tools: ToolPaths,
-    flags: Optional[Dict[str, Any]] = None,
-    exec_cfg: Optional[ExecutionConfig] = None,
+    flags: dict[str, Any] | None = None,
+    exec_cfg: ExecutionConfig | None = None,
 ) -> NanoqStats:
     """
     Stream BAM/CRAM through samtools fastq into nanoq --stats --json.
@@ -277,12 +277,12 @@ def nanoq_from_bam_streaming(
     sam_threads = samtools_flags.get("threads")
     nanoq_threads = nanoq_flags.get("threads")
 
-    sam_cmd: List[str] = [tools.samtools, "fastq"]
+    sam_cmd: list[str] = [tools.samtools, "fastq"]
     if sam_threads is not None:
         sam_cmd += ["-@", str(sam_threads)]
     sam_cmd += [str(path)]
 
-    nano_cmd: List[str] = [tools.nanoq, "--stats", "--json"]
+    nano_cmd: list[str] = [tools.nanoq, "--stats", "--json"]
     if nanoq_threads is not None:
         nano_cmd += ["--threads", str(nanoq_threads)]
     nano_cmd += build_cli_args("nanoq", {k: v for k, v in nanoq_flags.items() if k != "threads"})
@@ -304,8 +304,8 @@ def nanoq_from_bam_streaming(
     overall_timeout = max(sam_timeout, nano_timeout)
     start_time = time.monotonic()
 
-    stderr_tail: Deque[str] = deque(maxlen=200)
-    stderr_thread: Optional[Thread] = None
+    stderr_tail: deque[str] = deque(maxlen=200)
+    stderr_thread: Thread | None = None
 
     def _drain_sam_stderr():
         if not sam_proc.stderr:
@@ -390,16 +390,16 @@ def nanoq_from_bam_streaming(
 def mosdepth_coverage(
     path: Path,
     tools: ToolPaths,
-    window: Optional[int] = None,
-    low_cov_threshold: Optional[float] = None,
-    flags: Optional[Dict[str, Any]] = None,
-    exec_cfg: Optional[ExecutionConfig] = None,
+    window: int | None = None,
+    low_cov_threshold: float | None = None,
+    flags: dict[str, Any] | None = None,
+    exec_cfg: ExecutionConfig | None = None,
 ) -> MosdepthStats:
     """
     Run mosdepth to compute depth-of-coverage summaries.
     Returns parsed summary.txt metrics.
     """
-    flag_data: Dict[str, Any] = dict(flags or {})
+    flag_data: dict[str, Any] = dict(flags or {})
     report_progress(f"mosdepth start: {path}")
     if window is not None:
         flag_data.setdefault("window", window)
@@ -409,7 +409,7 @@ def mosdepth_coverage(
         prefix = Path(tmpdir) / "mosdepth"
         summary_path = Path(f"{prefix}.mosdepth.summary.txt")
 
-        cmd: List[str] = [
+        cmd: list[str] = [
             tools.mosdepth,
         ]
         cmd += flag_args
