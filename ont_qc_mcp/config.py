@@ -1,14 +1,13 @@
 import os
 from dataclasses import dataclass, field
 from shutil import which
-from typing import Dict, List, Optional
 
 
 def _env_or_default(env_var: str, default: str) -> str:
     return os.getenv(env_var, default)
 
 
-def _env_int(env_var: str, default: Optional[int]) -> Optional[int]:
+def _env_int(env_var: str, default: int | None) -> int | None:
     raw = os.getenv(env_var)
     if raw is None:
         return default
@@ -18,7 +17,7 @@ def _env_int(env_var: str, default: Optional[int]) -> Optional[int]:
         return default
 
 
-def _env_bytes(env_var: str, default: Optional[int]) -> Optional[int]:
+def _env_bytes(env_var: str, default: int | None) -> int | None:
     """
     Read an integer MB value from env and return bytes. Returns None when unset/invalid.
     """
@@ -38,7 +37,7 @@ class ToolPaths:
     mosdepth: str = field(default_factory=lambda: _env_or_default("MOSDEPTH", "mosdepth"))
     samtools: str = field(default_factory=lambda: _env_or_default("SAMTOOLS", "samtools"))
 
-    def as_dict(self) -> Dict[str, str]:
+    def as_dict(self) -> dict[str, str]:
         return {
             "nanoq": self.nanoq,
             "chopper": self.chopper,
@@ -47,17 +46,17 @@ class ToolPaths:
             "samtools": self.samtools,
         }
 
-    def resolved(self) -> Dict[str, str]:
+    def resolved(self) -> dict[str, str]:
         """Return best-effort resolved paths (absolute when found)."""
-        resolved: Dict[str, str] = {}
+        resolved: dict[str, str] = {}
         for name, path in self.as_dict().items():
             resolved_path = which(path)
             resolved[name] = resolved_path or path
         return resolved
 
-    def missing(self) -> List[str]:
+    def missing(self) -> list[str]:
         """Return missing tools based on PATH resolution."""
-        missing: List[str] = []
+        missing: list[str] = []
         for name, path in self.as_dict().items():
             if which(path) is None:
                 missing.append(name)
@@ -70,7 +69,7 @@ class ToolPaths:
 
 
 # Conservative execution defaults; can be overridden via environment variables.
-DEFAULT_TOOL_TIMEOUTS: Dict[str, int] = {
+DEFAULT_TOOL_TIMEOUTS: dict[str, int] = {
     "nanoq": 300,
     "chopper": 300,
     "cramino": 300,
@@ -98,23 +97,23 @@ class ExecutionConfig:
 
     default_threads: int = field(default_factory=lambda: _env_int("MCP_THREADS_DEFAULT", 4))
     default_timeout: int = field(default_factory=lambda: _env_int("MCP_TIMEOUT_DEFAULT", 600))
-    max_file_size_bytes: Optional[int] = field(default_factory=lambda: _env_bytes("MCP_MAX_FILE_MB", None))
-    max_concurrent_operations: Optional[int] = field(default_factory=lambda: _env_int("MCP_MAX_CONCURRENCY", None))
-    per_tool_threads: Dict[str, int] = field(
+    max_file_size_bytes: int | None = field(default_factory=lambda: _env_bytes("MCP_MAX_FILE_MB", None))
+    max_concurrent_operations: int | None = field(default_factory=lambda: _env_int("MCP_MAX_CONCURRENCY", None))
+    per_tool_threads: dict[str, int] = field(
         default_factory=lambda: {
             tool: _env_int(f"MCP_THREADS_{tool.upper()}", None)  # type: ignore[arg-type]
             for tool in DEFAULT_TOOL_TIMEOUTS.keys()
             if os.getenv(f"MCP_THREADS_{tool.upper()}") is not None
         }
     )
-    per_tool_timeouts: Dict[str, int] = field(
+    per_tool_timeouts: dict[str, int] = field(
         default_factory=lambda: {
             tool: _env_int(f"MCP_TIMEOUT_{tool.upper()}", DEFAULT_TOOL_TIMEOUTS[tool])
             for tool in DEFAULT_TOOL_TIMEOUTS.keys()
         }
     )
 
-    def threads_for(self, tool: str) -> Optional[int]:
+    def threads_for(self, tool: str) -> int | None:
         """Return threads default for a tool, applying env overrides. None means do not set."""
         value = self.per_tool_threads.get(tool)
         if value is not None:

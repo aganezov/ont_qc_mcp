@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -12,19 +12,19 @@ class FlagDef(BaseModel):
 
     param: str = Field(..., description="Logical parameter name used in MCP requests")
     name: str = Field(..., description="Long CLI flag, e.g. --min-len")
-    short: Optional[str] = Field(default=None, description="Short CLI flag, e.g. -l")
+    short: str | None = Field(default=None, description="Short CLI flag, e.g. -l")
     type: FlagType = Field(..., description="Expected value type")
     description: str
-    default: Optional[Any] = None
-    aliases: List[str] = Field(default_factory=list, description="Additional accepted MCP flag keys")
+    default: Any | None = None
+    aliases: list[str] = Field(default_factory=list, description="Additional accepted MCP flag keys")
 
-    def all_keys(self) -> List[str]:
+    def all_keys(self) -> list[str]:
         """Return all accepted keys for this flag (param + aliases)."""
         return [self.param, *self.aliases]
 
 
 # Conservative flag sets that do not change output schema/shape
-TOOL_FLAGS: Dict[str, List[FlagDef]] = {
+TOOL_FLAGS: dict[str, list[FlagDef]] = {
     "nanoq": [
         FlagDef(param="min_len", name="--min-len", short="-l", type="int", description="Minimum read length (bp)"),
         FlagDef(param="max_len", name="--max-len", short="-L", type="int", description="Maximum read length (bp)"),
@@ -66,7 +66,7 @@ TOOL_FLAGS: Dict[str, List[FlagDef]] = {
 }
 
 # Recipes provide guided presets for common workflows
-RECIPES: Dict[str, Dict[str, Dict[str, Any]]] = {
+RECIPES: dict[str, dict[str, dict[str, Any]]] = {
     "nanoq": {
         "strict_qc": {"min_len": 1000, "min_qual": 10},
         "lenient_qc": {"min_len": 200, "min_qual": 7},
@@ -88,12 +88,12 @@ RECIPES: Dict[str, Dict[str, Dict[str, Any]]] = {
 }
 
 
-def get_tool_flags(tool: str) -> List[FlagDef]:
+def get_tool_flags(tool: str) -> list[FlagDef]:
     """Return flag definitions for a tool (empty list if unknown)."""
     return TOOL_FLAGS.get(tool, [])
 
 
-def get_tool_recipes(tool: str) -> Dict[str, Dict[str, Any]]:
+def get_tool_recipes(tool: str) -> dict[str, dict[str, Any]]:
     """Return recipes for a tool (empty dict if unknown)."""
     return RECIPES.get(tool, {})
 
