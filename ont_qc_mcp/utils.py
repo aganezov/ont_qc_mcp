@@ -6,7 +6,7 @@ import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import IO, List, Optional, Sequence, Union
+from typing import IO, Sequence
 
 import anyio
 
@@ -47,7 +47,7 @@ def _truncate_stderr(stderr: str, max_lines: int = 20) -> str:
 class CommandError(RuntimeError):
     """Raised when an external command fails."""
 
-    def __init__(self, result: CommandResult, stderr_max_lines: int = 20, message_override: Optional[str] = None):
+    def __init__(self, result: CommandResult, stderr_max_lines: int = 20, message_override: str | None = None):
         message = (
             message_override
             or _truncate_stderr(result.stderr, stderr_max_lines)
@@ -74,15 +74,15 @@ def report_progress(message: str) -> None:
 def run_command(
     cmd: Sequence[str],
     timeout: int = 120,
-    stdin: Optional[IO[str]] = None,
-    stdout_path: Optional[Union[str, Path]] = None,
-    max_stdout_chars: Optional[int] = None,
-    max_stderr_chars: Optional[int] = None,
+    stdin: IO[str] | None = None,
+    stdout_path: str | Path | None = None,
+    max_stdout_chars: int | None = None,
+    max_stderr_chars: int | None = None,
 ) -> CommandResult:
     """Run a command and capture stdio. When stdout_path is provided, stream stdout to that file."""
-    out_file: Optional[IO[str]] = None
+    out_file: IO[str] | None = None
 
-    def _bound(text: str, limit: Optional[int]) -> str:
+    def _bound(text: str, limit: int | None) -> str:
         if limit is None or limit <= 0 or len(text) <= limit:
             return text
         truncated = len(text) - limit
@@ -143,7 +143,7 @@ def run_command(
 
 
 async def run_command_async(
-    cmd: Sequence[str], timeout: int = 120, stdin: Optional[IO[str]] = None, stdout_path: Optional[Union[str, Path]] = None
+    cmd: Sequence[str], timeout: int = 120, stdin: IO[str] | None = None, stdout_path: str | Path | None = None
 ) -> CommandResult:
     """
     Async wrapper that runs the command in a worker thread to avoid blocking.
@@ -155,19 +155,19 @@ def run_command_with_retry(
     cmd: Sequence[str],
     *,
     timeout: int = 120,
-    stdin: Optional[IO[str]] = None,
-    stdout_path: Optional[Union[str, Path]] = None,
+    stdin: IO[str] | None = None,
+    stdout_path: str | Path | None = None,
     max_attempts: int = 1,
     backoff_seconds: float = 0.5,
-    max_stdout_chars: Optional[int] = None,
-    max_stderr_chars: Optional[int] = None,
+    max_stdout_chars: int | None = None,
+    max_stderr_chars: int | None = None,
 ) -> CommandResult:
     """
     Run a command with simple exponential backoff retry for transient failures.
     Retries on CommandError; caller decides max_attempts.
     """
     attempt = 0
-    last_error: Optional[CommandError] = None
+    last_error: CommandError | None = None
     while attempt < max_attempts:
         try:
             return run_command(
