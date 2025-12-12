@@ -4,7 +4,7 @@ import shutil
 import threading
 from concurrent.futures import Future
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import anyio
 
@@ -37,7 +37,7 @@ from .utils import CommandError, _truncate_stderr, format_cmd, report_progress, 
 logger = logging.getLogger(__name__)
 
 
-def env_check(tools: Optional[ToolPaths] = None) -> EnvStatus:
+def env_check(tools: ToolPaths | None = None) -> EnvStatus:
     tools = tools or ToolPaths()
     missing = tools.missing()
     resolved = tools.resolved()
@@ -46,13 +46,13 @@ def env_check(tools: Optional[ToolPaths] = None) -> EnvStatus:
 
 
 _EXEC_CFG = ExecutionConfig()
-_NANOQ_CACHE: Dict[tuple, NanoqStats] = {}
+_NANOQ_CACHE: dict[tuple, NanoqStats] = {}
 _NANOQ_CACHE_MAX = 8
 _NANOQ_CACHE_LOCK = threading.Lock()
-_NANOQ_INFLIGHT: Dict[tuple, Future] = {}
+_NANOQ_INFLIGHT: dict[tuple, Future] = {}
 
 
-def _nanoq_cache_key(path: Path, flags: Optional[Dict[str, Any]], cfg: ExecutionConfig) -> tuple:
+def _nanoq_cache_key(path: Path, flags: dict[str, Any] | None, cfg: ExecutionConfig) -> tuple:
     stat = path.stat()
     normalized_flags = tuple(sorted((flags or {}).items()))
     return (
@@ -65,7 +65,7 @@ def _nanoq_cache_key(path: Path, flags: Optional[Dict[str, Any]], cfg: Execution
     )
 
 
-def _validate_input_file(path: Path, cfg: ExecutionConfig, allowed_exts: Optional[tuple[str, ...]] = None) -> None:
+def _validate_input_file(path: Path, cfg: ExecutionConfig, allowed_exts: tuple[str, ...] | None = None) -> None:
     resolved = path.resolve()
     if not resolved.exists():
         raise FileNotFoundError(f"File not found: {resolved}")
@@ -82,7 +82,7 @@ def _validate_input_file(path: Path, cfg: ExecutionConfig, allowed_exts: Optiona
             raise ValueError(f"Unexpected file extension for {resolved}; expected one of {allowed_exts}")
 
 def _cached_nanoq_stats(
-    path: Path, tools: ToolPaths, flags: Optional[Dict[str, Any]], cfg: ExecutionConfig
+    path: Path, tools: ToolPaths, flags: dict[str, Any] | None, cfg: ExecutionConfig
 ) -> NanoqStats:
     key = _nanoq_cache_key(path, flags, cfg)
     with _NANOQ_CACHE_LOCK:
@@ -129,9 +129,9 @@ def _cached_nanoq_stats(
 
 def qc_reads(
     path: str,
-    tools: Optional[ToolPaths] = None,
-    flags: Optional[Dict[str, Any]] = None,
-    exec_cfg: Optional[ExecutionConfig] = None,
+    tools: ToolPaths | None = None,
+    flags: dict[str, Any] | None = None,
+    exec_cfg: ExecutionConfig | None = None,
 ) -> NanoqStats:
     tools = tools or ToolPaths()
     cfg = exec_cfg or _EXEC_CFG
@@ -146,10 +146,10 @@ def qc_reads(
 
 def filter_reads(
     path: str,
-    tools: Optional[ToolPaths] = None,
-    output_fastq: Optional[str] = None,
-    flags: Optional[Dict[str, Any]] = None,
-    exec_cfg: Optional[ExecutionConfig] = None,
+    tools: ToolPaths | None = None,
+    output_fastq: str | None = None,
+    flags: dict[str, Any] | None = None,
+    exec_cfg: ExecutionConfig | None = None,
 ) -> ChopperReport:
     tools = tools or ToolPaths()
     cfg = exec_cfg or _EXEC_CFG
@@ -165,9 +165,9 @@ def filter_reads(
 
 def read_length_distribution(
     path: str,
-    tools: Optional[ToolPaths] = None,
-    flags: Optional[Dict[str, Any]] = None,
-    exec_cfg: Optional[ExecutionConfig] = None,
+    tools: ToolPaths | None = None,
+    flags: dict[str, Any] | None = None,
+    exec_cfg: ExecutionConfig | None = None,
 ) -> ReadLengthDistribution:
     cfg = exec_cfg or _EXEC_CFG
     stats = qc_reads(path, tools=tools, flags=flags, exec_cfg=cfg)
@@ -180,9 +180,9 @@ def read_length_distribution(
 
 def qscore_distribution(
     path: str,
-    tools: Optional[ToolPaths] = None,
-    flags: Optional[Dict[str, Any]] = None,
-    exec_cfg: Optional[ExecutionConfig] = None,
+    tools: ToolPaths | None = None,
+    flags: dict[str, Any] | None = None,
+    exec_cfg: ExecutionConfig | None = None,
 ) -> QScoreDistribution:
     cfg = exec_cfg or _EXEC_CFG
     stats = qc_reads(path, tools=tools, flags=flags, exec_cfg=cfg)
@@ -197,9 +197,9 @@ def qscore_distribution(
 
 async def read_length_distribution_bam(
     path: str,
-    tools: Optional[ToolPaths] = None,
-    flags: Optional[Dict[str, Any]] = None,
-    exec_cfg: Optional[ExecutionConfig] = None,
+    tools: ToolPaths | None = None,
+    flags: dict[str, Any] | None = None,
+    exec_cfg: ExecutionConfig | None = None,
 ) -> ReadLengthDistribution:
     tools = tools or ToolPaths()
     aln_path = Path(path)
@@ -216,9 +216,9 @@ async def read_length_distribution_bam(
 
 async def qscore_distribution_bam(
     path: str,
-    tools: Optional[ToolPaths] = None,
-    flags: Optional[Dict[str, Any]] = None,
-    exec_cfg: Optional[ExecutionConfig] = None,
+    tools: ToolPaths | None = None,
+    flags: dict[str, Any] | None = None,
+    exec_cfg: ExecutionConfig | None = None,
 ) -> QScoreDistribution:
     tools = tools or ToolPaths()
     aln_path = Path(path)
@@ -237,10 +237,10 @@ async def qscore_distribution_bam(
 
 def qc_alignment(
     path: str,
-    tools: Optional[ToolPaths] = None,
+    tools: ToolPaths | None = None,
     include_hist: bool = True,
     use_scaled: bool = False,
-    flags: Optional[Dict[str, Any]] = None,
+    flags: dict[str, Any] | None = None,
 ) -> CraminoStats:
     tools = tools or ToolPaths()
     aln_path = Path(path)
@@ -260,10 +260,10 @@ def qc_alignment(
 
 def coverage_stats(
     path: str,
-    tools: Optional[ToolPaths] = None,
-    window: Optional[int] = None,
-    low_cov_threshold: Optional[float] = None,
-    flags: Optional[Dict[str, Any]] = None,
+    tools: ToolPaths | None = None,
+    window: int | None = None,
+    low_cov_threshold: float | None = None,
+    flags: dict[str, Any] | None = None,
 ) -> MosdepthStats:
     tools = tools or ToolPaths()
     aln_path = Path(path)
@@ -283,16 +283,16 @@ def coverage_stats(
 
 def alignment_error_profile(
     path: str,
-    tools: Optional[ToolPaths] = None,
-    flags: Optional[Dict[str, Any]] = None,
-    exec_cfg: Optional[ExecutionConfig] = None,
+    tools: ToolPaths | None = None,
+    flags: dict[str, Any] | None = None,
+    exec_cfg: ExecutionConfig | None = None,
 ) -> ErrorProfile:
     tools = tools or ToolPaths()
     cfg = exec_cfg or _EXEC_CFG
     aln_path = Path(path)
     _validate_input_file(aln_path, cfg, allowed_exts=(".bam", ".cram", ".sam"))
 
-    flag_data: Dict[str, Any] = dict(flags or {})
+    flag_data: dict[str, Any] = dict(flags or {})
     flag_data.setdefault("threads", cfg.threads_for("samtools"))
     flag_args = build_cli_args("samtools", flag_data)
     cmd = [tools.samtools, "stats", *flag_args, str(aln_path)]
@@ -315,12 +315,12 @@ def alignment_summary(
     include_hist: bool = True,
     use_scaled: bool = False,
     include_error_profile: bool = False,
-    coverage_window: Optional[int] = None,
-    coverage_low_cov_threshold: Optional[float] = None,
-    coverage_flags: Optional[Dict[str, Any]] = None,
-    cramino_flags: Optional[Dict[str, Any]] = None,
-    error_profile_flags: Optional[Dict[str, Any]] = None,
-    tools: Optional[ToolPaths] = None,
+    coverage_window: int | None = None,
+    coverage_low_cov_threshold: float | None = None,
+    coverage_flags: dict[str, Any] | None = None,
+    cramino_flags: dict[str, Any] | None = None,
+    error_profile_flags: dict[str, Any] | None = None,
+    tools: ToolPaths | None = None,
 ) -> QCReport:
     tools = tools or ToolPaths()
     report_progress(f"alignment_summary start: {path}")
@@ -341,7 +341,7 @@ def alignment_summary(
     return QCReport(alignment=aln_stats, coverage=coverage, errors=errors)
 
 
-def _normalize_declared_format(file_type: Optional[str]) -> Optional[str]:
+def _normalize_declared_format(file_type: str | None) -> str | None:
     if not file_type:
         return None
     normalized = file_type.lower()
@@ -350,7 +350,7 @@ def _normalize_declared_format(file_type: Optional[str]) -> Optional[str]:
     return normalized
 
 
-def _detect_header_format(file_path: Path) -> Optional[str]:
+def _detect_header_format(file_path: Path) -> str | None:
     """Infer the header format from the filename extension only."""
     name = file_path.name.lower()
     if name.endswith(".bam"):
@@ -364,7 +364,7 @@ def _detect_header_format(file_path: Path) -> Optional[str]:
     return None
 
 
-def _sniff_header_format(file_path: Path) -> Optional[str]:
+def _sniff_header_format(file_path: Path) -> str | None:
     """
     Use cheap magic-byte or header sniffing to guess format.
     Returns None when inconclusive.
@@ -419,7 +419,7 @@ def _sniff_header_format(file_path: Path) -> Optional[str]:
     return None
 
 
-def _infer_header_format(file_path: Path, file_type: Optional[str]) -> str:
+def _infer_header_format(file_path: Path, file_type: str | None) -> str:
     """
     Combine caller hint, sniffing, and extension to decide format.
     Raise friendly errors when mismatched.
@@ -469,10 +469,10 @@ def _maybe_quickcheck(path: Path, tools: ToolPaths, fmt: str, exec_cfg: Executio
 def _read_alignment_header_text(
     path: Path,
     tools: ToolPaths,
-    flags: Optional[Dict[str, Any]],
+    flags: dict[str, Any] | None,
     exec_cfg: ExecutionConfig,
 ) -> str:
-    flag_data: Dict[str, Any] = dict(flags or {})
+    flag_data: dict[str, Any] = dict(flags or {})
     flag_data.setdefault("threads", exec_cfg.threads_for("samtools"))
     flag_args = build_cli_args("samtools", flag_data)
     cmd = [tools.samtools, "view", "-H", *flag_args, str(path)]
@@ -488,9 +488,9 @@ def _read_alignment_header_text(
 DEFAULT_VCF_HEADER_MAX_LINES = 2000
 
 
-def _read_vcf_header_text(path: Path, max_lines: Optional[int] = DEFAULT_VCF_HEADER_MAX_LINES) -> str:
+def _read_vcf_header_text(path: Path, max_lines: int | None = DEFAULT_VCF_HEADER_MAX_LINES) -> str:
     opener = gzip.open if path.name.lower().endswith(".gz") else open
-    header_lines: List[str] = []
+    header_lines: list[str] = []
     with opener(path, "rt", encoding="utf-8", errors="replace") as fh:
         for line in fh:
             if max_lines is not None and len(header_lines) >= max_lines:
@@ -507,11 +507,11 @@ def _read_vcf_header_text(path: Path, max_lines: Optional[int] = DEFAULT_VCF_HEA
 
 def header_metadata_lookup(
     path: str,
-    file_type: Optional[str] = None,
-    flags: Optional[Dict[str, Any]] = None,
-    tools: Optional[ToolPaths] = None,
-    exec_cfg: Optional[ExecutionConfig] = None,
-    max_lines: Optional[int] = DEFAULT_VCF_HEADER_MAX_LINES,
+    file_type: str | None = None,
+    flags: dict[str, Any] | None = None,
+    tools: ToolPaths | None = None,
+    exec_cfg: ExecutionConfig | None = None,
+    max_lines: int | None = DEFAULT_VCF_HEADER_MAX_LINES,
 ) -> HeaderMetadata:
     """
     Extract header metadata for BAM/CRAM/VCF inputs and return structured data with a summary.
@@ -536,7 +536,7 @@ def header_metadata_lookup(
     return metadata
 
 
-def serialize_model(model) -> Dict[str, object]:
+def serialize_model(model) -> dict[str, object]:
     """Return a JSON-serializable dict from a pydantic model."""
     return model.model_dump()
 
