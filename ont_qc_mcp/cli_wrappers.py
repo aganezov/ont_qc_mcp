@@ -1,6 +1,6 @@
 import json
 import logging
-import subprocess
+import subprocess  # nosec B404
 import tempfile
 import time
 from collections import deque
@@ -461,7 +461,7 @@ def detect_container_runtime(tools: ToolPaths) -> Literal["docker", "apptainer",
     docker_path = which(tools.docker)
     if docker_path:
         try:
-            subprocess.run([docker_path, "info"], capture_output=True, timeout=5, check=True)
+            subprocess.run([docker_path, "info"], capture_output=True, timeout=5, check=True)  # nosec B603
             return "docker"
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
             pass
