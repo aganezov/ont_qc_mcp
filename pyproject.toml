@@ -55,6 +55,10 @@ ont-qc-mcp = "ont_qc_mcp.app_server:main"
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools.packages.find]
+include = ["ont_qc_mcp*"]
+exclude = ["docker*", "tests*", "docs*", "scripts*"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
