@@ -1,6 +1,7 @@
 import json
 import os
 import platform
+import shutil
 import subprocess
 from pathlib import Path
 from typing import cast
@@ -34,6 +35,16 @@ def _should_use_mock() -> str:
         return explicit
     # Default: mock on ARM64 Mac (x86 image is slow), real elsewhere
     return "1" if _is_arm64_mac() else "0"
+
+
+def _preserve_snapshot(snapshot_path: Path, test_name: str) -> None:
+    """Copy snapshot to IGV_SNAPSHOT_DIR for CI artifact preservation."""
+    snapshot_dir = os.getenv("IGV_SNAPSHOT_DIR")
+    if snapshot_dir and snapshot_path.exists():
+        dest_dir = Path(snapshot_dir)
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = dest_dir / f"{test_name}_{snapshot_path.name}"
+        shutil.copy(snapshot_path, dest)
 
 
 def test_detect_runtime_docker_available(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -180,6 +191,7 @@ def test_igv_snapshot_from_bed(
     snapshot_path = Path(result.snapshot_files[0])
     assert snapshot_path.exists()
     assert snapshot_path.name == "bed_region.png"
+    _preserve_snapshot(snapshot_path, "bed_region")
 
 
 @pytest.mark.igv_integration
@@ -205,6 +217,37 @@ def test_igv_snapshot_custom_genome(
     snapshot_path = Path(result.snapshot_files[0])
     assert snapshot_path.exists()
     assert snapshot_path.suffix == ".svg"
+    _preserve_snapshot(snapshot_path, "custom_genome")
+
+
+@pytest.mark.igv_integration
+def test_igv_snapshot_bam_and_vcf(
+    sample_bam: Path,
+    sample_vcf: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test snapshot generation with both BAM and VCF tracks (haplotag data)."""
+    mock_flag = _should_use_mock()
+    monkeypatch.setenv("MCP_IGV_MOCK", mock_flag)
+
+    result = generate_igv_snapshots(
+        genome="hg38",
+        tracks=[str(sample_bam), str(sample_vcf)],
+        regions=[
+            {"chrom": "chr1", "start": 4140000, "end": 4145000, "name": "haplotag_wide"},
+            {"chrom": "chr1", "start": 4142200, "end": 4143000, "name": "haplotag_zoomed"},
+        ],
+        output_dir=str(tmp_path),
+    )
+
+    assert result.execution_mode == "docker"
+    assert len(result.snapshot_files) == 2
+    for snap_file in result.snapshot_files:
+        snapshot_path = Path(snap_file)
+        assert snapshot_path.exists()
+        assert snapshot_path.suffix == ".png"
+        _preserve_snapshot(snapshot_path, "bam_vcf")
 
 
 @pytest.mark.igv_integration

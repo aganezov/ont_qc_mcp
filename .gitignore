@@ -30,3 +30,4 @@ htmlcov/
 .cursor/
 terminals/
 
+.demo_snapshots/

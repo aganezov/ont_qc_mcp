@@ -99,7 +99,21 @@ jobs:
       - name: Pull IGV container image
         run: docker pull ${{ env.MCP_IGV_CONTAINER_IMAGE }}
 
+      - name: Create snapshot output directory
+        run: mkdir -p igv_snapshots
+
       - name: Integration tests (full suite)
         shell: bash -l {0}
+        env:
+          IGV_SNAPSHOT_DIR: ${{ github.workspace }}/igv_snapshots
         run: pytest -m "integration or igv_integration or not integration" -ra
+
+      - name: Upload IGV snapshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: igv-snapshots-${{ matrix.arch }}
+          path: igv_snapshots/
+          if-no-files-found: ignore
+          retention-days: 7
 
