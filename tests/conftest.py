@@ -1,8 +1,6 @@
 import os
 import sys
-import subprocess
 from pathlib import Path
-from shutil import which
 
 import pytest
 
