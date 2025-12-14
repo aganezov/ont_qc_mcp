@@ -41,15 +41,7 @@ jobs:
         run: pytest --cov=ont_qc_mcp --cov-report=xml
 
   integration:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            arch: x86_64
-          - os: ubuntu-24.04-arm
-            arch: arm64
+    runs-on: ubuntu-latest
     env:
       MCP_IGV_MOCK: "0"
       MCP_IGV_CONTAINER_IMAGE: "aganezov/igv_snapper:0.2"
@@ -94,7 +86,6 @@ jobs:
           mosdepth --version
           samtools --version
           nanoq --version
-          echo "Architecture: $(uname -m)"
 
       - name: Pull IGV container image
         run: docker pull ${{ env.MCP_IGV_CONTAINER_IMAGE }}
@@ -112,7 +103,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: igv-snapshots-${{ matrix.arch }}
+          name: igv-snapshots
           path: igv_snapshots/
           if-no-files-found: ignore
           retention-days: 7
