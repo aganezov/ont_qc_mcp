@@ -41,7 +41,18 @@ jobs:
         run: pytest --cov=ont_qc_mcp --cov-report=xml
 
   integration:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: x86_64
+          - os: ubuntu-24.04-arm
+            arch: arm64
+    env:
+      MCP_IGV_MOCK: "0"
+      MCP_IGV_CONTAINER_IMAGE: "aganezov/igv_snapper:0.2"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -83,8 +94,12 @@ jobs:
           mosdepth --version
           samtools --version
           nanoq --version
+          echo "Architecture: $(uname -m)"
+
+      - name: Pull IGV container image
+        run: docker pull ${{ env.MCP_IGV_CONTAINER_IMAGE }}
 
       - name: Integration tests (full suite)
         shell: bash -l {0}
-        run: pytest -m "integration or not integration" -ra
+        run: pytest -m "integration or igv_integration or not integration" -ra
 

@@ -21,6 +21,30 @@ Model Context Protocol server exposing lightweight QC/EDA helpers for Oxford Nan
   - `CHOPPER` (default `chopper`)
   - `SAMTOOLS` (default `samtools`) for error profiling
 
+## IGV snapshot tool (optional)
+- Container runtime: Docker (preferred) or Apptainer/Singularity
+- Timeout/runtime controls: `MCP_TIMEOUT_IGV` (default 600s) and `MCP_IGV_CONTAINER_IMAGE` / `MCP_IGV_SIF_PATH`
+
+### Pre-built multi-arch image (recommended)
+```bash
+docker pull aganezov/igv_snapper:0.2
+```
+This image supports both `linux/amd64` and `linux/arm64` natively. Docker automatically pulls the correct architecture.
+
+### Build locally (optional)
+```bash
+cd docker/igv_snapper
+./build-multiarch.sh igv_snapper 0.2
+export MCP_IGV_CONTAINER_IMAGE=igv_snapper:0.2
+```
+The image uses Ubuntu 24.04 + OpenJDK 21 + IGV 2.19.7.
+
+### Apptainer/HPC users
+```bash
+apptainer pull igv_snapper.sif docker://aganezov/igv_snapper:0.1
+export MCP_IGV_SIF_PATH=/path/to/igv_snapper.sif
+```
+
 ## Quick start
 ```bash
 pip install -e .

@@ -60,8 +60,9 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 markers = [
     "integration: tests that require external CLI tools",
+    "igv_integration: tests that require Docker/Apptainer + IGV container",
 ]
-addopts = "-m 'not integration'"
+addopts = "-m 'not integration and not igv_integration'"
 
 [tool.ruff]
 target-version = "py310"

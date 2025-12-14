@@ -1,11 +1,14 @@
 import json
 import logging
+import os
+import subprocess
 import tempfile
 import time
 from collections import deque
 from pathlib import Path
+from shutil import which
 from threading import Thread
-from typing import Any, Sequence
+from typing import Any, Literal, Sequence
 
 from .config import ExecutionConfig, ToolPaths
 from .flag_schemas import FlagDef, get_tool_flags
@@ -451,6 +454,110 @@ def mosdepth_coverage(
     return parse_mosdepth_summary(summary_text, file_path=str(path), threshold=low_cov_threshold)
 
 
+def detect_container_runtime(tools: ToolPaths) -> Literal["docker", "apptainer", None]:
+    """
+    Detect available container runtime in priority order.
+    Returns None if no container runtime is available.
+    """
+    docker_path = which(tools.docker)
+    if docker_path:
+        try:
+            subprocess.run([docker_path, "info"], capture_output=True, timeout=5, check=True)
+            return "docker"
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            pass
+
+    for cmd in (tools.apptainer, tools.singularity):
+        if which(cmd):
+            return "apptainer"
+
+    return None
+
+
+def run_igv_snapshot(
+    batch_file: Path,
+    output_dir: Path,
+    tools: ToolPaths,
+    exec_cfg: ExecutionConfig | None = None,
+    snapshot_format: str = "png",
+    force_runtime: Literal["docker", "apptainer", "local"] | None = None,
+    mount_paths: list[Path] | None = None,
+) -> tuple[list[Path], Literal["docker", "apptainer", "local"], list[str]]:
+    """
+    Execute IGV via container runtime or local xvfb-run.
+
+    Fallback chain: Docker → Apptainer → Local IGV
+
+    Returns: (snapshot_paths, execution_mode, command_used)
+    """
+    cfg = exec_cfg or ExecutionConfig()
+    batch_file = Path(batch_file).resolve()
+    output_dir = Path(output_dir).resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    runtime = force_runtime or detect_container_runtime(tools)
+    if force_runtime and runtime != force_runtime:
+        raise RuntimeError(f"Requested runtime '{force_runtime}' not available (detected: {runtime})")
+    if runtime is None:
+        raise RuntimeError("No container runtime available. Install Docker or Apptainer, or set MCP_IGV_SIF_PATH.")
+
+    read_mounts = {batch_file.parent, *(Path(p).resolve() for p in (mount_paths or []))}
+    write_mounts = {output_dir}
+    # Avoid duplicate mount points (e.g., output_dir also listed as a read-only mount).
+    read_mounts -= write_mounts
+    timeout = cfg.timeout_for("igv")
+    image = cfg.igv_container_image
+
+    if runtime == "docker":
+        cmd: list[str] = [
+            tools.docker,
+            "run",
+            "--rm",
+        ]
+        for mount in sorted(read_mounts):
+            cmd += ["-v", f"{mount}:{mount}:ro"]
+        for mount in sorted(write_mounts):
+            cmd += ["-v", f"{mount}:{mount}"]
+        cmd += [
+            image,
+            "/IGV_Linux_2.16.2/igv.sh",
+            "-b",
+            str(batch_file),
+        ]
+    elif runtime == "apptainer":
+        image_ref = cfg.igv_sif_path or f"docker://{image}"
+        cmd = [tools.apptainer, "exec"]
+        for mount in sorted(read_mounts):
+            cmd += ["--bind", f"{mount}:{mount}:ro"]
+        for mount in sorted(write_mounts):
+            cmd += ["--bind", f"{mount}:{mount}"]
+        cmd += [
+            image_ref,
+            "/IGV_Linux_2.16.2/igv.sh",
+            "-b",
+            str(batch_file),
+        ]
+    else:  # local
+        cmd = [
+            tools.xvfb_run,
+            "--auto-servernum",
+            "--server-num=1",
+            tools.igv,
+            "-b",
+            str(batch_file),
+        ]
+
+    try:
+        run_command(cmd, timeout=timeout)
+    except CommandError as exc:
+        raise RuntimeError(
+            f"igv snapshot failed: {format_cmd(exc.result.cmd)}\n{_truncate_stderr(exc.result.stderr)}"
+        ) from exc
+
+    snapshots = sorted(output_dir.glob(f"*.{snapshot_format}"))
+    return snapshots, runtime, cmd
+
+
 __all__ = [
     "FlagValidationError",
     "build_cli_args",
@@ -459,4 +566,6 @@ __all__ = [
     "mosdepth_coverage",
     "nanoq_from_bam_streaming",
     "nanoq_stats",
+    "detect_container_runtime",
+    "run_igv_snapshot",
 ]

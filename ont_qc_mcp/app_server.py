@@ -33,6 +33,7 @@ from .tools import (
     qscore_distribution_bam,
     read_length_distribution,
     read_length_distribution_bam,
+    generate_igv_snapshots,
     serialize_model,
 )
 
@@ -188,6 +189,48 @@ async def coverage_stats_tool(
         )
     )
     return _json_content(serialize_model(report), tool_name="mosdepth")
+
+
+async def igv_snapshot_tool(
+    genome: str | None = None,
+    tracks: list[str] | None = None,
+    regions: list[dict] | str | None = None,
+    output_dir: str | None = None,
+    batch_file: str | None = None,
+    compact: str = "squish",
+    color_by: str | None = None,
+    group_by: str | None = None,
+    snapshot_format: str = "png",
+    min_snapshot_width: int = 0,
+    extra_commands: list[str] | None = None,
+    extra_preferences: dict[str, str] | None = None,
+    small_indels_show: bool = False,
+    small_indels_threshold: int = 100,
+    allele_threshold: float = 0.2,
+) -> list[types.TextContent]:
+    """Generate IGV snapshots via containerized IGV."""
+    result = await anyio.to_thread.run_sync(
+        lambda: generate_igv_snapshots(
+            genome=genome,
+            tracks=tracks or [],
+            regions=regions or [],
+            output_dir=output_dir,
+            batch_file=batch_file,
+            compact=compact,
+            color_by=color_by,
+            group_by=group_by,
+            snapshot_format=snapshot_format,  # type: ignore[arg-type]
+            min_snapshot_width=min_snapshot_width,
+            extra_commands=extra_commands,
+            extra_preferences=extra_preferences,
+            small_indels_show=small_indels_show,
+            small_indels_threshold=small_indels_threshold,
+            allele_threshold=allele_threshold,
+            tools=_tool_paths(),
+            exec_cfg=EXEC_CFG,
+        )
+    )
+    return _json_content(serialize_model(result), tool_name="igv_snapshot_tool")
 
 
 async def alignment_error_profile_tool(path: str, flags: dict | None = None) -> list[types.TextContent]:
@@ -449,6 +492,95 @@ _TOOL_SPECS = [
             "when_to_use": (
                 "Depth-of-coverage summaries via mosdepth (summary.txt only); "
                 "tune window/quantize/fast-mode to control cost."
+            ),
+        },
+    ),
+    ToolSpec(
+        name="igv_snapshot_tool",
+        description=(
+            "Generate IGV screenshots at specified genomic regions. Supports arbitrary IGV commands via "
+            "extra_commands and extra_preferences for full flexibility."
+        ),
+        handler=igv_snapshot_tool,
+        schema={
+            "type": "object",
+            "properties": {
+                "batch_file": {
+                    "type": "string",
+                    "description": "Path to pre-made IGV batch file (bypasses all other options)",
+                },
+                "genome": {"type": "string", "description": "Reference genome (hg38, hg19, or path to .fa)"},
+                "tracks": {"type": "array", "items": {"type": "string"}, "description": "Paths to track files"},
+                "regions": {
+                    "oneOf": [
+                        {"type": "string", "description": "Path to BED file"},
+                        {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "chrom": {"type": "string"},
+                                    "start": {"type": "integer"},
+                                    "end": {"type": "integer"},
+                                    "name": {
+                                        "type": "string",
+                                        "description": "Snapshot filename (without extension)",
+                                    },
+                                    "extra_commands": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                        "description": (
+                                            "IGV commands to run before this snapshot (e.g., 'sort BASE', "
+                                            "'viewaspairs')"
+                                        ),
+                                    },
+                                },
+                                "required": ["chrom", "start", "end"],
+                            },
+                        },
+                    ]
+                },
+                "compact": {"type": "string", "enum": ["expand", "collapse", "squish"], "default": "squish"},
+                "color_by": {
+                    "type": "string",
+                    "description": "IGV colorBy option (e.g., 'BASE_MODIFICATION_C', 'READ_STRAND')",
+                },
+                "group_by": {"type": "string", "description": "IGV group option (e.g., 'TAG HP', 'STRAND')"},
+                "snapshot_format": {"type": "string", "enum": ["png", "svg"], "default": "png"},
+                "output_dir": {"type": "string", "description": "Output directory for snapshots"},
+                "min_snapshot_width": {
+                    "type": "integer",
+                    "default": 0,
+                    "description": "Minimum region width in bp",
+                },
+                "small_indels_show": {"type": "boolean", "default": False},
+                "small_indels_threshold": {"type": "integer", "default": 100},
+                "allele_threshold": {"type": "number", "default": 0.2},
+                "extra_commands": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Global IGV commands added after track loading (e.g., 'maxPanelHeight 500', 'sort STRAND')"
+                    ),
+                },
+                "extra_preferences": {
+                    "type": "object",
+                    "additionalProperties": {"type": "string"},
+                    "description": (
+                        "Raw IGV preferences as key-value pairs "
+                        "(e.g., {'SAM.SHOW_SOFT_CLIPPED': 'TRUE', 'SAM.FILTER_DUPLICATES': 'TRUE'})"
+                    ),
+                },
+            },
+            "oneOf": [{"required": ["batch_file"]}, {"required": ["genome", "tracks", "regions"]}],
+        },
+        metadata={
+            "runtime_hint": "slow (30s-5min depending on region count)",
+            "io_hint": "Reads BAM/VCF tracks, writes PNG/SVG images",
+            "timeout_seconds": EXEC_CFG.timeout_for("igv"),
+            "when_to_use": (
+                "Generate publication-quality IGV screenshots. Use extra_commands/extra_preferences for advanced IGV "
+                "options not explicitly exposed."
             ),
         },
     ),

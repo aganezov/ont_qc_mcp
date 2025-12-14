@@ -7,6 +7,7 @@ class EnvStatus(BaseModel):
     available: dict[str, bool]
     resolved_paths: dict[str, str]
     missing: list[str]
+    igv_runtime: str | None = Field(default=None, description="Detected IGV runtime (docker/apptainer/local)")
 
 
 class HistogramBin(BaseModel):
@@ -195,6 +196,29 @@ class QCReport(BaseModel):
     errors: ErrorProfile | None = None
 
 
+class IgvRegion(BaseModel):
+    """A genomic region to snapshot, with optional per-region IGV commands."""
+
+    chrom: str
+    start: int
+    end: int
+    name: str | None = None  # Optional filename (without extension)
+    extra_commands: list[str] = Field(
+        default_factory=list,
+        description="IGV commands to execute before this snapshot (e.g., 'sort BASE', 'viewaspairs')",
+    )
+
+
+class IgvSnapshotResult(BaseModel):
+    """Result of an IGV snapshot run."""
+
+    snapshot_files: list[str]
+    batch_file: str
+    output_directory: str
+    execution_mode: Literal["docker", "apptainer", "local"]
+    command: list[str]
+
+
 __all__ = [
     "ChopperReport",
     "CoverageByContig",
@@ -214,4 +238,6 @@ __all__ = [
     "ReferenceRecord",
     "SampleRecord",
     "VCFFieldDef",
+    "IgvRegion",
+    "IgvSnapshotResult",
 ]

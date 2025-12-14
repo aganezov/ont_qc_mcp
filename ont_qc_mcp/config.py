@@ -95,6 +95,11 @@ class ToolPaths:
             "samtools",
         )
     )
+    docker: str = field(default_factory=lambda: _preferred_tool_path("DOCKER", [], "docker"))
+    apptainer: str = field(default_factory=lambda: _preferred_tool_path("APPTAINER", [], "apptainer"))
+    singularity: str = field(default_factory=lambda: _preferred_tool_path("SINGULARITY", [], "singularity"))
+    igv: str = field(default_factory=lambda: _preferred_tool_path("IGV", [], "igv.sh"))
+    xvfb_run: str = field(default_factory=lambda: _preferred_tool_path("XVFB_RUN", [], "xvfb-run"))
 
     def as_dict(self) -> dict[str, str]:
         return {
@@ -103,6 +108,11 @@ class ToolPaths:
             "cramino": self.cramino,
             "mosdepth": self.mosdepth,
             "samtools": self.samtools,
+            "docker": self.docker,
+            "apptainer": self.apptainer,
+            "singularity": self.singularity,
+            "igv": self.igv,
+            "xvfb_run": self.xvfb_run,
         }
 
     def resolved(self) -> dict[str, str]:
@@ -134,6 +144,7 @@ DEFAULT_TOOL_TIMEOUTS: dict[str, int] = {
     "cramino": 300,
     "mosdepth": 600,
     "samtools": 300,
+    "igv": 600,
 }
 
 # Tools for which we do NOT set threads by default (leave unset unless explicitly overridden).
@@ -158,6 +169,10 @@ class ExecutionConfig:
     default_timeout: int | None = field(default_factory=lambda: _env_int("MCP_TIMEOUT_DEFAULT", 600))
     max_file_size_bytes: int | None = field(default_factory=lambda: _env_bytes("MCP_MAX_FILE_MB", None))
     max_concurrent_operations: int | None = field(default_factory=lambda: _env_int("MCP_MAX_CONCURRENCY", 4))
+    igv_container_image: str = field(
+        default_factory=lambda: _env_or_default("MCP_IGV_CONTAINER_IMAGE", "aganezov/igv_snapper:0.2")
+    )
+    igv_sif_path: str | None = field(default_factory=lambda: os.getenv("MCP_IGV_SIF_PATH"))
     per_tool_threads: dict[str, int] = field(
         default_factory=lambda: {
             tool: value

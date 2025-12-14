@@ -1,6 +1,8 @@
 import os
 import sys
+import subprocess
 from pathlib import Path
+from shutil import which
 
 import pytest
 
@@ -62,6 +64,32 @@ def sample_bam_highdepth() -> Path:
     if not bam_path.exists():
         pytest.fail(f"High-depth BAM missing: {bam_path}")
     return bam_path
+
+
+@pytest.fixture
+def sample_reference() -> Path:
+    """
+    Synthetic reference FASTA for custom genome testing.
+    """
+    ref_path = Path(__file__).resolve().parent / "fixtures" / "synthetic" / "highdepth.fa"
+    if not ref_path.exists():
+        pytest.fail(f"Reference FASTA missing: {ref_path}")
+    return ref_path
+
+
+@pytest.fixture
+def require_container_runtime():
+    """
+    Ensure a container runtime is available for IGV integration tests.
+    Skips the test if no Docker/Apptainer is detected.
+    """
+    from ont_qc_mcp.cli_wrappers import detect_container_runtime
+    from ont_qc_mcp.config import ToolPaths
+
+    runtime = detect_container_runtime(ToolPaths())
+    if runtime is None:
+        pytest.skip("No container runtime (Docker/Apptainer) available")
+    return runtime
 
 
 @pytest.fixture

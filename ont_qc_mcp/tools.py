@@ -1,10 +1,12 @@
 import gzip
+import os
 import logging
 import shutil
+import tempfile
 import threading
 from concurrent.futures import Future
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import anyio
 from pydantic import BaseModel
@@ -16,6 +18,8 @@ from .cli_wrappers import (
     mosdepth_coverage,
     nanoq_from_bam_streaming,
     nanoq_stats,
+    detect_container_runtime,
+    run_igv_snapshot,
 )
 from .config import ExecutionConfig, ToolPaths
 from .parsers import parse_alignment_header, parse_error_profile, parse_vcf_header, summarize_header
@@ -31,8 +35,11 @@ from .schemas import (
     QCReport,
     ReadLengthDistribution,
     LengthPercentiles,
+    IgvRegion,
+    IgvSnapshotResult,
 )
 from .utils import CommandError, _truncate_stderr, format_cmd, report_progress, run_command
+from .igv_batch import generate_igv_batch
 
 
 logger = logging.getLogger(__name__)
@@ -43,7 +50,9 @@ def env_check(tools: ToolPaths | None = None) -> EnvStatus:
     missing = tools.missing()
     resolved = tools.resolved()
     available = {k: k not in missing for k in resolved.keys()}
-    return EnvStatus(available=available, resolved_paths=resolved, missing=missing)
+    runtime = detect_container_runtime(tools)
+    available["igv_snapshot"] = runtime is not None
+    return EnvStatus(available=available, resolved_paths=resolved, missing=missing, igv_runtime=runtime)
 
 
 _EXEC_CFG = ExecutionConfig()
@@ -52,6 +61,35 @@ _NANOQ_CACHE_MAX = 8
 _NANOQ_CACHE_LOCK = threading.Lock()
 _NANOQ_INFLIGHT: dict[tuple, Future[NanoqStats]] = {}
 _NANOQ_CACHE_STATS: dict[str, int] = {"hits": 0, "misses": 0, "evictions": 0}
+
+
+def _mock_snapshot_files(batch_path: Path, output_root: Path, snapshot_format: str) -> list[Path]:
+    """
+    Generate placeholder snapshot files based on the batch file contents.
+
+    Used when MCP_IGV_MOCK=1 is set (test environments without a container runtime).
+    """
+    names: list[str] = []
+    try:
+        for line in batch_path.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if stripped.startswith("snapshot "):
+                parts = stripped.split(maxsplit=1)
+                if len(parts) == 2 and parts[1]:
+                    names.append(parts[1])
+    except FileNotFoundError:
+        pass
+
+    if not names:
+        names = [f"mock_snapshot.{snapshot_format}"]
+
+    snapshots: list[Path] = []
+    for name in names:
+        snap_path = output_root / name
+        snap_path.parent.mkdir(parents=True, exist_ok=True)
+        snap_path.write_text("mock igv snapshot", encoding="utf-8")
+        snapshots.append(snap_path)
+    return snapshots
 
 
 def _nanoq_cache_key(path: Path, flags: dict[str, Any] | None, cfg: ExecutionConfig) -> tuple:
@@ -571,6 +609,183 @@ def header_metadata_lookup(
     return metadata
 
 
+def _parse_bed_regions(bed_path: Path, snapshot_format: str, min_snapshot_width: int) -> list[IgvRegion]:
+    regions: list[IgvRegion] = []
+    with open(bed_path, "r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split("\t")
+            if len(parts) < 3:
+                raise ValueError(f"Invalid BED entry (expected at least 3 columns): {line}")
+            chrom, start_str, end_str = parts[:3]
+            try:
+                start = int(start_str)
+                end = int(end_str)
+            except ValueError as exc:
+                raise ValueError(f"Invalid start/end in BED entry: {line}") from exc
+
+            name = parts[3] if len(parts) > 3 else None
+            extra_cmds: list[str] = []
+            if len(parts) > 4:
+                for entry in parts[4:]:
+                    entry = entry.lstrip("#")
+                    extra_cmds.extend(cmd.strip() for cmd in entry.split(";") if cmd.strip())
+
+            regions.append(
+                IgvRegion(
+                    chrom=chrom,
+                    start=start,
+                    end=end,
+                    name=name,
+                    extra_commands=extra_cmds,
+                )
+            )
+    if not regions:
+        raise ValueError(f"No regions found in BED file: {bed_path}")
+    return regions
+
+
+def _coerce_regions(
+    regions: list[dict[str, Any]] | list[IgvRegion] | str,
+    snapshot_format: str,
+    min_snapshot_width: int,
+) -> list[IgvRegion]:
+    if isinstance(regions, str):
+        bed_path = Path(regions)
+        return _parse_bed_regions(bed_path, snapshot_format=snapshot_format, min_snapshot_width=min_snapshot_width)
+
+    coerced: list[IgvRegion] = []
+    for region in regions:
+        if isinstance(region, IgvRegion):
+            coerced.append(region)
+        elif isinstance(region, dict):
+            coerced.append(IgvRegion(**region))
+        else:
+            raise TypeError(f"Unsupported region type: {type(region)}")
+    if not coerced:
+        raise ValueError("At least one region is required")
+    return coerced
+
+
+def generate_igv_snapshots(
+    genome: str | None = None,
+    tracks: list[str] | None = None,
+    regions: list[dict[str, Any]] | list[IgvRegion] | str | None = None,
+    output_dir: str | None = None,
+    batch_file: str | None = None,
+    compact: str = "squish",
+    color_by: str | None = None,
+    group_by: str | None = None,
+    snapshot_format: Literal["png", "svg"] = "png",
+    min_snapshot_width: int = 0,
+    extra_commands: list[str] | None = None,
+    extra_preferences: dict[str, str] | None = None,
+    small_indels_show: bool = False,
+    small_indels_threshold: int = 100,
+    allele_threshold: float = 0.2,
+    tools: ToolPaths | None = None,
+    exec_cfg: ExecutionConfig | None = None,
+) -> IgvSnapshotResult:
+    """
+    Generate IGV snapshots via containerized IGV. Supports pre-made batch files or dynamic generation from regions.
+    """
+    tools = tools or ToolPaths()
+    cfg = exec_cfg or _EXEC_CFG
+
+    if batch_file:
+        batch_path = Path(batch_file).resolve()
+        _validate_input_file(batch_path, cfg)
+        output_root = Path(output_dir) if output_dir else Path(tempfile.mkdtemp(prefix="igv_snapshots_"))
+        output_root.mkdir(parents=True, exist_ok=True)
+        region_objs: list[IgvRegion] = []
+        track_paths: list[Path] = []
+        bed_path: Path | None = None
+        genome_path: Path | None = None
+    else:
+        if not genome or not tracks or not regions:
+            raise ValueError("genome, tracks, and regions are required when batch_file is not provided")
+
+        output_root = Path(output_dir) if output_dir else Path(tempfile.mkdtemp(prefix="igv_snapshots_"))
+        output_root.mkdir(parents=True, exist_ok=True)
+
+        batch_dir = Path(tempfile.mkdtemp(prefix="igv_batch_"))
+        batch_path = batch_dir / "igv.batch"
+
+        region_objs = _coerce_regions(regions, snapshot_format=snapshot_format, min_snapshot_width=min_snapshot_width)
+        bed_path = Path(regions) if isinstance(regions, str) else None
+
+        track_paths = []
+        for track in tracks:
+            track_path = Path(track)
+            _validate_input_file(track_path, cfg)
+            track_paths.append(track_path.resolve())
+
+        genome_path = Path(genome)
+        genome_arg = genome
+        if genome_path.exists():
+            _validate_input_file(genome_path, cfg)
+            genome_arg = str(genome_path.resolve())
+            genome_path = genome_path.resolve()
+
+        generate_igv_batch(
+            genome=genome_arg,
+            tracks=[str(t) for t in track_paths],
+            regions=region_objs,
+            output_path=batch_path,
+            compact=compact,
+            color_by=color_by,
+            group_by=group_by,
+            snapshot_dir=output_root,
+            snapshot_format=snapshot_format,
+            min_snapshot_width=min_snapshot_width,
+            small_indels_show=small_indels_show,
+            small_indels_threshold=small_indels_threshold,
+            allele_threshold=allele_threshold,
+            extra_commands=extra_commands,
+            extra_preferences=extra_preferences,
+        )
+
+    mount_paths = set()
+    if not batch_file:
+        for track_path in track_paths:
+            mount_paths.add(track_path.parent)
+        if genome_path and genome_path.exists():
+            mount_paths.add(genome_path.parent)
+        if bed_path and bed_path.exists():
+            mount_paths.add(bed_path.parent)
+    mount_paths.add(batch_path.parent)
+
+    if os.getenv("MCP_IGV_MOCK") == "1":
+        mock_runtime = os.getenv("MCP_IGV_MOCK_RUNTIME", "docker")
+        snapshots = _mock_snapshot_files(batch_path, output_root, snapshot_format)
+        return IgvSnapshotResult(
+            snapshot_files=[str(p) for p in snapshots],
+            batch_file=str(batch_path),
+            output_directory=str(output_root),
+            execution_mode=mock_runtime,  # type: ignore[arg-type]
+            command=["mock_igv_snapshot"],
+        )
+
+    snapshots, runtime, cmd = run_igv_snapshot(
+        batch_file=batch_path,
+        output_dir=output_root,
+        tools=tools,
+        exec_cfg=cfg,
+        snapshot_format=snapshot_format,
+        mount_paths=list(mount_paths),
+    )
+
+    return IgvSnapshotResult(
+        snapshot_files=[str(p) for p in snapshots],
+        batch_file=str(batch_path),
+        output_directory=str(output_root),
+        execution_mode=runtime,
+        command=cmd,
+    )
+
+
 def serialize_model(model: BaseModel) -> dict[str, object]:
     """Return a JSON-serializable dict from a pydantic model."""
     return model.model_dump()
@@ -591,4 +806,5 @@ __all__ = [
     "read_length_distribution_bam",
     "serialize_model",
     "get_nanoq_cache_stats",
+    "generate_igv_snapshots",
 ]
