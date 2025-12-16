@@ -58,3 +58,4 @@ WORKDIR /work
 
 ENTRYPOINT ["/usr/local/bin/igv-wrapper.sh"]
 CMD ["/bin/bash"]
+

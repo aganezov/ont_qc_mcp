@@ -49,3 +49,4 @@ echo "  docker run --rm -v /tmp:/tmp ${IMAGE_NAME}:${IMAGE_TAG} /IGV_Linux_2.16.
 echo ""
 echo "Usage in ont_qc_mcp:"
 echo "  export MCP_IGV_CONTAINER_IMAGE=${IMAGE_NAME}:${IMAGE_TAG}"
+
