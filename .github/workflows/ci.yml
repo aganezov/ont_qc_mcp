@@ -58,11 +58,11 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up micromamba with bioinformatics CLIs
-        uses: mamba-org/setup-micromamba@v1
+        uses: mamba-org/setup-micromamba@v2
         with:
           micromamba-version: "latest"
           environment-name: ci
-          activate-environment: ci
+          init-shell: bash
           condarc: |
             channels:
               - conda-forge
@@ -89,13 +89,24 @@ jobs:
       - name: Check installed CLI versions
         shell: bash -l {0}
         run: |
+          echo "=== System Architecture ==="
+          uname -m
+          echo ""
+          echo "=== Tool Versions ==="
           chopper --version
           cramino --version
           mosdepth --version
           samtools --version
           bcftools --version
           nanoq --version
-          echo "Architecture: $(uname -m)"
+          echo ""
+          echo "=== Verify mosdepth binary architecture ==="
+          MOSDEPTH_PATH=$(which mosdepth)
+          echo "mosdepth path: $MOSDEPTH_PATH"
+          file "$MOSDEPTH_PATH" || echo "file command not available"
+          echo ""
+          echo "=== Quick mosdepth execution test ==="
+          mosdepth --help | head -3 || echo "mosdepth help failed"
 
       - name: Pull IGV container image
         run: docker pull ${{ env.MCP_IGV_CONTAINER_IMAGE }}
