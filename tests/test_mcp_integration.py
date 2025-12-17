@@ -16,19 +16,11 @@ from mcp.client.session import ClientSession
 from mcp.client.stdio import stdio_client
 from pydantic import AnyUrl
 
-from ont_qc_mcp.tools import env_check
+from conftest import require_executable_tools
 
 
 REQUIRED_TOOLS = ["nanoq", "chopper", "cramino", "mosdepth", "samtools"]
 pytestmark = pytest.mark.integration
-
-
-def _require_tools(tools: list[str] | None = None):
-    tools = tools or REQUIRED_TOOLS
-    env_status = env_check()
-    missing = [tool for tool in tools if not env_status.available.get(tool)]
-    if missing:
-        pytest.skip(f"Required CLI tools missing: {', '.join(missing)}")
 
 
 def _text_content(content: types.Content) -> types.TextContent:
@@ -133,7 +125,7 @@ def test_env_status_tool(mcp_server_params):
 def test_alignment_workflow_smoke(mcp_server_params, sample_bam):
     """Simulate a minimal alignment workflow using real tools if available."""
 
-    _require_tools()
+    require_executable_tools(REQUIRED_TOOLS)
 
     async def _test():
         async with stdio_client(mcp_server_params) as (read, write):
@@ -205,7 +197,7 @@ def test_header_metadata_tool_real_vcf(mcp_server_params, sample_vcf):
 def test_qc_reads_tool_real_fastq(mcp_server_params, sample_fastq):
     """qc_reads_fastq_tool should operate on the real FASTQ fixture."""
 
-    _require_tools(["nanoq"])
+    require_executable_tools(["nanoq"])
 
     async def _test():
         async with stdio_client(mcp_server_params) as (read, write):
@@ -224,7 +216,7 @@ def test_qc_reads_tool_real_fastq(mcp_server_params, sample_fastq):
 def test_read_length_distribution_tool_real_fastq(mcp_server_params, sample_fastq):
     """read_length_distribution_fastq_tool should operate on the real FASTQ fixture."""
 
-    _require_tools(["nanoq"])
+    require_executable_tools(["nanoq"])
 
     async def _test():
         async with stdio_client(mcp_server_params) as (read, write):
@@ -242,7 +234,7 @@ def test_read_length_distribution_tool_real_fastq(mcp_server_params, sample_fast
 def test_qscore_distribution_tool_real_fastq(mcp_server_params, sample_fastq):
     """qscore_distribution_fastq_tool should operate on the real FASTQ fixture."""
 
-    _require_tools(["nanoq"])
+    require_executable_tools(["nanoq"])
 
     async def _test():
         async with stdio_client(mcp_server_params) as (read, write):
@@ -259,7 +251,7 @@ def test_qscore_distribution_tool_real_fastq(mcp_server_params, sample_fastq):
 def test_read_length_distribution_bam_tool(mcp_server_params, sample_bam):
     """read_length_distribution_bam_tool should stream BAM -> nanoq and return histogram."""
 
-    _require_tools(["samtools", "nanoq"])
+    require_executable_tools(["samtools", "nanoq"])
 
     async def _test():
         async with stdio_client(mcp_server_params) as (read, write):
@@ -278,7 +270,7 @@ def test_read_length_distribution_bam_tool(mcp_server_params, sample_bam):
 def test_qscore_distribution_bam_tool(mcp_server_params, sample_bam):
     """qscore_distribution_bam_tool should stream BAM -> nanoq and return qscore histogram."""
 
-    _require_tools(["samtools", "nanoq"])
+    require_executable_tools(["samtools", "nanoq"])
 
     async def _test():
         async with stdio_client(mcp_server_params) as (read, write):
@@ -295,7 +287,7 @@ def test_qscore_distribution_bam_tool(mcp_server_params, sample_bam):
 def test_filter_reads_tool_real_fastq(mcp_server_params, sample_fastq, tmp_path):
     """filter_reads_fastq_tool should process the real FASTQ fixture and produce output."""
 
-    _require_tools(["chopper"])
+    require_executable_tools(["chopper"])
 
     output_fastq = tmp_path / "filtered.fastq"
 
@@ -317,7 +309,7 @@ def test_filter_reads_tool_real_fastq(mcp_server_params, sample_fastq, tmp_path)
 def test_header_metadata_tool_real_bam(mcp_server_params, sample_bam):
     """Header metadata tool should parse BAM headers."""
 
-    _require_tools(["samtools"])
+    require_executable_tools(["samtools"])
 
     async def _test():
         async with stdio_client(mcp_server_params) as (read, write):
@@ -336,7 +328,7 @@ def test_header_metadata_tool_real_bam(mcp_server_params, sample_bam):
 def test_alignment_error_profile_tool_real_bam(mcp_server_params, sample_bam):
     """alignment_error_profile_tool should run samtools stats on the real BAM."""
 
-    _require_tools(["samtools"])
+    require_executable_tools(["samtools"])
 
     async def _test():
         async with stdio_client(mcp_server_params) as (read, write):
@@ -353,7 +345,7 @@ def test_alignment_error_profile_tool_real_bam(mcp_server_params, sample_bam):
 def test_alignment_summary_tool_real_bam(mcp_server_params, sample_bam):
     """alignment_summary_tool should aggregate cramino + mosdepth on real BAM."""
 
-    _require_tools()
+    require_executable_tools(REQUIRED_TOOLS)
 
     async def _test():
         async with stdio_client(mcp_server_params) as (read, write):
@@ -372,7 +364,7 @@ def test_alignment_summary_tool_real_bam(mcp_server_params, sample_bam):
 def test_alignment_summary_tool_highdepth_bam(mcp_server_params, sample_bam_highdepth):
     """alignment_summary_tool should show non-zero coverage on the high-depth synthetic BAM."""
 
-    _require_tools()
+    require_executable_tools(REQUIRED_TOOLS)
 
     async def _test():
         async with stdio_client(mcp_server_params) as (read, write):

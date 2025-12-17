@@ -1,6 +1,8 @@
 import os
+import subprocess
 import sys
 from pathlib import Path
+from shutil import which
 
 import pytest
 
@@ -8,6 +10,73 @@ import pytest
 # Synthetic fixture directory
 # ---------------------------------------------------------------------------
 SYNTHETIC_DIR = Path(__file__).resolve().parent / "fixtures" / "synthetic"
+
+# ---------------------------------------------------------------------------
+# Tool verification cache (to avoid repeated subprocess calls)
+# ---------------------------------------------------------------------------
+_TOOL_EXECUTABLE_CACHE: dict[str, bool] = {}
+
+# Version flags for each tool (used to verify executability)
+_TOOL_VERSION_FLAGS: dict[str, list[str]] = {
+    "nanoq": ["--version"],
+    "cramino": ["--version"],
+    "mosdepth": ["--version"],
+    "chopper": ["--version"],
+    "samtools": ["--version"],
+    "bcftools": ["--version"],
+}
+
+
+def is_tool_executable(tool_name: str) -> bool:
+    """
+    Check if a tool is both available on PATH and actually executable.
+
+    This catches issues like:
+    - Tool binary exists but is for wrong architecture (Exec format error)
+    - Tool binary exists but has missing dependencies
+    - Tool binary exists but has permission issues
+
+    Results are cached to avoid repeated subprocess calls.
+    """
+    if tool_name in _TOOL_EXECUTABLE_CACHE:
+        return _TOOL_EXECUTABLE_CACHE[tool_name]
+
+    # First check if tool exists on PATH
+    tool_path = which(tool_name)
+    if tool_path is None:
+        _TOOL_EXECUTABLE_CACHE[tool_name] = False
+        return False
+
+    # Try to actually run the tool to verify it's executable
+    version_args = _TOOL_VERSION_FLAGS.get(tool_name, ["--version"])
+    try:
+        result = subprocess.run(
+            [tool_path, *version_args],
+            capture_output=True,
+            timeout=10,
+        )
+        # Most tools return 0 for --version, but some may return non-zero
+        # We consider it executable if it doesn't raise an exception
+        version_in_output = b"version" in result.stdout.lower() or b"version" in result.stderr.lower()
+        is_executable = result.returncode == 0 or version_in_output
+        _TOOL_EXECUTABLE_CACHE[tool_name] = is_executable
+        return is_executable
+    except (OSError, subprocess.TimeoutExpired, subprocess.SubprocessError):
+        # OSError includes Exec format error (errno 8)
+        _TOOL_EXECUTABLE_CACHE[tool_name] = False
+        return False
+
+
+def require_executable_tools(tools: list[str]) -> None:
+    """
+    Skip test if any of the specified tools are not executable.
+
+    This is more robust than just checking PATH - it verifies the tool
+    can actually run, catching architecture mismatches and other issues.
+    """
+    non_executable = [tool for tool in tools if not is_tool_executable(tool)]
+    if non_executable:
+        pytest.skip(f"Tools not executable (missing or wrong architecture): {', '.join(non_executable)}")
 
 
 def _ensure_qc_fixtures_exist() -> None:

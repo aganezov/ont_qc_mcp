@@ -15,19 +15,10 @@ from mcp import types
 from mcp.client.session import ClientSession
 from mcp.client.stdio import stdio_client
 
-from ont_qc_mcp.tools import env_check
+from conftest import require_executable_tools
 
 
-REQUIRED_TOOLS = ["bcftools", "samtools", "mosdepth"]
 pytestmark = pytest.mark.integration
-
-
-def _require_tools(tools: list[str] | None = None):
-    tools = tools or REQUIRED_TOOLS
-    env_status = env_check()
-    missing = [tool for tool in tools if not env_status.available.get(tool)]
-    if missing:
-        pytest.skip(f"Required CLI tools missing: {', '.join(missing)}")
 
 
 def _text_content(content: types.Content) -> types.TextContent:
@@ -61,7 +52,7 @@ def test_sequencing_summary_tool(mcp_server_params, synthetic_sequencing_summary
 def test_qc_variants_tool_real_vcf(mcp_server_params, sample_vcf):
     """Test qc_variants_tool with real VCF fixture."""
 
-    _require_tools(["bcftools"])
+    require_executable_tools(["bcftools"])
 
     async def _test():
         async with stdio_client(mcp_server_params) as (read, write):
@@ -87,7 +78,7 @@ def test_qc_variants_tool_real_vcf(mcp_server_params, sample_vcf):
 def test_qc_variants_tool_synthetic_vcf(mcp_server_params, synthetic_vcf):
     """Test qc_variants_tool with synthetic VCF."""
 
-    _require_tools(["bcftools"])
+    require_executable_tools(["bcftools"])
 
     async def _test():
         async with stdio_client(mcp_server_params) as (read, write):
@@ -108,7 +99,7 @@ def test_qc_variants_tool_synthetic_vcf(mcp_server_params, synthetic_vcf):
 def test_qc_variants_tool_snps_only(mcp_server_params, sample_vcf):
     """Test qc_variants_tool with SNPs only (no indels)."""
 
-    _require_tools(["bcftools"])
+    require_executable_tools(["bcftools"])
 
     async def _test():
         async with stdio_client(mcp_server_params) as (read, write):
@@ -135,7 +126,7 @@ def test_targeted_coverage_tool_bed(mcp_server_params, sample_bam, synthetic_bed
     which caught a bug in the original samtools bedcov implementation where
     the coverage column was incorrectly assumed to be at index 3.
     """
-    _require_tools(["mosdepth"])
+    require_executable_tools(["mosdepth"])
 
     async def _test():
         async with stdio_client(mcp_server_params) as (read, write):
@@ -180,7 +171,7 @@ def test_targeted_coverage_tool_location(mcp_server_params, sample_bam):
     This verifies that location strings like 'chr1:1000-2000' are correctly
     parsed and coverage is computed using mosdepth.
     """
-    _require_tools(["mosdepth"])
+    require_executable_tools(["mosdepth"])
 
     async def _test():
         async with stdio_client(mcp_server_params) as (read, write):
@@ -216,7 +207,7 @@ def test_targeted_coverage_tool_gene_name(mcp_server_params, sample_bam, synthet
     Verifies that gene coordinates are correctly looked up from GFF3 and
     coverage is computed using mosdepth.
     """
-    _require_tools(["mosdepth"])
+    require_executable_tools(["mosdepth"])
 
     async def _test():
         async with stdio_client(mcp_server_params) as (read, write):
@@ -353,7 +344,7 @@ def test_sequencing_summary_tool_missing_file(mcp_server_params, tmp_path):
 
 def test_targeted_coverage_tool_invalid_input_modes(mcp_server_params, sample_bam, synthetic_bed_valid):
     """Test targeted_coverage_tool with invalid input mode combinations."""
-    _require_tools(["mosdepth"])
+    require_executable_tools(["mosdepth"])
 
     async def _test():
         async with stdio_client(mcp_server_params) as (read, write):
