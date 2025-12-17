@@ -4,7 +4,120 @@ from pathlib import Path
 
 import pytest
 
+# ---------------------------------------------------------------------------
+# Synthetic fixture directory
+# ---------------------------------------------------------------------------
+SYNTHETIC_DIR = Path(__file__).resolve().parent / "fixtures" / "synthetic"
 
+
+def _ensure_qc_fixtures_exist() -> None:
+    """
+    Ensure QC synthetic fixtures exist, generating them on-demand if missing.
+
+    This allows tests to run even if the generated fixtures are not committed,
+    as long as the required CLI tools (bgzip, tabix) are available.
+    """
+    import importlib.util
+
+    # Load generator module dynamically to avoid mypy module resolution issues
+    generator_path = SYNTHETIC_DIR / "generate_synthetic_data.py"
+    spec = importlib.util.spec_from_file_location("generate_synthetic_data", generator_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load generator module from {generator_path}")
+    generator = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(generator)
+
+    SYNTHETIC_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Sequencing summary
+    seq_summary_path = SYNTHETIC_DIR / "sequencing_summary_mock.txt"
+    if not seq_summary_path.exists():
+        generator.generate_sequencing_summary(seq_summary_path)
+
+    # VCF (plain, gzipped, and indexed)
+    vcf_path = SYNTHETIC_DIR / "tiny.vcf"
+    vcf_gz_path = SYNTHETIC_DIR / "tiny.vcf.gz"
+    vcf_tbi_path = SYNTHETIC_DIR / "tiny.vcf.gz.tbi"
+    if not vcf_path.exists():
+        generator.generate_vcf(vcf_path)
+    if not vcf_gz_path.exists() or not vcf_tbi_path.exists():
+        generator.vcf_to_gzip_and_index(vcf_path)
+
+    # GFF3
+    gff3_path = SYNTHETIC_DIR / "genes_mock.gff3"
+    if not gff3_path.exists():
+        generator.generate_gff3(gff3_path)
+
+    # BED files
+    valid_bed_path = SYNTHETIC_DIR / "valid.bed"
+    invalid_bed_path = SYNTHETIC_DIR / "invalid.bed"
+    if not valid_bed_path.exists() or not invalid_bed_path.exists():
+        generator.generate_bed_files(valid_bed_path, invalid_bed_path)
+
+
+# Run fixture generation at module import time (before any tests run)
+# This is wrapped in try/except to allow tests to fail gracefully if
+# required tools (bgzip, tabix) are not available.
+try:
+    _ensure_qc_fixtures_exist()
+except SystemExit as e:
+    # Tool not available - tests that need these fixtures will fail
+    import warnings
+
+    warnings.warn(f"Could not generate QC fixtures: {e}")
+
+
+# ---------------------------------------------------------------------------
+# QC Synthetic Fixtures
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def synthetic_sequencing_summary() -> Path:
+    """Synthetic ONT sequencing summary file."""
+    path = SYNTHETIC_DIR / "sequencing_summary_mock.txt"
+    if not path.exists():
+        pytest.fail(f"Fixture missing: {path} (ensure bgzip/tabix are available)")
+    return path
+
+
+@pytest.fixture
+def synthetic_vcf() -> Path:
+    """Synthetic VCF file (gzipped with tabix index)."""
+    path = SYNTHETIC_DIR / "tiny.vcf.gz"
+    if not path.exists():
+        pytest.fail(f"Fixture missing: {path} (ensure bgzip/tabix are available)")
+    return path
+
+
+@pytest.fixture
+def synthetic_bed_valid() -> Path:
+    """Synthetic valid BED file."""
+    path = SYNTHETIC_DIR / "valid.bed"
+    if not path.exists():
+        pytest.fail(f"Fixture missing: {path}")
+    return path
+
+
+@pytest.fixture
+def synthetic_bed_invalid() -> Path:
+    """Synthetic invalid BED file (with deliberate format errors)."""
+    path = SYNTHETIC_DIR / "invalid.bed"
+    if not path.exists():
+        pytest.fail(f"Fixture missing: {path}")
+    return path
+
+
+@pytest.fixture
+def synthetic_gff3() -> Path:
+    """Synthetic GFF3 gene annotation file."""
+    path = SYNTHETIC_DIR / "genes_mock.gff3"
+    if not path.exists():
+        pytest.fail(f"Fixture missing: {path}")
+    return path
+
+
+# ---------------------------------------------------------------------------
+# Real Data Fixtures
+# ---------------------------------------------------------------------------
 @pytest.fixture
 def sample_bam() -> Path:
     """

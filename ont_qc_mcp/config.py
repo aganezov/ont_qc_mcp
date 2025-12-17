@@ -95,6 +95,13 @@ class ToolPaths:
             "samtools",
         )
     )
+    bcftools: str = field(
+        default_factory=lambda: _preferred_tool_path(
+            "BCFTOOLS",
+            [(_CONDA_ENV_BIN / "bcftools") if _CONDA_ENV_BIN else None],
+            "bcftools",
+        )
+    )
     docker: str = field(default_factory=lambda: _preferred_tool_path("DOCKER", [], "docker"))
     apptainer: str = field(default_factory=lambda: _preferred_tool_path("APPTAINER", [], "apptainer"))
     singularity: str = field(default_factory=lambda: _preferred_tool_path("SINGULARITY", [], "singularity"))
@@ -108,6 +115,7 @@ class ToolPaths:
             "cramino": self.cramino,
             "mosdepth": self.mosdepth,
             "samtools": self.samtools,
+            "bcftools": self.bcftools,
             "docker": self.docker,
             "apptainer": self.apptainer,
             "singularity": self.singularity,
@@ -144,6 +152,7 @@ DEFAULT_TOOL_TIMEOUTS: dict[str, int] = {
     "cramino": 300,
     "mosdepth": 600,
     "samtools": 300,
+    "bcftools": 300,
     "igv": 600,
 }
 

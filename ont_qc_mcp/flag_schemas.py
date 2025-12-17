@@ -89,6 +89,11 @@ TOOL_FLAGS: dict[str, list[FlagDef]] = {
     "samtools": [
         FlagDef(param="threads", name="-@", type="int", description="Worker threads"),
     ],
+    "bcftools": [
+        FlagDef(param="threads", name="--threads", type="int", description="Worker threads"),
+        FlagDef(param="samples", name="--samples", short="-s", type="str", description="Sample filter"),
+        FlagDef(param="regions", name="--regions", short="-r", type="str", description="Region filter"),
+    ],
 }
 
 # Recipes provide guided presets for common workflows
@@ -111,6 +116,7 @@ RECIPES: dict[str, dict[str, dict[str, Any]]] = {
         "fast_quantized": {"fast_mode": True, "quantize": "0:1:10:30:100:"},
     },
     "samtools": {},
+    "bcftools": {},
 }
 
 

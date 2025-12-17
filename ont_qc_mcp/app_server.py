@@ -26,7 +26,9 @@ from .tools import (
     env_check,
     filter_reads,
     qc_alignment,
+    qc_bed,
     qc_reads,
+    qc_variants,
     header_metadata_lookup,
     get_nanoq_cache_stats,
     qscore_distribution,
@@ -35,6 +37,8 @@ from .tools import (
     read_length_distribution_bam,
     generate_igv_snapshots,
     serialize_model,
+    sequencing_summary,
+    targeted_coverage,
 )
 
 server = Server("ont-qc-mcp")
@@ -287,6 +291,62 @@ async def header_metadata_tool(
         types.TextContent(type="text", text=summary),
         types.TextContent(type="text", text=json.dumps(payload, ensure_ascii=False, indent=2)),
     ]
+
+
+async def qc_bed_tool(path: str) -> list[types.TextContent]:
+    """Validate and QC a BED file."""
+    report = await anyio.to_thread.run_sync(lambda: qc_bed(path, tools=_tool_paths(), exec_cfg=EXEC_CFG))
+    return _json_content(serialize_model(report), tool_name="qc_bed_tool")
+
+
+async def sequencing_summary_tool(path: str) -> list[types.TextContent]:
+    """Parse ONT sequencing summary file and compute statistics."""
+    stats = await anyio.to_thread.run_sync(lambda: sequencing_summary(path, tools=_tool_paths(), exec_cfg=EXEC_CFG))
+    return _json_content(serialize_model(stats), tool_name="sequencing_summary_tool")
+
+
+async def qc_variants_tool(
+    path: str,
+    include_snps: bool = True,
+    include_indels: bool = True,
+    flags: dict | None = None,
+) -> list[types.TextContent]:
+    """Run VCF QC using bcftools stats."""
+    stats = await anyio.to_thread.run_sync(
+        lambda: qc_variants(
+            path,
+            include_snps=include_snps,
+            include_indels=include_indels,
+            tools=_tool_paths(),
+            flags=flags,
+            exec_cfg=EXEC_CFG,
+        )
+    )
+    return _json_content(serialize_model(stats), tool_name="bcftools")
+
+
+async def targeted_coverage_tool(
+    bam_path: str,
+    gene_name: str | None = None,
+    location: str | None = None,
+    annotation_path: str | None = None,
+    bed_path: str | None = None,
+) -> list[types.TextContent]:
+    """Compute targeted coverage for specified genomic regions using mosdepth."""
+    reports = await anyio.to_thread.run_sync(
+        lambda: targeted_coverage(
+            bam_path=bam_path,
+            gene_name=gene_name,
+            location=location,
+            annotation_path=annotation_path,
+            bed_path=bed_path,
+            tools=_tool_paths(),
+            exec_cfg=EXEC_CFG,
+        )
+    )
+    # Serialize list of reports directly (no wrapper object)
+    payload = [serialize_model(report) for report in reports]
+    return _json_content(payload, tool_name="mosdepth")
 
 
 @dataclass(frozen=True)
@@ -673,6 +733,122 @@ _TOOL_SPECS = [
             "default_threads": EXEC_CFG.threads_for("samtools"),
             "timeout_seconds": EXEC_CFG.timeout_for("samtools"),
             "when_to_use": "Summarize contigs/samples/programs without full QC run.",
+        },
+    ),
+    ToolSpec(
+        name="qc_bed_tool",
+        description="Validate and QC a BED file",
+        handler=qc_bed_tool,
+        schema={
+            "type": "object",
+            "properties": {
+                "path": {**_PATH_PROP, "description": "Path to BED file"},
+            },
+            "required": ["path"],
+        },
+        metadata={
+            "runtime_hint": "fast (pure Python; seconds)",
+            "io_hint": "Reads BED file; validates coordinates and reports issues",
+            "timeout_seconds": 30,
+            "when_to_use": (
+                "Validate BED file format and coordinates before using for targeted coverage or other analyses."
+            ),
+        },
+    ),
+    ToolSpec(
+        name="sequencing_summary_tool",
+        description="Parse ONT sequencing summary file and compute statistics",
+        handler=sequencing_summary_tool,
+        schema={
+            "type": "object",
+            "properties": {
+                "path": {**_PATH_PROP, "description": "Path to ONT sequencing summary TSV file"},
+            },
+            "required": ["path"],
+        },
+        metadata={
+            "runtime_hint": "fast-medium (pure Python; tens of seconds for large summaries)",
+            "io_hint": "Reads sequencing summary TSV; computes yield, N50, Q-scores, yield per hour",
+            "timeout_seconds": 120,
+            "when_to_use": (
+                "Extract run-level statistics from ONT sequencing summary files "
+                "(yield, N50, Q-scores, yield per hour windows)."
+            ),
+        },
+    ),
+    ToolSpec(
+        name="qc_variants_tool",
+        description="Run VCF QC using bcftools stats",
+        handler=qc_variants_tool,
+        schema={
+            "type": "object",
+            "properties": {
+                "path": {**_PATH_PROP, "description": "Path to VCF/BCF file"},
+                "include_snps": {
+                    "type": "boolean",
+                    "description": "Include SNP statistics (count, TS/TV ratio)",
+                    "default": True,
+                },
+                "include_indels": {
+                    "type": "boolean",
+                    "description": "Include indel statistics (count)",
+                    "default": True,
+                },
+                "flags": _FLAGS_PROP,
+            },
+            "required": ["path"],
+        },
+        metadata={
+            "runtime_hint": "medium (1-5 min; scales with VCF size)",
+            "io_hint": "Reads VCF/BCF; uses bcftools stats",
+            "default_threads": EXEC_CFG.threads_for("bcftools"),
+            "timeout_seconds": EXEC_CFG.timeout_for("bcftools"),
+            "when_to_use": "Variant-level QC statistics from VCF files (SNP/indel counts, TS/TV ratio, singletons).",
+        },
+    ),
+    ToolSpec(
+        name="targeted_coverage_tool",
+        description="Compute targeted coverage for specified genomic regions using mosdepth",
+        handler=targeted_coverage_tool,
+        schema={
+            "type": "object",
+            "properties": {
+                "bam_path": {**_PATH_PROP, "description": "Path to BAM/CRAM alignment file"},
+                "gene_name": {
+                    "type": "string",
+                    "description": "Gene name to look up in annotation (requires annotation_path)",
+                },
+                "location": {
+                    "type": "string",
+                    "description": "Location string in format 'chr:start-end' (e.g., 'chr1:1000-2000')",
+                },
+                "annotation_path": {
+                    "type": "string",
+                    "description": "Path to GFF3 annotation file (required when gene_name is provided)",
+                },
+                "bed_path": {
+                    "type": "string",
+                    "description": "Path to BED file with target regions",
+                },
+            },
+            "required": ["bam_path"],
+            "oneOf": [
+                {"required": ["gene_name", "annotation_path"]},
+                {"required": ["location"]},
+                {"required": ["bed_path"]},
+            ],
+        },
+        metadata={
+            "runtime_hint": "medium (minutes; depends on BAM size and region count)",
+            "io_hint": "Reads BAM/CRAM + BED/GFF3; uses mosdepth with --by and --thresholds",
+            "default_threads": EXEC_CFG.threads_for("mosdepth"),
+            "timeout_seconds": EXEC_CFG.timeout_for("mosdepth"),
+            "when_to_use": (
+                "Compute mean depth for specific genomic regions. Supports three input modes: "
+                "1) gene_name + annotation_path (looks up gene coordinates in GFF3), "
+                "2) location string (e.g., 'chr1:1000-2000'), "
+                "3) bed_path (uses BED file directly)."
+            ),
         },
     ),
 ]

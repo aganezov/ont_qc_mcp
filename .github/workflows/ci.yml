@@ -69,7 +69,7 @@ jobs:
               - bioconda
             channel_priority: strict
           create-args: >-
-            python=3.11 chopper cramino mosdepth samtools
+            python=3.11 chopper cramino mosdepth samtools bcftools
           cache-environment: true
           cache-downloads: true
 
@@ -93,6 +93,7 @@ jobs:
           cramino --version
           mosdepth --version
           samtools --version
+          bcftools --version
           nanoq --version
           echo "Architecture: $(uname -m)"
 

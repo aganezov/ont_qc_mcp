@@ -1,0 +1,13 @@
+##gff-version 3
+##sequence-region chr1 1 248956422
+chr1	.	gene	100000	200000	.	+	.	ID=gene1;Name=MOCK_GENE1
+chr1	.	mRNA	100000	200000	.	+	.	ID=mrna1;Parent=gene1
+chr1	.	exon	100000	120000	.	+	.	ID=exon1;Parent=mrna1
+chr1	.	exon	180000	200000	.	+	.	ID=exon2;Parent=mrna1
+chr1	.	gene	500000	600000	.	-	.	ID=gene2;Name=MOCK_GENE2
+chr1	.	mRNA	500000	600000	.	-	.	ID=mrna2;Parent=gene2
+chr1	.	exon	500000	520000	.	-	.	ID=exon3;Parent=mrna2
+chr1	.	exon	580000	600000	.	-	.	ID=exon4;Parent=mrna2
+chr1	.	gene	1000000	1100000	.	+	.	ID=gene3;Name=MOCK_GENE3
+chr1	.	mRNA	1000000	1100000	.	+	.	ID=mrna3;Parent=gene3
+chr1	.	exon	1000000	1050000	.	+	.	ID=exon5;Parent=mrna3

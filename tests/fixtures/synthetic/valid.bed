@@ -1,0 +1,5 @@
+chr1	1000	2000	gene1_exon1	.	+
+chr1	5000	6000	gene1_exon2	.	+
+chr1	10000	12000	gene2_exon1	.	-
+chr1	15000	16000	gene2_exon2	.	-
+chr1	20000	25000	gene3_exon1	.	+

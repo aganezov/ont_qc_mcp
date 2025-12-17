@@ -557,6 +557,145 @@ def run_igv_snapshot(
     return snapshots, runtime, cmd
 
 
+def run_bcftools_stats(
+    path: Path,
+    tools: ToolPaths,
+    flags: dict[str, Any] | None = None,
+    exec_cfg: ExecutionConfig | None = None,
+) -> str:
+    """
+    Run bcftools stats and return stdout.
+
+    Args:
+        path: Path to VCF/BCF file
+        tools: ToolPaths instance
+        flags: Optional flags dict (threads, samples, regions)
+        exec_cfg: Optional ExecutionConfig for timeout/threads
+
+    Returns:
+        stdout text from bcftools stats
+    """
+    merged_flags, timeout = _prepare_execution("bcftools", flags, exec_cfg)
+    flag_args = build_cli_args("bcftools", merged_flags)
+    cmd: list[str] = [tools.bcftools, "stats", *flag_args, str(path)]
+    report_progress(f"bcftools stats start: {path}")
+    logger.debug("Executing bcftools stats: %s", format_cmd(cmd))
+    try:
+        result = run_command(cmd, timeout=timeout)
+    except CommandError as exc:
+        raise RuntimeError(
+            f"bcftools stats failed: {format_cmd(exc.result.cmd)}\n{_truncate_stderr(exc.result.stderr)}"
+        ) from exc
+    report_progress(f"bcftools stats done: {path}")
+    return result.stdout
+
+
+def run_samtools_bedcov(
+    bam_path: Path,
+    bed_path: Path,
+    tools: ToolPaths,
+    exec_cfg: ExecutionConfig | None = None,
+) -> str:
+    """
+    Run samtools bedcov and return stdout.
+
+    Args:
+        bam_path: Path to BAM/CRAM file
+        bed_path: Path to BED file
+        tools: ToolPaths instance
+        exec_cfg: Optional ExecutionConfig for timeout/threads
+
+    Returns:
+        stdout text from samtools bedcov
+    """
+    cfg = exec_cfg or ExecutionConfig()
+    samtools_flags, timeout = _prepare_execution("samtools", {}, cfg)
+    sam_threads = samtools_flags.get("threads")
+
+    cmd: list[str] = [tools.samtools, "bedcov"]
+    if sam_threads is not None:
+        cmd += ["-@", str(sam_threads)]
+    cmd += [str(bed_path), str(bam_path)]
+
+    report_progress(f"samtools bedcov start: {bam_path} x {bed_path}")
+    logger.debug("Executing samtools bedcov: %s", format_cmd(cmd))
+    try:
+        result = run_command(cmd, timeout=timeout)
+    except CommandError as exc:
+        raise RuntimeError(
+            f"samtools bedcov failed: {format_cmd(exc.result.cmd)}\n{_truncate_stderr(exc.result.stderr)}"
+        ) from exc
+    report_progress(f"samtools bedcov done: {bam_path} x {bed_path}")
+    return result.stdout
+
+
+def run_mosdepth_targeted(
+    bam_path: Path,
+    bed_path: Path,
+    tools: ToolPaths,
+    thresholds: list[int] | None = None,
+    flags: dict[str, Any] | None = None,
+    exec_cfg: ExecutionConfig | None = None,
+) -> tuple[Path, Path | None, Path]:
+    """
+    Run mosdepth with --by for targeted coverage with optional thresholds.
+
+    Args:
+        bam_path: Path to BAM/CRAM file
+        bed_path: Path to BED file with target regions
+        tools: ToolPaths instance
+        thresholds: Coverage thresholds for percentage calculation (e.g., [1, 10, 20])
+        flags: Optional mosdepth flags
+        exec_cfg: Optional ExecutionConfig for timeout/threads
+
+    Returns:
+        Tuple of (regions_bed_path, thresholds_bed_path or None, output_dir)
+        Note: Caller is responsible for cleaning up output_dir
+    """
+    flag_data: dict[str, Any] = dict(flags or {})
+    flag_data, timeout = _prepare_execution("mosdepth", flag_data, exec_cfg)
+    flag_args = build_cli_args("mosdepth", flag_data)
+
+    # Create temp directory for mosdepth output
+    output_dir = Path(tempfile.mkdtemp(prefix="mosdepth_targeted_"))
+    prefix = output_dir / "coverage"
+
+    cmd: list[str] = [tools.mosdepth]
+    cmd += flag_args
+    cmd += ["--by", str(bed_path)]
+
+    if thresholds:
+        threshold_str = ",".join(str(t) for t in thresholds)
+        cmd += ["--thresholds", threshold_str]
+
+    cmd += [str(prefix), str(bam_path)]
+
+    report_progress(f"mosdepth targeted start: {bam_path} x {bed_path}")
+    logger.debug("Executing mosdepth targeted: %s", format_cmd(cmd))
+    try:
+        run_command(cmd, timeout=timeout)
+    except CommandError as exc:
+        # Clean up on failure
+        import shutil
+
+        shutil.rmtree(output_dir, ignore_errors=True)
+        raise RuntimeError(
+            f"mosdepth targeted failed: {format_cmd(exc.result.cmd)}\n{_truncate_stderr(exc.result.stderr)}"
+        ) from exc
+
+    regions_bed = prefix.with_suffix(".regions.bed.gz")
+    thresholds_bed = prefix.with_suffix(".thresholds.bed.gz")
+
+    if not regions_bed.exists():
+        import shutil
+
+        shutil.rmtree(output_dir, ignore_errors=True)
+        raise RuntimeError(f"mosdepth did not produce expected output: {regions_bed}")
+
+    report_progress(f"mosdepth targeted done: {bam_path} x {bed_path}")
+    return regions_bed, thresholds_bed if thresholds_bed.exists() else None, output_dir
+
+
 __all__ = [
     "FlagValidationError",
     "build_cli_args",
@@ -566,5 +705,8 @@ __all__ = [
     "nanoq_from_bam_streaming",
     "nanoq_stats",
     "detect_container_runtime",
+    "run_bcftools_stats",
     "run_igv_snapshot",
+    "run_mosdepth_targeted",
+    "run_samtools_bedcov",
 ]

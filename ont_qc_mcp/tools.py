@@ -19,11 +19,25 @@ from .cli_wrappers import (
     nanoq_from_bam_streaming,
     nanoq_stats,
     detect_container_runtime,
+    run_bcftools_stats,
     run_igv_snapshot,
+    run_mosdepth_targeted,
 )
 from .config import ExecutionConfig, ToolPaths
-from .parsers import parse_alignment_header, parse_error_profile, parse_vcf_header, summarize_header
+from .parsers import (
+    parse_alignment_header,
+    parse_error_profile,
+    parse_vcf_header,
+    summarize_header,
+    parse_sequencing_summary,
+    parse_bcftools_stats,
+    parse_bed_qc,
+    parse_mosdepth_regions_bed,
+    parse_mosdepth_thresholds_bed,
+    find_gene_coordinates,
+)
 from .schemas import (
+    BedQCReport,
     ChopperReport,
     CraminoStats,
     EnvStatus,
@@ -37,6 +51,9 @@ from .schemas import (
     LengthPercentiles,
     IgvRegion,
     IgvSnapshotResult,
+    SequencingSummaryStats,
+    TargetedCoverageReport,
+    VCFStats,
 )
 from .utils import CommandError, _truncate_stderr, format_cmd, report_progress, run_command
 from .igv_batch import generate_igv_batch
@@ -786,6 +803,269 @@ def generate_igv_snapshots(
     )
 
 
+def qc_bed(
+    path: str,
+    tools: ToolPaths | None = None,
+    exec_cfg: ExecutionConfig | None = None,
+) -> BedQCReport:
+    """
+    Validate and QC a BED file.
+
+    Checks for valid coordinates (start < end, integer values) and reports
+    any issues found. Pure Python implementation, no CLI tools required.
+
+    Args:
+        path: Path to BED file
+        tools: ToolPaths instance (unused, kept for API consistency)
+        exec_cfg: Optional ExecutionConfig for file size limits
+
+    Returns:
+        BedQCReport with validation results and issues
+    """
+    cfg = exec_cfg or _EXEC_CFG
+    bed_path = Path(path)
+    _validate_input_file(bed_path, cfg, allowed_exts=(".bed",))
+    report_progress(f"qc_bed start: {bed_path}")
+    logger.debug("qc_bed on %s", bed_path)
+    result = parse_bed_qc(bed_path)
+    report_progress(f"qc_bed done: {bed_path}")
+    return result
+
+
+def sequencing_summary(
+    path: str,
+    tools: ToolPaths | None = None,
+    exec_cfg: ExecutionConfig | None = None,
+) -> SequencingSummaryStats:
+    """
+    Parse ONT sequencing summary file and compute statistics.
+
+    Extracts read counts, yield, N50, mean length, mean Q-score, and
+    yield per hour windows. Pure Python implementation.
+
+    Args:
+        path: Path to sequencing summary TSV file
+        tools: ToolPaths instance (unused, kept for API consistency)
+        exec_cfg: Optional ExecutionConfig for file size limits
+
+    Returns:
+        SequencingSummaryStats with parsed metrics
+    """
+    cfg = exec_cfg or _EXEC_CFG
+    summary_path = Path(path)
+    _validate_input_file(summary_path, cfg, allowed_exts=(".txt", ".tsv", ".summary.txt"))
+    report_progress(f"sequencing_summary start: {summary_path}")
+    logger.debug("sequencing_summary on %s", summary_path)
+    result = parse_sequencing_summary(summary_path)
+    report_progress(f"sequencing_summary done: {summary_path}")
+    return result
+
+
+def qc_variants(
+    path: str,
+    include_snps: bool = True,
+    include_indels: bool = True,
+    tools: ToolPaths | None = None,
+    flags: dict[str, Any] | None = None,
+    exec_cfg: ExecutionConfig | None = None,
+) -> VCFStats:
+    """
+    Run VCF QC using bcftools stats.
+
+    Extracts variant counts, SNP/indel statistics, and transition/transversion
+    ratios from a VCF/BCF file.
+
+    Args:
+        path: Path to VCF/BCF file
+        include_snps: Whether to include SNP statistics
+        include_indels: Whether to include indel statistics
+        tools: ToolPaths instance
+        flags: Optional flags dict (threads, samples, regions)
+        exec_cfg: Optional ExecutionConfig for timeout/threads
+
+    Returns:
+        VCFStats with parsed variant statistics
+    """
+    tools = tools or ToolPaths()
+    cfg = exec_cfg or _EXEC_CFG
+    vcf_path = Path(path)
+    _validate_input_file(
+        vcf_path,
+        cfg,
+        allowed_exts=(".vcf", ".vcf.gz", ".bcf", ".vcf.bgz"),
+    )
+    report_progress(f"qc_variants start: {vcf_path}")
+    logger.debug("qc_variants on %s (snps=%s, indels=%s)", vcf_path, include_snps, include_indels)
+
+    stdout = run_bcftools_stats(vcf_path, tools=tools, flags=flags, exec_cfg=cfg)
+    result = parse_bcftools_stats(stdout, include_snps=include_snps, include_indels=include_indels)
+    # Set file path in result
+    result.file = str(vcf_path)
+
+    report_progress(f"qc_variants done: {vcf_path}")
+    return result
+
+
+def targeted_coverage(
+    bam_path: str,
+    gene_name: str | None = None,
+    location: str | None = None,
+    annotation_path: str | None = None,
+    bed_path: str | None = None,
+    tools: ToolPaths | None = None,
+    exec_cfg: ExecutionConfig | None = None,
+) -> list[TargetedCoverageReport]:
+    """
+    Compute targeted coverage for specified genomic regions using mosdepth.
+
+    Supports three input modes:
+    1. gene_name + annotation_path: Find gene coordinates from GFF3, compute coverage
+    2. location: Parse location string (e.g., "chr1:1000-2000"), compute coverage
+    3. bed_path: Use BED file directly, compute coverage
+
+    Uses mosdepth with --by for efficient coverage calculation and --thresholds
+    to compute percentage of bases at 1x, 10x, and 20x coverage.
+
+    Exactly one of (gene_name+annotation_path), location, or bed_path must be provided.
+
+    Args:
+        bam_path: Path to BAM/CRAM file
+        gene_name: Gene name to look up in annotation (requires annotation_path)
+        location: Location string in format "chr:start-end" (0-based or 1-based)
+        annotation_path: Path to GFF3 annotation file (requires gene_name)
+        bed_path: Path to BED file with target regions
+        tools: ToolPaths instance
+        exec_cfg: Optional ExecutionConfig for timeout/threads
+
+    Returns:
+        List of TargetedCoverageReport objects, one per region
+    """
+    tools = tools or ToolPaths()
+    cfg = exec_cfg or _EXEC_CFG
+    bam_file = Path(bam_path)
+    _validate_input_file(bam_file, cfg, allowed_exts=(".bam", ".cram", ".sam"))
+
+    # Validate that exactly one input mode is provided
+    input_modes = sum([gene_name is not None, location is not None, bed_path is not None])
+    if input_modes == 0:
+        raise ValueError("One of gene_name+annotation_path, location, or bed_path must be provided")
+    if input_modes > 1:
+        raise ValueError("Only one of gene_name+annotation_path, location, or bed_path should be provided")
+    if gene_name is not None and annotation_path is None:
+        raise ValueError("annotation_path is required when gene_name is provided")
+
+    report_progress(f"targeted_coverage start: {bam_file}")
+
+    # Determine BED file to use
+    bed_file: Path | None = None
+    created_temp_bed = False
+
+    if bed_path:
+        bed_file = Path(bed_path)
+        _validate_input_file(bed_file, cfg, allowed_exts=(".bed",))
+    elif location:
+        # Parse location string (format: "chr:start-end" or "chr:start-end:name")
+        parts = location.split(":")
+        if len(parts) < 2:
+            raise ValueError(f"Invalid location format: {location}. Expected 'chr:start-end'")
+        chrom = parts[0]
+        range_part = parts[1]
+        if "-" not in range_part:
+            raise ValueError(f"Invalid location format: {location}. Expected 'chr:start-end'")
+        start_str, end_str = range_part.split("-", 1)
+        try:
+            start = int(start_str)
+            end = int(end_str)
+        except ValueError as exc:
+            raise ValueError(f"Invalid coordinates in location: {location}") from exc
+
+        # Create temporary BED file
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".bed", delete=False) as tmp:
+            tmp.write(f"{chrom}\t{start}\t{end}\t{location}\n")
+            bed_file = Path(tmp.name)
+            created_temp_bed = True
+    elif gene_name and annotation_path:
+        # Find gene coordinates from GFF3
+        gff_file = Path(annotation_path)
+        _validate_input_file(gff_file, cfg, allowed_exts=(".gff", ".gff3"))
+        coordinates = find_gene_coordinates(gff_file, gene_name)
+        if not coordinates:
+            raise ValueError(f"Gene '{gene_name}' not found in annotation file {annotation_path}")
+
+        # Create temporary BED file with gene coordinates
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".bed", delete=False) as tmp:
+            for idx, (chrom, start, end) in enumerate(coordinates):
+                region_name = f"{gene_name}_{idx+1}" if len(coordinates) > 1 else gene_name
+                tmp.write(f"{chrom}\t{start}\t{end}\t{region_name}\n")
+            bed_file = Path(tmp.name)
+            created_temp_bed = True
+
+    if bed_file is None:
+        raise RuntimeError("Failed to determine BED file")
+
+    mosdepth_output_dir: Path | None = None
+    coverage_thresholds = [1, 10, 20]
+
+    try:
+        # Run mosdepth with --by for targeted coverage
+        logger.debug("targeted_coverage: running mosdepth for %s x %s", bam_file, bed_file)
+        regions_bed, thresholds_bed, mosdepth_output_dir = run_mosdepth_targeted(
+            bam_path=bam_file,
+            bed_path=bed_file,
+            tools=tools,
+            thresholds=coverage_thresholds,
+            exec_cfg=cfg,
+        )
+
+        # Parse mosdepth regions output (chrom, start, end, mean_depth)
+        regions_data = parse_mosdepth_regions_bed(regions_bed, bed_file)
+
+        # Parse thresholds output if available
+        threshold_data: dict[tuple[str, int, int], dict[str, float]] = {}
+        if thresholds_bed:
+            threshold_data = parse_mosdepth_thresholds_bed(thresholds_bed, coverage_thresholds)
+
+        # Build reports
+        reports: list[TargetedCoverageReport] = []
+        for region in regions_data:
+            # Values are guaranteed to be correct types from parser, cast for type safety
+            chrom = str(region["chrom"])
+            start_val = region["start"]
+            end_val = region["end"]
+            depth_val = region["mean_depth"]
+            start = start_val if isinstance(start_val, int) else int(str(start_val))
+            end = end_val if isinstance(end_val, int) else int(str(end_val))
+            region_name = str(region["region_name"])
+            mean_depth = depth_val if isinstance(depth_val, float) else float(str(depth_val))
+
+            # Get threshold percentages if available
+            key = (chrom, start, end)
+            thresholds_pct = threshold_data.get(key, {})
+
+            reports.append(
+                TargetedCoverageReport(
+                    region_name=region_name,
+                    chrom=chrom,
+                    start=start,
+                    end=end,
+                    mean_depth=mean_depth,
+                    min_depth=None,  # Not available from mosdepth regions output
+                    max_depth=None,  # Not available from mosdepth regions output
+                    pct_coverage_1x=thresholds_pct.get("pct_coverage_1x"),
+                    pct_coverage_10x=thresholds_pct.get("pct_coverage_10x"),
+                    pct_coverage_20x=thresholds_pct.get("pct_coverage_20x"),
+                )
+            )
+
+        report_progress(f"targeted_coverage done: {bam_file}")
+        return reports
+    finally:
+        if created_temp_bed and bed_file and bed_file.exists():
+            bed_file.unlink(missing_ok=True)
+        if mosdepth_output_dir and mosdepth_output_dir.exists():
+            shutil.rmtree(mosdepth_output_dir, ignore_errors=True)
+
+
 def serialize_model(model: BaseModel) -> dict[str, object]:
     """Return a JSON-serializable dict from a pydantic model."""
     return model.model_dump()
@@ -799,12 +1079,16 @@ __all__ = [
     "filter_reads",
     "header_metadata_lookup",
     "qc_alignment",
+    "qc_bed",
     "qc_reads",
+    "qc_variants",
     "qscore_distribution",
     "qscore_distribution_bam",
     "read_length_distribution",
     "read_length_distribution_bam",
+    "sequencing_summary",
     "serialize_model",
     "get_nanoq_cache_stats",
     "generate_igv_snapshots",
+    "targeted_coverage",
 ]

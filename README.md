@@ -19,7 +19,31 @@ Model Context Protocol server exposing lightweight QC/EDA helpers for Oxford Nan
   - `CRAMINO` (default `cramino`)
   - `MOSDEPTH` (default `mosdepth`)
   - `CHOPPER` (default `chopper`)
-  - `SAMTOOLS` (default `samtools`) for error profiling
+  - `SAMTOOLS` (default `samtools`) for error profiling and BAM operations
+  - `BCFTOOLS` (default `bcftools`) for VCF/BCF variant QC
+
+### Installing CLI tools
+
+**Using conda/mamba (recommended):**
+```bash
+mamba create -n ont-qc-mcp python=3.11 chopper cramino mosdepth samtools bcftools -c conda-forge -c bioconda
+conda activate ont-qc-mcp
+cargo install --locked nanoq  # nanoq via Rust toolchain
+```
+
+**Using system package managers:**
+```bash
+# Ubuntu/Debian
+sudo apt install samtools bcftools
+
+# macOS (Homebrew)
+brew install samtools bcftools
+
+# nanoq requires Rust toolchain
+cargo install --locked nanoq
+```
+
+For `chopper`, `cramino`, and `mosdepth`, conda/mamba is the easiest installation method.
 
 ## IGV snapshot tool (optional)
 - Container runtime: Docker (preferred) or Apptainer/Singularity
@@ -60,18 +84,39 @@ ont-qc-mcp  # launches the MCP stdio server
 - Keep `.venv` in the repo root; if missing, the script warns and continues.
 
 ## MCP tools (high level)
-- `env_status`
+
+### Environment & Metadata
+- `env_status`: Check availability of required CLI tools.
+- `header_metadata_tool`: Extract BAM/CRAM/VCF header metadata (contigs, samples, programs) plus a concise summary.
+
+### Read-level QC (FASTQ)
 - `qc_reads_fastq_tool`: nanoq read-level QC (counts, lengths, qscore histogram).
 - `filter_reads_fastq_tool`: chopper filtering/trimming; returns command + stats.
 - `read_length_distribution_fastq_tool`: percentiles + histogram from nanoq.
 - `qscore_distribution_fastq_tool`: per-read q-score histogram from nanoq.
-- `read_length_distribution_bam_tool`: streaming samtools fastq -> nanoq length stats.
-- `qscore_distribution_bam_tool`: streaming samtools fastq -> nanoq qscore histogram.
-- `qc_alignment_tool`: cramino alignment QC (identity, MAPQ hist; mapped/unmapped may be `null` depending on cramino version; use `use_scaled` for base-weighted bins).
+
+### Alignment QC (BAM/CRAM)
+- `qc_alignment_tool`: cramino alignment QC (identity, MAPQ hist; use `use_scaled` for base-weighted bins).
 - `coverage_stats_tool`: mosdepth coverage summary.
 - `alignment_error_profile_tool`: error rates parsed from `samtools stats`.
 - `alignment_summary_tool`: aggregates cramino + mosdepth (+ error profile).
-- `header_metadata_tool`: extract BAM/CRAM/VCF header metadata (contigs, samples, programs) plus a concise summary.
+- `read_length_distribution_bam_tool`: streaming samtools fastq -> nanoq length stats.
+- `qscore_distribution_bam_tool`: streaming samtools fastq -> nanoq qscore histogram.
+- `targeted_coverage_tool`: compute targeted coverage for genomic regions using mosdepth (supports gene names via GFF3, location strings like `chr1:1000-2000`, or BED files; provides mean depth and coverage threshold percentages at 1x/10x/20x).
+
+### Variant QC (VCF/BCF)
+- `qc_variants_tool`: VCF/BCF QC statistics via bcftools stats (SNP/indel counts, TS/TV ratio, singletons).
+
+### Sequencing Run QC
+- `sequencing_summary_tool`: parse ONT sequencing summary files (yield, N50, Q-scores, yield per hour windows).
+
+### File Validation
+- `qc_bed_tool`: validate and QC BED files (format validation, coordinate checks, issue reporting).
+
+### IGV Snapshots
+- `igv_snapshot_tool`: generate IGV screenshots for genomic regions (requires Docker or Apptainer).
+
+### Resources & Guidance
 - Guidance resource: `tool://guidance/{tool}` returns runtime hints, defaults (threads/timeouts), and links to flag schemas/recipes to help orchestration layers decide whether to call a tool.
 - Null/empty semantics: histogram/percentile fields are `null` when the upstream tool omits them; empty lists mean the tool explicitly returned an empty block. Provenance is lightweight by default and can be expanded with `MCP_INCLUDE_PROVENANCE=1`.
 

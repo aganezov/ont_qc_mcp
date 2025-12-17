@@ -1,0 +1,5 @@
+chr1	1000	2000	valid_interval	.	+
+chr1	5000	3000	start_gt_end	.	+
+chr1	abc	6000	non_integer_start	.	+
+chr1	10000	xyz	non_integer_end	.	-
+chr1	20000	25000	valid_interval2	.	+

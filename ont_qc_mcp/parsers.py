@@ -1,12 +1,16 @@
 import json
 import re
+from pathlib import Path
 from typing import Literal, Sequence, cast
 
 from .schemas import (
+    BedIssue,
+    BedQCReport,
     CraminoStats,
     ErrorProfile,
     HeaderMetadata,
     HistogramBin,
+    IndelStats,
     LengthPercentiles,
     LowCoverageRegion,
     MosdepthStats,
@@ -15,8 +19,13 @@ from .schemas import (
     ProgramRecord,
     ReadLengthDistribution,
     ReferenceRecord,
+    RunYieldWindow,
     SampleRecord,
+    SNPStats,
+    SequencingSummaryStats,
     VCFFieldDef,
+    VCFStats,
+    VariantGeneralStats,
     CoverageByContig,
 )
 
@@ -629,14 +638,642 @@ def summarize_header(metadata: HeaderMetadata) -> str:
     return summary
 
 
+def parse_sequencing_summary(file_path: Path) -> SequencingSummaryStats:
+    """
+    Parse ONT sequencing summary file (tab-separated).
+
+    Expected columns: filename, read_id, run_id, channel, start_time,
+    sequence_length_template, mean_qscore_template (some columns optional).
+    """
+    with open(file_path, "r") as f:
+        lines = f.readlines()
+
+    if not lines:
+        return SequencingSummaryStats(
+            file=str(file_path),
+            total_yield=0,
+            total_reads=0,
+        )
+
+    # Parse header
+    header_line = lines[0].strip()
+    if not header_line:
+        return SequencingSummaryStats(
+            file=str(file_path),
+            total_yield=0,
+            total_reads=0,
+        )
+
+    columns = header_line.split("\t")
+    column_map = {col.lower(): idx for idx, col in enumerate(columns)}
+
+    # Find required columns (with flexible naming)
+    length_col_idx = None
+    qscore_col_idx = None
+    start_time_col_idx = None
+    channel_col_idx = None
+
+    for col_name, idx in column_map.items():
+        if "length" in col_name or "sequence_length" in col_name:
+            length_col_idx = idx
+        if "qscore" in col_name or "quality" in col_name:
+            qscore_col_idx = idx
+        if "start_time" in col_name or "time" in col_name:
+            start_time_col_idx = idx
+        if "channel" in col_name:
+            channel_col_idx = idx
+
+    if length_col_idx is None:
+        raise ValueError(f"Required column 'sequence_length_template' not found in {file_path}")
+
+    # Parse data rows
+    lengths: list[int] = []
+    qscores: list[float] = []
+    start_times: list[float] = []
+    channels: set[int] = set()
+
+    for line_num, line in enumerate(lines[1:], start=2):
+        line = line.strip()
+        if not line:
+            continue
+
+        parts = line.split("\t")
+        if len(parts) <= length_col_idx:
+            continue
+
+        try:
+            length = int(parts[length_col_idx])
+            lengths.append(length)
+
+            if qscore_col_idx is not None and len(parts) > qscore_col_idx:
+                try:
+                    qscore = float(parts[qscore_col_idx])
+                    qscores.append(qscore)
+                except (ValueError, IndexError):
+                    pass
+
+            if start_time_col_idx is not None and len(parts) > start_time_col_idx:
+                try:
+                    start_time = float(parts[start_time_col_idx])
+                    start_times.append(start_time)
+                except (ValueError, IndexError):
+                    pass
+
+            if channel_col_idx is not None and len(parts) > channel_col_idx:
+                try:
+                    channel = int(parts[channel_col_idx])
+                    channels.add(channel)
+                except (ValueError, IndexError):
+                    pass
+        except (ValueError, IndexError):
+            continue
+
+    total_reads = len(lengths)
+    total_yield = sum(lengths)
+
+    # Calculate statistics
+    mean_length = float(total_yield) / total_reads if total_reads > 0 else None
+    mean_qscore = float(sum(qscores)) / len(qscores) if qscores else None
+    active_channels = len(channels) if channels else None
+
+    # Calculate N50
+    n50 = None
+    if lengths:
+        sorted_lengths = sorted(lengths, reverse=True)
+        cumulative = 0
+        half_total = total_yield / 2.0
+        for length in sorted_lengths:
+            cumulative += length
+            if cumulative >= half_total:
+                n50 = length
+                break
+
+    # Calculate run duration
+    run_duration_hours = None
+    if start_times:
+        run_duration_hours = max(start_times) - min(start_times)
+
+    # Calculate yield per hour windows (1-hour bins)
+    yield_per_hour: list[RunYieldWindow] = []
+    if start_times and lengths:
+        min_time = min(start_times)
+        max_time = max(start_times)
+        if max_time > min_time:
+            # Create 1-hour windows
+            window_size = 1.0  # hours
+            num_windows = int((max_time - min_time) / window_size) + 1
+
+            for window_idx in range(num_windows):
+                window_start = min_time + (window_idx * window_size)
+                window_end = window_start + window_size
+
+                window_yield = 0
+                window_reads = 0
+
+                for i, start_time in enumerate(start_times):
+                    if window_start <= start_time < window_end:
+                        window_yield += lengths[i]
+                        window_reads += 1
+
+                if window_reads > 0:
+                    yield_per_hour.append(
+                        RunYieldWindow(
+                            window_start_hours=window_start,
+                            yield_bp=window_yield,
+                            read_count=window_reads,
+                        )
+                    )
+
+    return SequencingSummaryStats(
+        file=str(file_path),
+        total_yield=total_yield,
+        total_reads=total_reads,
+        n50=n50,
+        mean_length=mean_length,
+        mean_qscore=mean_qscore,
+        active_channels=active_channels,
+        run_duration_hours=run_duration_hours,
+        yield_per_hour=yield_per_hour,
+    )
+
+
+def parse_bcftools_stats(stdout: str, include_snps: bool, include_indels: bool) -> VCFStats:
+    """
+    Parse bcftools stats output text.
+
+    Extracts summary numbers (SN lines) and transition/transversion ratio (TSTV section).
+    """
+    general_stats = VariantGeneralStats(
+        total_records=0,
+        mnps=0,
+        others=0,
+        singletons=None,
+        sample_name=None,
+    )
+
+    snp_count = 0
+    indel_count = 0
+    ts_tv_ratio = None
+
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+
+        parts = line.split("\t")
+        if len(parts) < 4:
+            continue
+
+        section = parts[0]
+
+        if section == "SN":
+            # Summary Numbers section
+            key = parts[2].lower() if len(parts) > 2 else ""
+            value = parts[3] if len(parts) > 3 else ""
+
+            if "number of records" in key:
+                try:
+                    general_stats.total_records = int(value)
+                except ValueError:
+                    pass
+            elif "number of mnps" in key:
+                try:
+                    general_stats.mnps = int(value)
+                except ValueError:
+                    pass
+            elif "number of others" in key:
+                try:
+                    general_stats.others = int(value)
+                except ValueError:
+                    pass
+            elif "number of singletons" in key:
+                try:
+                    general_stats.singletons = int(value)
+                except ValueError:
+                    pass
+            elif "sample name" in key:
+                general_stats.sample_name = value
+            elif "number of snps" in key:
+                try:
+                    snp_count = int(value)
+                except ValueError:
+                    pass
+            elif "number of indels" in key:
+                try:
+                    indel_count = int(value)
+                except ValueError:
+                    pass
+
+        elif section == "TSTV":
+            # Transitions/Transversions section
+            # Format: TSTV <sample_idx> <ts_count> <tv_count> <ratio>
+            # Or sometimes: TSTV <ts_count> <tv_count> <ratio> (without sample_idx)
+            if len(parts) >= 4:
+                try:
+                    # Try parsing with sample_idx (4 fields: TSTV, idx, ts, tv, ratio)
+                    if len(parts) >= 5:
+                        ts_count = int(parts[2])
+                        tv_count = int(parts[3])
+                        ratio_str = parts[4]
+                    else:
+                        # Format without sample_idx: TSTV <ts_count> <tv_count> <ratio>
+                        ts_count = int(parts[1])
+                        tv_count = int(parts[2])
+                        ratio_str = parts[3]
+                    
+                    # Try to parse ratio directly first
+                    try:
+                        ts_tv_ratio = float(ratio_str)
+                    except ValueError:
+                        # If ratio not provided, calculate from counts
+                        if tv_count > 0:
+                            ts_tv_ratio = float(ts_count) / float(tv_count)
+                        elif ts_count == 0 and tv_count == 0:
+                            ts_tv_ratio = None
+                        else:
+                            ts_tv_ratio = float("inf") if ts_count > 0 else 0.0
+                except (ValueError, IndexError):
+                    pass
+
+    # Build result
+    snps = None
+    if include_snps:
+        snps = SNPStats(count=snp_count, ts_tv_ratio=ts_tv_ratio)
+
+    indels = None
+    if include_indels:
+        indels = IndelStats(count=indel_count)
+
+    return VCFStats(
+        file="",  # File path not available in stats output
+        general=general_stats,
+        snps=snps,
+        indels=indels,
+    )
+
+
+def parse_bed_qc(file_path: Path) -> BedQCReport:
+    """
+    Parse and validate a BED file.
+
+    Validates that start < end and coordinates are integers.
+    Returns a report with validation results and issues.
+    """
+    issues: list[BedIssue] = []
+    valid_intervals = 0
+    total_bases = 0
+
+    try:
+        with open(file_path, "r") as f:
+            lines = f.readlines()
+    except FileNotFoundError:
+        return BedQCReport(
+            file=str(file_path),
+            total_intervals=0,
+            valid_intervals=0,
+            total_bases=0,
+            is_valid=False,
+            issues=[BedIssue(line_number=0, line_content="", issue="File not found")],
+        )
+
+    for line_num, line in enumerate(lines, start=1):
+        line = line.strip()
+        if not line or line.startswith("#") or line.startswith("track") or line.startswith("browser"):
+            continue
+
+        parts = line.split("\t")
+        if len(parts) < 3:
+            issues.append(
+                BedIssue(
+                    line_number=line_num,
+                    line_content=line,
+                    issue="Line has fewer than 3 columns (chrom, start, end required)",
+                )
+            )
+            continue
+
+        start_str = parts[1]
+        end_str = parts[2]
+
+        # Validate coordinates are integers
+        try:
+            start = int(start_str)
+        except ValueError:
+            issues.append(
+                BedIssue(
+                    line_number=line_num,
+                    line_content=line,
+                    issue=f"Start coordinate '{start_str}' is not an integer",
+                )
+            )
+            continue
+
+        try:
+            end = int(end_str)
+        except ValueError:
+            issues.append(
+                BedIssue(
+                    line_number=line_num,
+                    line_content=line,
+                    issue=f"End coordinate '{end_str}' is not an integer",
+                )
+            )
+            continue
+
+        # Validate start < end
+        if start >= end:
+            issues.append(
+                BedIssue(
+                    line_number=line_num,
+                    line_content=line,
+                    issue=f"Start coordinate ({start}) >= end coordinate ({end})",
+                )
+            )
+            continue
+
+        # Valid interval
+        valid_intervals += 1
+        total_bases += end - start
+
+    total_intervals = valid_intervals + len(issues)
+    is_valid = len(issues) == 0
+
+    return BedQCReport(
+        file=str(file_path),
+        total_intervals=total_intervals,
+        valid_intervals=valid_intervals,
+        total_bases=total_bases,
+        is_valid=is_valid,
+        issues=issues,
+    )
+
+
+def find_gene_coordinates(gff_path: Path, gene_name: str) -> list[tuple[str, int, int]]:
+    """
+    Find gene coordinates from a GFF3 file.
+
+    Searches for genes by Name or ID attribute (case-insensitive).
+    Returns list of (chrom, start, end) tuples for exons or gene span.
+    """
+    try:
+        with open(gff_path, "r") as f:
+            lines = f.readlines()
+    except FileNotFoundError:
+        return []
+
+    gene_name_lower = gene_name.lower()
+    gene_found = False
+    gene_chrom = None
+    gene_start = None
+    gene_end = None
+    gene_id = None
+
+    # First pass: find the gene by Name or ID
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("##"):
+            continue
+
+        parts = line.split("\t")
+        if len(parts) < 9:
+            continue
+
+        feature_type = parts[2].lower()
+        if feature_type != "gene":
+            continue
+
+        attributes_str = parts[8]
+        # Parse attributes (key=value;key=value format)
+        attrs: dict[str, str] = {}
+        for attr_pair in attributes_str.split(";"):
+            if "=" in attr_pair:
+                key, value = attr_pair.split("=", 1)
+                attrs[key.lower()] = value
+
+        # Check if this gene matches
+        gene_id_attr = attrs.get("id", "").lower()
+        gene_name_attr = attrs.get("name", "").lower()
+
+        if gene_id_attr == gene_name_lower or gene_name_attr == gene_name_lower:
+            gene_chrom = parts[0]
+            try:
+                gene_start = int(parts[3])
+                gene_end = int(parts[4])
+                gene_id = attrs.get("id", "")
+                gene_found = True
+                break
+            except (ValueError, IndexError):
+                continue
+
+    if not gene_found:
+        return []
+
+    # Second pass: find all exons for this gene
+    # We need to find mRNAs/transcripts that are children of this gene,
+    # then find exons that are children of those mRNAs
+    mrna_ids: set[str] = set()
+
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("##"):
+            continue
+
+        parts = line.split("\t")
+        if len(parts) < 9:
+            continue
+
+        feature_type = parts[2].lower()
+        attributes_str = parts[8]
+        mrna_attrs: dict[str, str] = {}
+        for attr_pair in attributes_str.split(";"):
+            if "=" in attr_pair:
+                key, value = attr_pair.split("=", 1)
+                mrna_attrs[key.lower()] = value
+
+        parent_id = mrna_attrs.get("parent", "").lower()
+
+        if feature_type in ("mrna", "transcript"):
+            if gene_id and parent_id == gene_id.lower():
+                mrna_id = mrna_attrs.get("id", "")
+                if mrna_id:
+                    mrna_ids.add(mrna_id.lower())
+
+    # Third pass: find exons
+    exon_coords: list[tuple[str, int, int]] = []
+
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("##"):
+            continue
+
+        parts = line.split("\t")
+        if len(parts) < 9:
+            continue
+
+        feature_type = parts[2].lower()
+        if feature_type != "exon":
+            continue
+
+        attributes_str = parts[8]
+        exon_attrs: dict[str, str] = {}
+        for attr_pair in attributes_str.split(";"):
+            if "=" in attr_pair:
+                key, value = attr_pair.split("=", 1)
+                exon_attrs[key.lower()] = value
+
+        parent_id = exon_attrs.get("parent", "").lower()
+
+        # Check if this exon belongs to one of our mRNAs
+        if parent_id in mrna_ids:
+            chrom = parts[0]
+            try:
+                start = int(parts[3])
+                end = int(parts[4])
+                exon_coords.append((chrom, start, end))
+            except (ValueError, IndexError):
+                continue
+
+    # Return gene span if available, otherwise return exons
+    # The gene span represents the full gene region
+    if gene_chrom and gene_start is not None and gene_end is not None:
+        return [(gene_chrom, gene_start, gene_end)]
+    elif exon_coords:
+        return exon_coords
+    else:
+        return []
+
+
+def parse_mosdepth_regions_bed(
+    regions_bed_path: Path,
+    bed_path: Path,
+) -> list[dict[str, object]]:
+    """
+    Parse mosdepth regions.bed.gz output with region names from original BED.
+
+    mosdepth regions.bed.gz format when --by is used with named BED:
+        chrom, start, end, name, mean_depth  (5 columns)
+    mosdepth regions.bed.gz format with 3-column BED:
+        chrom, start, end, mean_depth  (4 columns)
+
+    The mean_depth is always the LAST column.
+
+    Returns list of dicts with: chrom, start, end, region_name, mean_depth
+    """
+    import gzip
+
+    # Build map of (chrom, start, end) -> region_name from original BED
+    region_names: dict[tuple[str, int, int], str] = {}
+    with open(bed_path, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or line.startswith("track") or line.startswith("browser"):
+                continue
+            parts = line.split("\t")
+            if len(parts) >= 3:
+                chrom = parts[0]
+                start = int(parts[1])
+                end = int(parts[2])
+                name = parts[3] if len(parts) >= 4 else f"{chrom}:{start}-{end}"
+                region_names[(chrom, start, end)] = name
+
+    # Parse mosdepth regions.bed.gz
+    results: list[dict[str, object]] = []
+    with gzip.open(regions_bed_path, "rt") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split("\t")
+            if len(parts) < 4:
+                continue
+            chrom = parts[0]
+            start = int(parts[1])
+            end = int(parts[2])
+            # mean_depth is always the LAST column (column 3 for 4-col output, column 4 for 5-col output)
+            mean_depth = float(parts[-1])
+
+            # Get region name from original BED or generate default
+            region_name = region_names.get((chrom, start, end), f"{chrom}:{start}-{end}")
+
+            results.append({
+                "chrom": chrom,
+                "start": start,
+                "end": end,
+                "region_name": region_name,
+                "mean_depth": mean_depth,
+            })
+
+    return results
+
+
+def parse_mosdepth_thresholds_bed(
+    thresholds_bed_path: Path,
+    thresholds: list[int],
+) -> dict[tuple[str, int, int], dict[str, float]]:
+    """
+    Parse mosdepth thresholds.bed.gz output.
+
+    Format when --by used with named BED:
+        chrom, start, end, name, pct_at_threshold1, pct_at_threshold2, ...
+    Format when --by used with 3-column BED:
+        chrom, start, end, pct_at_threshold1, pct_at_threshold2, ...
+
+    The percentages are cumulative (% of bases >= threshold).
+    The threshold values are always the LAST N columns where N = len(thresholds).
+
+    Returns dict mapping (chrom, start, end) to threshold percentages.
+    """
+    import gzip
+
+    results: dict[tuple[str, int, int], dict[str, float]] = {}
+
+    with gzip.open(thresholds_bed_path, "rt") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split("\t")
+            # Minimum columns: chrom, start, end, plus one threshold value
+            if len(parts) < 4:
+                continue
+            chrom = parts[0]
+            start = int(parts[1])
+            end = int(parts[2])
+
+            # Threshold values are at the END of the line
+            # They start at index (len(parts) - len(thresholds))
+            threshold_start_idx = len(parts) - len(thresholds)
+            if threshold_start_idx < 3:
+                # Not enough columns for all thresholds
+                continue
+
+            threshold_pcts: dict[str, float] = {}
+            for i, threshold in enumerate(thresholds):
+                col_idx = threshold_start_idx + i
+                if col_idx < len(parts):
+                    # mosdepth outputs fraction (0-1), convert to percentage
+                    pct = float(parts[col_idx]) * 100.0
+                    threshold_pcts[f"pct_coverage_{threshold}x"] = pct
+
+            results[(chrom, start, end)] = threshold_pcts
+
+    return results
+
+
 __all__ = [
+    "find_gene_coordinates",
     "parse_alignment_header",
+    "parse_bcftools_stats",
+    "parse_bed_qc",
     "parse_cramino_json",
     "parse_error_profile",
+    "parse_mosdepth_regions_bed",
     "parse_mosdepth_summary",
+    "parse_mosdepth_thresholds_bed",
     "parse_nanoq_json",
     "parse_qscore_distribution",
     "parse_read_length_distribution",
+    "parse_sequencing_summary",
     "parse_vcf_header",
     "summarize_header",
 ]

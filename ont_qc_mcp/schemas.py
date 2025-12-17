@@ -219,6 +219,80 @@ class IgvSnapshotResult(BaseModel):
     command: list[str]
 
 
+# Sequencing Summary
+class RunYieldWindow(BaseModel):
+    window_start_hours: float
+    yield_bp: int
+    read_count: int
+
+
+class SequencingSummaryStats(BaseModel):
+    file: str
+    total_yield: int
+    total_reads: int
+    n50: int | None = None
+    mean_length: float | None = None
+    mean_qscore: float | None = None
+    active_channels: int | None = None
+    run_duration_hours: float | None = None
+    yield_per_hour: list[RunYieldWindow] = Field(default_factory=list)
+
+
+# VCF QC
+class SNPStats(BaseModel):
+    count: int
+    ts_tv_ratio: float | None = None
+
+
+class IndelStats(BaseModel):
+    count: int
+
+
+class VariantGeneralStats(BaseModel):
+    total_records: int
+    mnps: int = 0
+    others: int = 0
+    singletons: int | None = None
+    sample_name: str | None = None
+
+
+class VCFStats(BaseModel):
+    file: str
+    general: VariantGeneralStats
+    snps: SNPStats | None = None
+    indels: IndelStats | None = None
+
+
+# Targeted Coverage
+class TargetedCoverageReport(BaseModel):
+    region_name: str
+    chrom: str
+    start: int
+    end: int
+    mean_depth: float
+    min_depth: int | None = None
+    max_depth: int | None = None
+    pct_coverage_1x: float | None = None
+    pct_coverage_10x: float | None = None
+    pct_coverage_20x: float | None = None
+
+
+# BED QC
+class BedIssue(BaseModel):
+    line_number: int
+    line_content: str
+    issue: str
+
+
+class BedQCReport(BaseModel):
+    file: str
+    total_intervals: int
+    valid_intervals: int
+    total_bases: int
+    is_valid: bool
+    issues: list[BedIssue] = Field(default_factory=list)
+
+
 __all__ = [
     "ChopperReport",
     "CoverageByContig",
@@ -240,4 +314,13 @@ __all__ = [
     "VCFFieldDef",
     "IgvRegion",
     "IgvSnapshotResult",
+    "RunYieldWindow",
+    "SequencingSummaryStats",
+    "SNPStats",
+    "IndelStats",
+    "VariantGeneralStats",
+    "VCFStats",
+    "TargetedCoverageReport",
+    "BedIssue",
+    "BedQCReport",
 ]
