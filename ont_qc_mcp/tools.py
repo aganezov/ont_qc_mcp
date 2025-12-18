@@ -7,8 +7,6 @@ import threading
 from concurrent.futures import Future
 from pathlib import Path
 from typing import Any, Literal
-
-import anyio
 from pydantic import BaseModel
 
 from .cli_wrappers import (
@@ -24,6 +22,7 @@ from .cli_wrappers import (
     run_mosdepth_targeted,
 )
 from .config import ExecutionConfig, ToolPaths
+from .threadpool import run_sync
 from .parsers import (
     parse_alignment_header,
     parse_error_profile,
@@ -119,6 +118,10 @@ def _nanoq_cache_key(path: Path, flags: dict[str, Any] | None, cfg: ExecutionCon
         normalized_flags,
         cfg.timeout_for("nanoq"),
         cfg.threads_for("nanoq"),
+        cfg.nanoq_aux_stats,
+        cfg.nanoq_length_bin_width,
+        cfg.nanoq_qscore_bin_width,
+        cfg.nanoq_percentiles_exact_max_reads,
     )
 
 
@@ -287,9 +290,7 @@ async def read_length_distribution_bam(
     tools = tools or ToolPaths()
     aln_path = Path(path)
     _validate_input_file(aln_path, exec_cfg or _EXEC_CFG, allowed_exts=(".bam", ".cram", ".sam"))
-    stats = await anyio.to_thread.run_sync(
-        nanoq_from_bam_streaming, aln_path, tools, flags or {}, exec_cfg or _EXEC_CFG
-    )
+    stats = await run_sync(nanoq_from_bam_streaming, aln_path, tools, flags or {}, exec_cfg or _EXEC_CFG)
     return ReadLengthDistribution(
         file=stats.file,
         percentiles=stats.length_percentiles or LengthPercentiles(),
@@ -306,9 +307,7 @@ async def qscore_distribution_bam(
     tools = tools or ToolPaths()
     aln_path = Path(path)
     _validate_input_file(aln_path, exec_cfg or _EXEC_CFG, allowed_exts=(".bam", ".cram", ".sam"))
-    stats = await anyio.to_thread.run_sync(
-        nanoq_from_bam_streaming, aln_path, tools, flags or {}, exec_cfg or _EXEC_CFG
-    )
+    stats = await run_sync(nanoq_from_bam_streaming, aln_path, tools, flags or {}, exec_cfg or _EXEC_CFG)
     return QScoreDistribution(
         file=stats.file,
         mean_qscore=stats.mean_qscore,

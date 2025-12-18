@@ -18,6 +18,13 @@ def _env_int(env_var: str, default: int | None) -> int | None:
         return default
 
 
+def _env_bool(env_var: str, default: bool = False) -> bool:
+    raw = os.getenv(env_var)
+    if raw is None:
+        return default
+    return raw.lower() not in {"", "0", "false", "no", "off"}
+
+
 def _env_bytes(env_var: str, default: int | None) -> int | None:
     """
     Read an integer MB value from env and return bytes. Returns None when unset/invalid.
@@ -157,7 +164,7 @@ DEFAULT_TOOL_TIMEOUTS: dict[str, int] = {
 }
 
 # Tools for which we do NOT set threads by default (leave unset unless explicitly overridden).
-DISABLE_THREADS_DEFAULT: set[str] = {"nanoq", "samtools"}
+DISABLE_THREADS_DEFAULT: set[str] = {"nanoq"}
 
 
 @dataclass
@@ -178,6 +185,14 @@ class ExecutionConfig:
     default_timeout: int | None = field(default_factory=lambda: _env_int("MCP_TIMEOUT_DEFAULT", 600))
     max_file_size_bytes: int | None = field(default_factory=lambda: _env_bytes("MCP_MAX_FILE_MB", None))
     max_concurrent_operations: int | None = field(default_factory=lambda: _env_int("MCP_MAX_CONCURRENCY", 4))
+    nanoq_aux_stats: bool = field(default_factory=lambda: _env_bool("MCP_NANOQ_AUX_STATS", True))
+    nanoq_length_bin_width: int = field(default_factory=lambda: _env_int("MCP_NANOQ_LENGTH_BIN_WIDTH", 2000) or 2000)
+    nanoq_qscore_bin_width: float = field(
+        default_factory=lambda: float(_env_int("MCP_NANOQ_QSCORE_BIN_WIDTH", 1) or 1)
+    )
+    nanoq_percentiles_exact_max_reads: int = field(
+        default_factory=lambda: _env_int("MCP_NANOQ_PERCENTILES_EXACT_MAX_READS", 200_000) or 200_000
+    )
     igv_container_image: str = field(
         default_factory=lambda: _env_or_default("MCP_IGV_CONTAINER_IMAGE", "aganezov/igv_snapper:0.2")
     )

@@ -284,6 +284,55 @@ def test_qscore_distribution_bam_tool(mcp_server_params, sample_bam):
     anyio.run(_test)
 
 
+def test_nanoq_aux_histograms_fastq_and_bam(mcp_server_params, sample_fastq, sample_bam):
+    """When MCP_NANOQ_AUX_STATS=1, nanoq-derived histograms/percentiles should be populated."""
+
+    require_executable_tools(["nanoq", "samtools"])
+    base_env: dict[str, str] = dict(getattr(mcp_server_params, "env", None) or {})
+    base_env.update(
+        {
+            "MCP_NANOQ_AUX_STATS": "1",
+            "MCP_NANOQ_LENGTH_BIN_WIDTH": "2000",
+            "MCP_NANOQ_QSCORE_BIN_WIDTH": "1",
+            "MCP_NANOQ_PERCENTILES_EXACT_MAX_READS": "1000000",
+        }
+    )
+    server_params = mcp_server_params.model_copy(
+        update={
+            "env": base_env,
+        }
+    )
+
+    async def _test():
+        async with stdio_client(server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                lengths_fastq = await session.call_tool("read_length_distribution_fastq_tool", {"path": str(sample_fastq)})
+                assert not lengths_fastq.isError
+                lengths_payload = json.loads(_text_content(lengths_fastq.content[0]).text)
+                assert lengths_payload["histogram"], "Expected nanoq aux length histogram for FASTQ"
+                assert lengths_payload["percentiles"]["p50"] is not None
+
+                qscores_fastq = await session.call_tool("qscore_distribution_fastq_tool", {"path": str(sample_fastq)})
+                assert not qscores_fastq.isError
+                qscore_payload = json.loads(_text_content(qscores_fastq.content[0]).text)
+                assert qscore_payload["histogram"], "Expected nanoq aux qscore histogram for FASTQ"
+
+                lengths_bam = await session.call_tool("read_length_distribution_bam_tool", {"path": str(sample_bam)})
+                assert not lengths_bam.isError
+                lengths_bam_payload = json.loads(_text_content(lengths_bam.content[0]).text)
+                assert lengths_bam_payload["histogram"], "Expected nanoq aux length histogram for BAM"
+                assert lengths_bam_payload["percentiles"]["p50"] is not None
+
+                qscores_bam = await session.call_tool("qscore_distribution_bam_tool", {"path": str(sample_bam)})
+                assert not qscores_bam.isError
+                qscore_bam_payload = json.loads(_text_content(qscores_bam.content[0]).text)
+                assert qscore_bam_payload["histogram"], "Expected nanoq aux qscore histogram for BAM"
+
+    anyio.run(_test)
+
+
 def test_filter_reads_tool_real_fastq(mcp_server_params, sample_fastq, tmp_path):
     """filter_reads_fastq_tool should process the real FASTQ fixture and produce output."""
 
@@ -413,7 +462,7 @@ def test_invalid_flags_return_validation_error(mcp_server_params, sample_fastq):
     anyio.run(_test)
 
 
-def test_bam_streaming_timeout_surface_runtime_error(mcp_server_params, tmp_path, monkeypatch):
+def test_bam_streaming_timeout_surface_runtime_error(mcp_server_params, tmp_path):
     """Streaming pipeline should fail cleanly on timeout."""
 
     sleep_script = tmp_path / "sleep_tool.py"
@@ -421,16 +470,22 @@ def test_bam_streaming_timeout_surface_runtime_error(mcp_server_params, tmp_path
     sleep_script.chmod(0o755)
 
     # Force very short timeouts and redirect samtools/nanoq to the sleeping stub.
-    monkeypatch.setenv("SAMTOOLS", str(sleep_script))
-    monkeypatch.setenv("NANOQ", str(sleep_script))
-    monkeypatch.setenv("MCP_TIMEOUT_SAMTOOLS", "1")
-    monkeypatch.setenv("MCP_TIMEOUT_NANOQ", "1")
+    base_env: dict[str, str] = dict(getattr(mcp_server_params, "env", None) or {})
+    base_env.update(
+        {
+            "SAMTOOLS": str(sleep_script),
+            "NANOQ": str(sleep_script),
+            "MCP_TIMEOUT_SAMTOOLS": "1",
+            "MCP_TIMEOUT_NANOQ": "1",
+        }
+    )
+    server_params = mcp_server_params.model_copy(update={"env": base_env})
 
     dummy_bam = tmp_path / "dummy.bam"
     dummy_bam.write_text("bam")
 
     async def _test():
-        async with stdio_client(mcp_server_params) as (read, write):
+        async with stdio_client(server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.call_tool("read_length_distribution_bam_tool", {"path": str(dummy_bam)})

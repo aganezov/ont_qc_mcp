@@ -19,6 +19,7 @@ from .schemas import (
     MosdepthStats,
     NanoqStats,
 )
+from .nanoq_aux import length_histogram_and_percentiles, qscore_histogram
 from .utils import (
     CommandError,
     CommandResult,
@@ -113,14 +114,54 @@ def nanoq_stats(
     """
     Run nanoq --stats --json for fast read-level metrics.
     """
-    merged_flags, timeout = _prepare_execution("nanoq", flags, exec_cfg)
+    cfg = exec_cfg or ExecutionConfig()
+    merged_flags, timeout = _prepare_execution("nanoq", flags, cfg)
     flag_args = build_cli_args("nanoq", merged_flags)
-    cmd: Sequence[str] = [tools.nanoq, "--stats", "--json", "--input", str(path), *flag_args]
+    read_lengths_path: Path | None = None
+    read_qualities_path: Path | None = None
+
+    cmd: list[str] = [tools.nanoq, "--stats", "--json", "--input", str(path)]
+    if cfg.nanoq_aux_stats:
+        with tempfile.NamedTemporaryFile(suffix=".nanoq.lengths.txt", delete=False) as tmp:
+            read_lengths_path = Path(tmp.name)
+        with tempfile.NamedTemporaryFile(suffix=".nanoq.quals.txt", delete=False) as tmp:
+            read_qualities_path = Path(tmp.name)
+        cmd += ["--read-lengths", str(read_lengths_path), "--read-qualities", str(read_qualities_path)]
+    cmd += [*flag_args]
+
     report_progress(f"nanoq stats start: {path}")
     logger.debug("Executing nanoq stats: %s", format_cmd(cmd))
-    result = run_command_with_retry(cmd, timeout=timeout, max_attempts=2, backoff_seconds=0.5)
-    report_progress(f"nanoq stats done: {path}")
-    return parse_nanoq_json(result.stdout)
+    try:
+        result = run_command_with_retry(cmd, timeout=timeout, max_attempts=2, backoff_seconds=0.5)
+        report_progress(f"nanoq stats done: {path}")
+        stats = parse_nanoq_json(result.stdout)
+
+        if cfg.nanoq_aux_stats:
+            if (stats.length_histogram is None or stats.length_percentiles is None) and read_lengths_path:
+                if read_lengths_path.exists() and read_lengths_path.stat().st_size > 0:
+                    hist, percentiles = length_histogram_and_percentiles(
+                        read_lengths_path,
+                        bin_width=cfg.nanoq_length_bin_width,
+                        percentiles_exact_max_reads=cfg.nanoq_percentiles_exact_max_reads,
+                    )
+                    if stats.length_histogram is None:
+                        stats.length_histogram = hist
+                    if stats.length_percentiles is None and percentiles is not None:
+                        stats.length_percentiles = percentiles
+
+            if stats.qscore_histogram is None and read_qualities_path:
+                if read_qualities_path.exists() and read_qualities_path.stat().st_size > 0:
+                    stats.qscore_histogram = qscore_histogram(
+                        read_qualities_path,
+                        bin_width=cfg.nanoq_qscore_bin_width,
+                    )
+
+        return stats
+    finally:
+        if read_lengths_path:
+            read_lengths_path.unlink(missing_ok=True)
+        if read_qualities_path:
+            read_qualities_path.unlink(missing_ok=True)
 
 
 def chopper_filter(
@@ -296,6 +337,14 @@ def nanoq_from_bam_streaming(
     sam_cmd += [str(path)]
 
     nano_cmd: list[str] = [tools.nanoq, "--stats", "--json"]
+    read_lengths_path: Path | None = None
+    read_qualities_path: Path | None = None
+    if cfg.nanoq_aux_stats:
+        with tempfile.NamedTemporaryFile(suffix=".nanoq.lengths.txt", delete=False) as tmp:
+            read_lengths_path = Path(tmp.name)
+        with tempfile.NamedTemporaryFile(suffix=".nanoq.quals.txt", delete=False) as tmp:
+            read_qualities_path = Path(tmp.name)
+        nano_cmd += ["--read-lengths", str(read_lengths_path), "--read-qualities", str(read_qualities_path)]
     if nanoq_threads is not None:
         nano_cmd += ["--threads", str(nanoq_threads)]
     nano_cmd += build_cli_args("nanoq", {k: v for k, v in nanoq_flags.items() if k != "threads"})
@@ -304,111 +353,139 @@ def nanoq_from_bam_streaming(
     import subprocess  # nosec B404: required to orchestrate child processes
 
     logger.debug("Starting samtools|nanoq streaming pipeline: %s | %s", format_cmd(sam_cmd), format_cmd(nano_cmd))
-    sam_proc = subprocess.Popen(  # nosec B603: trusted command construction, shell=False
-        sam_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-    )
-    nano_proc = subprocess.Popen(  # nosec B603: trusted command construction, shell=False
-        nano_cmd,
-        stdin=sam_proc.stdout,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    if sam_proc.stdout:
-        sam_proc.stdout.close()
-
-    overall_timeout = max(sam_timeout, nano_timeout)
-    start_time = time.monotonic()
-
-    stderr_tail: deque[str] = deque(maxlen=200)
-    stderr_thread: Thread | None = None
-
-    def _drain_sam_stderr():
-        if not sam_proc.stderr:
-            return
-        for line in sam_proc.stderr:
-            try:
-                decoded = line.decode("utf-8", errors="replace")
-            except Exception:
-                decoded = str(line)
-            stderr_tail.append(decoded.rstrip("\n"))
-
-    if sam_proc.stderr:
-        stderr_thread = Thread(target=_drain_sam_stderr, daemon=True)
-        stderr_thread.start()
-
-    def _terminate_pipeline(reason: str) -> RuntimeError:
-        for proc in (nano_proc, sam_proc):
-            try:
-                proc.terminate()
-            except Exception as exc:
-                logger.debug("Ignore terminate error for %s: %s", proc, exc)
-        for proc in (nano_proc, sam_proc):
-            try:
-                proc.kill()
-            except Exception as exc:
-                logger.debug("Ignore kill error for %s: %s", proc, exc)
-        for proc in (nano_proc, sam_proc):
-            try:
-                proc.wait(timeout=1)
-            except Exception as exc:
-                logger.debug("Ignore wait error for %s: %s", proc, exc)
-        return RuntimeError(reason)
-
     try:
-        nano_out, nano_err = nano_proc.communicate(timeout=overall_timeout)
-    except subprocess.TimeoutExpired:
-        sam_running = sam_proc.poll() is None
-        nano_running = nano_proc.poll() is None
-        hung_stage = (
-            "samtools" if sam_running and not nano_running else "nanoq" if nano_running and not sam_running else "both"
+        sam_proc = subprocess.Popen(  # nosec B603: trusted command construction, shell=False
+            sam_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
-        stderr_context = "\n".join(list(stderr_tail)[-10:]) if stderr_tail else "(no stderr captured)"
-        raise _terminate_pipeline(
-            f"Timeout while running samtools|nanoq pipeline (>{overall_timeout}s); "
-            f"likely hung at {hung_stage}. "
-            f"samtools cmd: {format_cmd(sam_cmd)}; nanoq cmd: {format_cmd(nano_cmd)}; "
-            f"samtools stderr tail:\n{stderr_context}"
+        nano_proc = subprocess.Popen(  # nosec B603: trusted command construction, shell=False
+            nano_cmd,
+            stdin=sam_proc.stdout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
         )
+        if sam_proc.stdout:
+            sam_proc.stdout.close()
 
-    remaining = max(0.0, overall_timeout - (time.monotonic() - start_time))
-    try:
-        _, sam_err = sam_proc.communicate(timeout=remaining or 0.1)
-    except subprocess.TimeoutExpired:
-        raise _terminate_pipeline(
-            f"Timeout waiting for samtools fastq to exit (>{overall_timeout}s). " f"cmd: {format_cmd(sam_cmd)}"
-        )
-    finally:
-        if stderr_thread:
-            stderr_thread.join(timeout=0.2)
+        overall_timeout = max(sam_timeout, nano_timeout)
+        start_time = time.monotonic()
 
-    sam_rc = sam_proc.returncode
-    sam_err_text = (
-        sam_err.decode("utf-8", errors="replace") if isinstance(sam_err, (bytes, bytearray)) else (sam_err or "")
-    )
-    if stderr_tail:
-        tail_text = "\n".join(stderr_tail)
-        sam_err_text = tail_text if sam_err_text == "" else sam_err_text or tail_text
-    nano_out_text = nano_out.decode("utf-8", errors="replace") if isinstance(nano_out, (bytes, bytearray)) else nano_out
-    nano_err_text = nano_err.decode("utf-8", errors="replace") if isinstance(nano_err, (bytes, bytearray)) else nano_err
+        stderr_tail: deque[str] = deque(maxlen=200)
+        stderr_thread: Thread | None = None
 
-    if sam_rc not in (0, 141):  # samtools may exit with SIGPIPE (141) if downstream closes early
-        raise RuntimeError(f"samtools fastq failed: {format_cmd(sam_cmd)}\n{_truncate_stderr(sam_err_text)}")
-    if nano_proc.returncode != 0:
-        raise CommandError(
-            CommandResult(
-                cmd=nano_cmd,
-                returncode=nano_proc.returncode or 1,
-                stdout=nano_out_text,
-                stderr=nano_err_text,
+        def _drain_sam_stderr():
+            if not sam_proc.stderr:
+                return
+            for line in sam_proc.stderr:
+                try:
+                    decoded = line.decode("utf-8", errors="replace")
+                except Exception:
+                    decoded = str(line)
+                stderr_tail.append(decoded.rstrip("\n"))
+
+        if sam_proc.stderr:
+            stderr_thread = Thread(target=_drain_sam_stderr, daemon=True)
+            stderr_thread.start()
+
+        def _terminate_pipeline(reason: str) -> RuntimeError:
+            for proc in (nano_proc, sam_proc):
+                try:
+                    proc.terminate()
+                except Exception as exc:
+                    logger.debug("Ignore terminate error for %s: %s", proc, exc)
+            for proc in (nano_proc, sam_proc):
+                try:
+                    proc.kill()
+                except Exception as exc:
+                    logger.debug("Ignore kill error for %s: %s", proc, exc)
+            for proc in (nano_proc, sam_proc):
+                try:
+                    proc.wait(timeout=1)
+                except Exception as exc:
+                    logger.debug("Ignore wait error for %s: %s", proc, exc)
+            return RuntimeError(reason)
+
+        try:
+            nano_out, nano_err = nano_proc.communicate(timeout=overall_timeout)
+        except subprocess.TimeoutExpired:
+            sam_running = sam_proc.poll() is None
+            nano_running = nano_proc.poll() is None
+            hung_stage = (
+                "samtools"
+                if sam_running and not nano_running
+                else "nanoq"
+                if nano_running and not sam_running
+                else "both"
             )
-        )
+            stderr_context = "\n".join(list(stderr_tail)[-10:]) if stderr_tail else "(no stderr captured)"
+            raise _terminate_pipeline(
+                f"Timeout while running samtools|nanoq pipeline (>{overall_timeout}s); "
+                f"likely hung at {hung_stage}. "
+                f"samtools cmd: {format_cmd(sam_cmd)}; nanoq cmd: {format_cmd(nano_cmd)}; "
+                f"samtools stderr tail:\n{stderr_context}"
+            )
 
-    stats = parse_nanoq_json(nano_out_text)
-    if not stats.file or stats.file == "unknown":
-        stats.file = str(path)
-    logger.debug("Completed streaming nanoq for %s", path)
-    report_progress(f"nanoq streaming done: {path}")
-    return stats
+        remaining = max(0.0, overall_timeout - (time.monotonic() - start_time))
+        try:
+            _, sam_err = sam_proc.communicate(timeout=remaining or 0.1)
+        except subprocess.TimeoutExpired:
+            raise _terminate_pipeline(
+                f"Timeout waiting for samtools fastq to exit (>{overall_timeout}s). cmd: {format_cmd(sam_cmd)}"
+            )
+        finally:
+            if stderr_thread:
+                stderr_thread.join(timeout=0.2)
+
+        sam_rc = sam_proc.returncode
+        sam_err_text = (
+            sam_err.decode("utf-8", errors="replace") if isinstance(sam_err, (bytes, bytearray)) else (sam_err or "")
+        )
+        if stderr_tail:
+            tail_text = "\n".join(stderr_tail)
+            sam_err_text = tail_text if sam_err_text == "" else sam_err_text or tail_text
+        nano_out_text = nano_out.decode("utf-8", errors="replace") if isinstance(nano_out, (bytes, bytearray)) else nano_out
+        nano_err_text = nano_err.decode("utf-8", errors="replace") if isinstance(nano_err, (bytes, bytearray)) else nano_err
+
+        if sam_rc not in (0, 141):  # samtools may exit with SIGPIPE (141) if downstream closes early
+            raise RuntimeError(f"samtools fastq failed: {format_cmd(sam_cmd)}\n{_truncate_stderr(sam_err_text)}")
+        if nano_proc.returncode != 0:
+            raise CommandError(
+                CommandResult(
+                    cmd=nano_cmd,
+                    returncode=nano_proc.returncode or 1,
+                    stdout=nano_out_text,
+                    stderr=nano_err_text,
+                )
+            )
+
+        stats = parse_nanoq_json(nano_out_text)
+        if not stats.file or stats.file == "unknown":
+            stats.file = str(path)
+        if cfg.nanoq_aux_stats:
+            if (stats.length_histogram is None or stats.length_percentiles is None) and read_lengths_path:
+                if read_lengths_path.exists() and read_lengths_path.stat().st_size > 0:
+                    hist, percentiles = length_histogram_and_percentiles(
+                        read_lengths_path,
+                        bin_width=cfg.nanoq_length_bin_width,
+                        percentiles_exact_max_reads=cfg.nanoq_percentiles_exact_max_reads,
+                    )
+                    if stats.length_histogram is None:
+                        stats.length_histogram = hist
+                    if stats.length_percentiles is None and percentiles is not None:
+                        stats.length_percentiles = percentiles
+            if stats.qscore_histogram is None and read_qualities_path:
+                if read_qualities_path.exists() and read_qualities_path.stat().st_size > 0:
+                    stats.qscore_histogram = qscore_histogram(
+                        read_qualities_path,
+                        bin_width=cfg.nanoq_qscore_bin_width,
+                    )
+        logger.debug("Completed streaming nanoq for %s", path)
+        report_progress(f"nanoq streaming done: {path}")
+        return stats
+    finally:
+        if read_lengths_path:
+            read_lengths_path.unlink(missing_ok=True)
+        if read_qualities_path:
+            read_qualities_path.unlink(missing_ok=True)
 
 
 def mosdepth_coverage(
