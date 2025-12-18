@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Sequence
 
-import anyio
+from .threadpool import run_sync
 
 
 logger = logging.getLogger(__name__)
@@ -148,7 +148,7 @@ async def run_command_async(
     """
     Async wrapper that runs the command in a worker thread to avoid blocking.
     """
-    return await anyio.to_thread.run_sync(run_command, cmd, timeout, stdin, stdout_path)
+    return await run_sync(run_command, cmd, timeout, stdin, stdout_path)
 
 
 def run_command_with_retry(

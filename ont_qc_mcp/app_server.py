@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import asyncio
 import sys
 import time
 import uuid
@@ -13,7 +14,6 @@ from importlib import metadata
 from mcp import types
 from mcp.server import Server
 from mcp.server.lowlevel.helper_types import ReadResourceContents
-from mcp.server.stdio import stdio_server
 from pydantic import AnyUrl
 
 from .cli_wrappers import FlagValidationError
@@ -40,6 +40,8 @@ from .tools import (
     sequencing_summary,
     targeted_coverage,
 )
+from .stdio_compat import stdio_server_compat
+from .threadpool import get_executor, run_sync
 
 server = Server("ont-qc-mcp")
 EXEC_CFG = ExecutionConfig()
@@ -51,6 +53,27 @@ _REQUEST_ID: ContextVar[str] = ContextVar("request_id", default="")
 _REQUEST_START: ContextVar[float] = ContextVar("request_start", default=0.0)
 _TOOL_PATHS: ToolPaths | None = None
 _CONCURRENCY_SEM = anyio.Semaphore(EXEC_CFG.max_concurrent_operations) if EXEC_CFG.max_concurrent_operations else None
+_CONFIG_SCOPE_NOTE = {
+    "env_read_at_startup": True,
+    "per_call_overrides": "Use tool arguments/flags per call; igv_snapshot_tool supports output_dir.",
+    "multi_client_note": "Different defaults require separate server instances.",
+}
+
+
+def _use_compat_stdio() -> bool:
+    """
+    Select the server stdio transport.
+
+    - MCP_STDIO_TRANSPORT=anyio  (default): use mcp.server.stdio.stdio_server()
+    - MCP_STDIO_TRANSPORT=compat           : use ont_qc_mcp.stdio_compat.stdio_server_compat()
+    """
+    value = os.getenv("MCP_STDIO_TRANSPORT", "anyio").strip().lower()
+    if value in {"compat", "asyncio", "pipe"}:
+        return True
+    if value in {"anyio", "default"}:
+        return False
+    logger.warning("Unknown MCP_STDIO_TRANSPORT=%r; falling back to 'anyio'", value)
+    return False
 
 
 def _tool_paths() -> ToolPaths:
@@ -122,21 +145,20 @@ async def qc_alignment_tool(
     flags: dict | None = None,
 ) -> list[types.TextContent]:
     """Run cramino stats on a BAM/CRAM alignment."""
-    stats = await anyio.to_thread.run_sync(
-        lambda: qc_alignment(
-            path,
-            tools=_tool_paths(),
-            include_hist=include_hist,
-            use_scaled=use_scaled,
-            flags=flags,
-        )
+    stats = await run_sync(
+        qc_alignment,
+        path,
+        tools=_tool_paths(),
+        include_hist=include_hist,
+        use_scaled=use_scaled,
+        flags=flags,
     )
     return _json_content(serialize_model(stats), tool_name="cramino")
 
 
 async def qc_reads_tool(path: str, flags: dict | None = None) -> list[types.TextContent]:
     """Run nanoq stats on a FASTQ file."""
-    stats = await anyio.to_thread.run_sync(lambda: qc_reads(path, tools=_tool_paths(), flags=flags))
+    stats = await run_sync(qc_reads, path, tools=_tool_paths(), flags=flags)
     return _json_content(serialize_model(stats), tool_name="nanoq")
 
 
@@ -146,21 +168,19 @@ async def filter_reads_tool(
     flags: dict | None = None,
 ) -> list[types.TextContent]:
     """Filter/trim reads with chopper."""
-    report = await anyio.to_thread.run_sync(
-        lambda: filter_reads(path, tools=_tool_paths(), output_fastq=output_fastq, flags=flags)
-    )
+    report = await run_sync(filter_reads, path, tools=_tool_paths(), output_fastq=output_fastq, flags=flags)
     return _json_content(serialize_model(report), tool_name="chopper")
 
 
 async def read_length_distribution_tool(path: str, flags: dict | None = None) -> list[types.TextContent]:
     """Return length percentiles/histogram from nanoq."""
-    report = await anyio.to_thread.run_sync(lambda: read_length_distribution(path, tools=_tool_paths(), flags=flags))
+    report = await run_sync(read_length_distribution, path, tools=_tool_paths(), flags=flags)
     return _json_content(serialize_model(report), tool_name="nanoq")
 
 
 async def qscore_distribution_tool(path: str, flags: dict | None = None) -> list[types.TextContent]:
     """Return q-score distribution/histogram from nanoq."""
-    report = await anyio.to_thread.run_sync(lambda: qscore_distribution(path, tools=_tool_paths(), flags=flags))
+    report = await run_sync(qscore_distribution, path, tools=_tool_paths(), flags=flags)
     return _json_content(serialize_model(report), tool_name="nanoq")
 
 
@@ -183,14 +203,13 @@ async def coverage_stats_tool(
     flags: dict | None = None,
 ) -> list[types.TextContent]:
     """Compute coverage with mosdepth."""
-    report = await anyio.to_thread.run_sync(
-        lambda: coverage_stats(
-            path,
-            tools=_tool_paths(),
-            window=window,
-            low_cov_threshold=low_cov_threshold,
-            flags=flags,
-        )
+    report = await run_sync(
+        coverage_stats,
+        path,
+        tools=_tool_paths(),
+        window=window,
+        low_cov_threshold=low_cov_threshold,
+        flags=flags,
     )
     return _json_content(serialize_model(report), tool_name="mosdepth")
 
@@ -213,33 +232,32 @@ async def igv_snapshot_tool(
     allele_threshold: float = 0.2,
 ) -> list[types.TextContent]:
     """Generate IGV snapshots via containerized IGV."""
-    result = await anyio.to_thread.run_sync(
-        lambda: generate_igv_snapshots(
-            genome=genome,
-            tracks=tracks or [],
-            regions=regions or [],
-            output_dir=output_dir,
-            batch_file=batch_file,
-            compact=compact,
-            color_by=color_by,
-            group_by=group_by,
-            snapshot_format=snapshot_format,  # type: ignore[arg-type]
-            min_snapshot_width=min_snapshot_width,
-            extra_commands=extra_commands,
-            extra_preferences=extra_preferences,
-            small_indels_show=small_indels_show,
-            small_indels_threshold=small_indels_threshold,
-            allele_threshold=allele_threshold,
-            tools=_tool_paths(),
-            exec_cfg=EXEC_CFG,
-        )
+    result = await run_sync(
+        generate_igv_snapshots,
+        genome=genome,
+        tracks=tracks or [],
+        regions=regions or [],
+        output_dir=output_dir,
+        batch_file=batch_file,
+        compact=compact,
+        color_by=color_by,
+        group_by=group_by,
+        snapshot_format=snapshot_format,  # type: ignore[arg-type]
+        min_snapshot_width=min_snapshot_width,
+        extra_commands=extra_commands,
+        extra_preferences=extra_preferences,
+        small_indels_show=small_indels_show,
+        small_indels_threshold=small_indels_threshold,
+        allele_threshold=allele_threshold,
+        tools=_tool_paths(),
+        exec_cfg=EXEC_CFG,
     )
     return _json_content(serialize_model(result), tool_name="igv_snapshot_tool")
 
 
 async def alignment_error_profile_tool(path: str, flags: dict | None = None) -> list[types.TextContent]:
     """Parse error profile from samtools stats."""
-    report = await anyio.to_thread.run_sync(lambda: alignment_error_profile(path, tools=_tool_paths(), flags=flags))
+    report = await run_sync(alignment_error_profile, path, tools=_tool_paths(), flags=flags)
     return _json_content(serialize_model(report), tool_name="samtools")
 
 
@@ -256,20 +274,19 @@ async def alignment_summary_tool(
     error_profile_flags: dict | None = None,
 ) -> list[types.TextContent]:
     """Aggregate cramino stats + mosdepth + samtools error profile."""
-    report = await anyio.to_thread.run_sync(
-        lambda: alignment_summary(
-            path,
-            include_coverage=include_coverage,
-            include_hist=include_hist,
-            use_scaled=use_scaled,
-            include_error_profile=include_error_profile,
-            coverage_window=coverage_window,
-            coverage_low_cov_threshold=coverage_low_cov_threshold,
-            coverage_flags=coverage_flags,
-            cramino_flags=cramino_flags,
-            error_profile_flags=error_profile_flags,
-            tools=_tool_paths(),
-        )
+    report = await run_sync(
+        alignment_summary,
+        path,
+        include_coverage=include_coverage,
+        include_hist=include_hist,
+        use_scaled=use_scaled,
+        include_error_profile=include_error_profile,
+        coverage_window=coverage_window,
+        coverage_low_cov_threshold=coverage_low_cov_threshold,
+        coverage_flags=coverage_flags,
+        cramino_flags=cramino_flags,
+        error_profile_flags=error_profile_flags,
+        tools=_tool_paths(),
     )
     return _json_content(serialize_model(report), tool_name="alignment_summary_tool")
 
@@ -281,8 +298,13 @@ async def header_metadata_tool(
     max_lines: int | None = None,
 ) -> list[types.TextContent]:
     """Extract header metadata from BAM/CRAM/VCF and return JSON + summary."""
-    meta = await anyio.to_thread.run_sync(
-        lambda: header_metadata_lookup(path, file_type=file_type, flags=flags, tools=_tool_paths(), max_lines=max_lines)
+    meta = await run_sync(
+        header_metadata_lookup,
+        path,
+        file_type=file_type,
+        flags=flags,
+        tools=_tool_paths(),
+        max_lines=max_lines,
     )
     payload = serialize_model(meta)
     payload["provenance"] = _build_provenance("header_metadata_tool")
@@ -295,13 +317,13 @@ async def header_metadata_tool(
 
 async def qc_bed_tool(path: str) -> list[types.TextContent]:
     """Validate and QC a BED file."""
-    report = await anyio.to_thread.run_sync(lambda: qc_bed(path, tools=_tool_paths(), exec_cfg=EXEC_CFG))
+    report = await run_sync(qc_bed, path, tools=_tool_paths(), exec_cfg=EXEC_CFG)
     return _json_content(serialize_model(report), tool_name="qc_bed_tool")
 
 
 async def sequencing_summary_tool(path: str) -> list[types.TextContent]:
     """Parse ONT sequencing summary file and compute statistics."""
-    stats = await anyio.to_thread.run_sync(lambda: sequencing_summary(path, tools=_tool_paths(), exec_cfg=EXEC_CFG))
+    stats = await run_sync(sequencing_summary, path, tools=_tool_paths(), exec_cfg=EXEC_CFG)
     return _json_content(serialize_model(stats), tool_name="sequencing_summary_tool")
 
 
@@ -312,15 +334,14 @@ async def qc_variants_tool(
     flags: dict | None = None,
 ) -> list[types.TextContent]:
     """Run VCF QC using bcftools stats."""
-    stats = await anyio.to_thread.run_sync(
-        lambda: qc_variants(
-            path,
-            include_snps=include_snps,
-            include_indels=include_indels,
-            tools=_tool_paths(),
-            flags=flags,
-            exec_cfg=EXEC_CFG,
-        )
+    stats = await run_sync(
+        qc_variants,
+        path,
+        include_snps=include_snps,
+        include_indels=include_indels,
+        tools=_tool_paths(),
+        flags=flags,
+        exec_cfg=EXEC_CFG,
     )
     return _json_content(serialize_model(stats), tool_name="bcftools")
 
@@ -333,16 +354,15 @@ async def targeted_coverage_tool(
     bed_path: str | None = None,
 ) -> list[types.TextContent]:
     """Compute targeted coverage for specified genomic regions using mosdepth."""
-    reports = await anyio.to_thread.run_sync(
-        lambda: targeted_coverage(
-            bam_path=bam_path,
-            gene_name=gene_name,
-            location=location,
-            annotation_path=annotation_path,
-            bed_path=bed_path,
-            tools=_tool_paths(),
-            exec_cfg=EXEC_CFG,
-        )
+    reports = await run_sync(
+        targeted_coverage,
+        bam_path=bam_path,
+        gene_name=gene_name,
+        location=location,
+        annotation_path=annotation_path,
+        bed_path=bed_path,
+        tools=_tool_paths(),
+        exec_cfg=EXEC_CFG,
     )
     # Serialize list of reports directly (no wrapper object)
     payload = [serialize_model(report) for report in reports]
@@ -871,6 +891,10 @@ def _tool_description(spec: ToolSpec) -> str:
     return f"{base_desc} ({suffix})" if suffix else base_desc
 
 
+def _tool_meta(_spec: ToolSpec) -> dict[str, object]:
+    return {"config_scope": _CONFIG_SCOPE_NOTE}
+
+
 def _error_result(
     kind: str, message: str, tool: str | None = None, details: dict | None = None
 ) -> types.CallToolResult:
@@ -897,6 +921,7 @@ async def list_tools() -> list[types.Tool]:
             name=spec.name,
             description=_tool_description(spec),
             inputSchema=spec.schema,
+            _meta=_tool_meta(spec),
         )
         for spec in _TOOL_SPECS
     ]
@@ -1060,6 +1085,7 @@ async def read_resource(uri: str):
                     "threads": meta.get("default_threads"),
                     "timeout_seconds": meta.get("timeout_seconds"),
                 },
+                "config_scope": _CONFIG_SCOPE_NOTE,
                 "when_to_use": meta.get("when_to_use"),
                 "schema_uri": f"tool://flags/{tool}" if tool in TOOL_FLAGS else None,
                 "recipes_uri": f"tool://recipes/{tool}" if get_tool_recipes(tool) else None,
@@ -1079,9 +1105,17 @@ async def read_resource(uri: str):
 
 
 async def _async_main():
-    async with stdio_server() as (read, write):
-        init_options = server.create_initialization_options()
-        await server.run(read, write, init_options, raise_exceptions=True)
+    asyncio.get_running_loop().set_default_executor(get_executor())
+    if _use_compat_stdio():
+        async with stdio_server_compat() as (read, write):
+            init_options = server.create_initialization_options()
+            await server.run(read, write, init_options, raise_exceptions=True)
+    else:
+        from mcp.server.stdio import stdio_server
+
+        async with stdio_server() as (read, write):
+            init_options = server.create_initialization_options()
+            await server.run(read, write, init_options, raise_exceptions=True)
 
 
 def main():
