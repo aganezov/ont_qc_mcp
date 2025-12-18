@@ -6,6 +6,15 @@ from shutil import which
 
 import pytest
 
+# Ensure the Python interpreter's bin directory is on PATH so integration tests
+# can find bundled CLI tools (e.g., conda env bin/) even when the env is not activated.
+try:
+    _PYTHON_BIN = Path(sys.executable).resolve().parent
+except OSError:  # pragma: no cover
+    _PYTHON_BIN = None
+if _PYTHON_BIN and _PYTHON_BIN.exists():
+    os.environ["PATH"] = f"{_PYTHON_BIN}{os.pathsep}{os.environ.get('PATH', '')}"
+
 # ---------------------------------------------------------------------------
 # Synthetic fixture directory
 # ---------------------------------------------------------------------------

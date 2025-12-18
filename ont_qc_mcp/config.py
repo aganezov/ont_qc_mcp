@@ -1,4 +1,5 @@
 import os
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from shutil import which
@@ -45,8 +46,24 @@ def _conda_env_bin() -> Path | None:
         return None
     return Path(prefix) / "bin"
 
+def _python_env_bin() -> Path | None:
+    """
+    Resolve the Python environment bin directory from sys.executable.
+
+    This helps when running the server with a specific interpreter (e.g. a conda env)
+    without having CONDA_PREFIX set or the env `bin/` on PATH.
+    """
+    executable = getattr(sys, "executable", None)
+    if not executable:
+        return None
+    try:
+        return Path(executable).resolve().parent
+    except OSError:
+        return None
+
 
 _CONDA_ENV_BIN = _conda_env_bin()
+_PYTHON_ENV_BIN = _python_env_bin()
 _CARGO_BIN = Path.home() / ".cargo" / "bin"
 
 
@@ -70,42 +87,61 @@ class ToolPaths:
     nanoq: str = field(
         default_factory=lambda: _preferred_tool_path(
             "NANOQ",
-            [(_CARGO_BIN / "nanoq"), (_CONDA_ENV_BIN / "nanoq") if _CONDA_ENV_BIN else None],
+            [
+                (_CARGO_BIN / "nanoq"),
+                (_PYTHON_ENV_BIN / "nanoq") if _PYTHON_ENV_BIN else None,
+                (_CONDA_ENV_BIN / "nanoq") if _CONDA_ENV_BIN else None,
+            ],
             "nanoq",
         )
     )
     chopper: str = field(
         default_factory=lambda: _preferred_tool_path(
             "CHOPPER",
-            [(_CONDA_ENV_BIN / "chopper") if _CONDA_ENV_BIN else None],
+            [
+                (_PYTHON_ENV_BIN / "chopper") if _PYTHON_ENV_BIN else None,
+                (_CONDA_ENV_BIN / "chopper") if _CONDA_ENV_BIN else None,
+            ],
             "chopper",
         )
     )
     cramino: str = field(
         default_factory=lambda: _preferred_tool_path(
             "CRAMINO",
-            [(_CONDA_ENV_BIN / "cramino") if _CONDA_ENV_BIN else None],
+            [
+                (_PYTHON_ENV_BIN / "cramino") if _PYTHON_ENV_BIN else None,
+                (_CONDA_ENV_BIN / "cramino") if _CONDA_ENV_BIN else None,
+            ],
             "cramino",
         )
     )
     mosdepth: str = field(
         default_factory=lambda: _preferred_tool_path(
             "MOSDEPTH",
-            [(_CONDA_ENV_BIN / "mosdepth") if _CONDA_ENV_BIN else None],
+            [
+                (_PYTHON_ENV_BIN / "mosdepth") if _PYTHON_ENV_BIN else None,
+                (_CONDA_ENV_BIN / "mosdepth") if _CONDA_ENV_BIN else None,
+            ],
             "mosdepth",
         )
     )
     samtools: str = field(
         default_factory=lambda: _preferred_tool_path(
             "SAMTOOLS",
-            [(_CONDA_ENV_BIN / "samtools") if _CONDA_ENV_BIN else None],
+            [
+                (_PYTHON_ENV_BIN / "samtools") if _PYTHON_ENV_BIN else None,
+                (_CONDA_ENV_BIN / "samtools") if _CONDA_ENV_BIN else None,
+            ],
             "samtools",
         )
     )
     bcftools: str = field(
         default_factory=lambda: _preferred_tool_path(
             "BCFTOOLS",
-            [(_CONDA_ENV_BIN / "bcftools") if _CONDA_ENV_BIN else None],
+            [
+                (_PYTHON_ENV_BIN / "bcftools") if _PYTHON_ENV_BIN else None,
+                (_CONDA_ENV_BIN / "bcftools") if _CONDA_ENV_BIN else None,
+            ],
             "bcftools",
         )
     )
