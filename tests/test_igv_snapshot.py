@@ -3,6 +3,8 @@ import os
 import platform
 import shutil
 import subprocess
+import tempfile
+from functools import lru_cache
 from pathlib import Path
 from typing import cast
 
@@ -22,19 +24,66 @@ def _is_arm64_mac() -> bool:
     return platform.system() == "Darwin" and platform.machine() == "arm64"
 
 
+@lru_cache(maxsize=8)
+def _apptainer_exec_works(apptainer_cmd: str, sif_path: str) -> bool:
+    """
+    Best-effort probe for whether apptainer can execute a local SIF on this host.
+
+    Some environments have an `apptainer` binary on PATH but still cannot execute
+    containers (e.g. NSS/user lookup issues in sandboxes, or unprivileged user
+    namespaces disabled on shared systems). In such cases, IGV snapshot tests
+    should fall back to mock mode instead of hard-failing.
+    """
+    if not Path(sif_path).exists():
+        return False
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="ont-qc-mcp-apptainer-") as tmp:
+            env = os.environ.copy()
+            env.setdefault("APPTAINER_CACHEDIR", str(Path(tmp) / "cache"))
+            env.setdefault("APPTAINER_TMPDIR", str(Path(tmp) / "tmp"))
+            env.setdefault("APPTAINER_DISABLE_CACHE", "1")
+            probe = subprocess.run(
+                [apptainer_cmd, "exec", "--no-home", sif_path, "/bin/true"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                env=env,
+                check=False,
+            )
+            return probe.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return False
+
+
 def _should_use_mock() -> str:
     """
     Determine mock mode based on environment and platform.
     
     - MCP_IGV_MOCK=0: Force real execution (even on ARM64)
     - MCP_IGV_MOCK=1: Force mock execution
-    - Unset: Auto-detect (mock on ARM64 Mac, real elsewhere)
+    - Unset: Auto-detect (mock on ARM64 Mac; otherwise real only when a runnable container runtime is available)
     """
     explicit = os.getenv("MCP_IGV_MOCK")
     if explicit is not None:
         return explicit
     # Default: mock on ARM64 Mac (x86 image is slow), real elsewhere
-    return "1" if _is_arm64_mac() else "0"
+    if _is_arm64_mac():
+        return "1"
+
+    runtime = cli.detect_container_runtime(ToolPaths())
+    if runtime == "docker":
+        return "0"
+    if runtime == "apptainer":
+        # Avoid implicit pulls from docker:// in test environments; require an explicit local SIF to run "real".
+        sif_path = os.getenv("MCP_IGV_SIF_PATH")
+        if sif_path and Path(sif_path).exists():
+            apptainer_cmd = cli.which(ToolPaths().apptainer) or ToolPaths().apptainer
+            if _apptainer_exec_works(apptainer_cmd, sif_path):
+                return "0"
+        return "1"
+
+    return "1"
 
 
 def _preserve_snapshot(snapshot_path: Path, test_name: str) -> None:
@@ -142,6 +191,7 @@ def test_build_apptainer_command_with_sif(monkeypatch: pytest.MonkeyPatch, tmp_p
     assert snapshots == [output_dir / "snapshot.svg"]
     assert sif_path.as_posix() in cmd
     assert "--bind" in cmd
+    assert any(part.endswith("xvfb-run") for part in cmd)
 
 
 def test_run_igv_snapshot_no_runtime(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -186,7 +236,7 @@ def test_igv_snapshot_from_bed(
         output_dir=str(tmp_path),
     )
 
-    assert result.execution_mode == "docker"
+    assert result.execution_mode in {"docker", "apptainer"}
     assert len(result.snapshot_files) == 1
     snapshot_path = Path(result.snapshot_files[0])
     assert snapshot_path.exists()
@@ -212,7 +262,7 @@ def test_igv_snapshot_custom_genome(
         snapshot_format="svg",
     )
 
-    assert result.execution_mode == "docker"
+    assert result.execution_mode in {"docker", "apptainer"}
     assert len(result.snapshot_files) == 1
     snapshot_path = Path(result.snapshot_files[0])
     assert snapshot_path.exists()
@@ -241,7 +291,7 @@ def test_igv_snapshot_bam_and_vcf(
         output_dir=str(tmp_path),
     )
 
-    assert result.execution_mode == "docker"
+    assert result.execution_mode in {"docker", "apptainer"}
     assert len(result.snapshot_files) == 2
     for snap_file in result.snapshot_files:
         snapshot_path = Path(snap_file)
@@ -262,10 +312,16 @@ def test_igv_snapshot_tool_mcp_protocol(
     monkeypatch.setenv("MCP_IGV_MOCK", mock_flag)
     server_params = mcp_server_params.model_copy()
     # Pass relevant IGV env vars to the subprocess server
-    server_params.env = {
-        "MCP_IGV_MOCK": mock_flag,
-        "MCP_IGV_CONTAINER_IMAGE": os.getenv("MCP_IGV_CONTAINER_IMAGE", "aganezov/igv_snapper:0.2"),
-    }
+    base_env: dict[str, str] = dict(getattr(server_params, "env", None) or {})
+    base_env.update(
+        {
+            "MCP_IGV_MOCK": mock_flag,
+            "MCP_IGV_CONTAINER_IMAGE": os.getenv("MCP_IGV_CONTAINER_IMAGE", "aganezov/igv_snapper:0.2"),
+        }
+    )
+    if (sif := os.getenv("MCP_IGV_SIF_PATH")):
+        base_env["MCP_IGV_SIF_PATH"] = sif
+    server_params.env = base_env
 
     async def _test():
         async with stdio_client(server_params) as (read, write):
@@ -283,6 +339,8 @@ def test_igv_snapshot_tool_mcp_protocol(
                 assert not result.isError
                 payload = json.loads(_text_content(result.content[0]).text)
                 assert payload["snapshot_files"]
-                assert payload["execution_mode"] == "docker"
+                assert payload["execution_mode"] in {"docker", "apptainer"}
+                for snap_file in payload["snapshot_files"]:
+                    _preserve_snapshot(Path(snap_file), "mcp_protocol")
 
     anyio.run(_test)

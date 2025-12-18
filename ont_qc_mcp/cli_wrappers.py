@@ -609,6 +609,9 @@ def run_igv_snapshot(
             cmd += ["--bind", f"{mount}:{mount}"]
         cmd += [
             image_ref,
+            # Use xvfb-run inside the container to ensure Xvfb is cleaned up on exit.
+            "/usr/bin/xvfb-run",
+            "-a",
             "/IGV_Linux_2.16.2/igv.sh",
             "-b",
             str(batch_file),

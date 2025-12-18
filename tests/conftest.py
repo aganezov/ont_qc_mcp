@@ -277,8 +277,16 @@ def mcp_server_params():
     """Return StdioServerParameters for launching the MCP server."""
     from mcp.client.stdio import StdioServerParameters
 
+    env = {"MCP_STDIO_TRANSPORT": "compat"}
+    if (sif := os.getenv("MCP_IGV_SIF_PATH")):
+        env["MCP_IGV_SIF_PATH"] = sif
+    for key in ("APPTAINER", "APPTAINER_CACHEDIR", "APPTAINER_TMPDIR", "APPTAINER_DISABLE_CACHE"):
+        if (value := os.getenv(key)):
+            env[key] = value
+
     return StdioServerParameters(
         command=sys.executable,
         args=["-m", "ont_qc_mcp.app_server"],
         cwd=str(Path(__file__).resolve().parent.parent),
+        env=env,
     )
