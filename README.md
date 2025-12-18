@@ -69,6 +69,9 @@ apptainer pull igv_snapper.sif docker://aganezov/igv_snapper:0.1
 export MCP_IGV_SIF_PATH=/path/to/igv_snapper.sif
 ```
 
+### Preserving IGV test snapshots
+- Set `IGV_SNAPSHOT_DIR` to a writable directory and IGV integration tests will copy generated snapshots there.
+
 ## Quick start
 ```bash
 pip install -e .
@@ -125,7 +128,11 @@ ont-qc-mcp  # launches the MCP stdio server
 - Defaults are conservative and overridable via environment variables:
   - `MCP_THREADS_DEFAULT` / `MCP_THREADS_<TOOL>` (e.g., `MCP_THREADS_NANOQ`)
   - `MCP_TIMEOUT_DEFAULT` / `MCP_TIMEOUT_<TOOL>` (seconds; e.g., `MCP_TIMEOUT_MOSDEPTH`)
-- Per-tool defaults are also reflected in the guidance resource and tool descriptions returned by `list_tools`.
+  - `MCP_NANOQ_AUX_STATS=1` (default) to compute FASTQ/BAM length/qscore histograms via nanoq `--read-lengths/--read-qualities` (may produce large temp files for huge inputs; set to `0` to disable)
+  - `MCP_STDIO_TRANSPORT=anyio|compat` (default `anyio`) to control how the stdio MCP server reads/writes JSON-RPC (use `compat` in restricted/sandboxed environments that hang with async file wrappers)
+  - `MCP_BLOCKING_MODE=auto|executor|sync` (default `auto`) to control how blocking work is executed; `auto` uses a threadpool when thread wakeups are reliable and falls back to `sync` otherwise
+- Per-tool defaults are also reflected in the guidance resource and tool descriptions returned by `list_tools`. By default, threads are applied to all tools except nanoq (set `MCP_THREADS_NANOQ` to override).
+- Most `MCP_*` environment variables are read at server startup; changing them requires restarting the MCP server. Per-call overrides are available via tool arguments/flags (e.g., `output_dir` for `igv_snapshot_tool`). If multiple clients need different defaults, run separate server instances.
 - Coverage low-depth marking is opt-in via `low_cov_threshold`; error-profile collection in summaries is opt-in via `include_error_profile`.
 
 ## Development
@@ -146,9 +153,9 @@ scripts/with-env.sh pytest
 - Run the MCP server: `python -m ont_qc_mcp.app_server` (or `ont-qc-mcp` entrypoint)
 - Unit tests only: `scripts/with-env.sh pytest`
 - Full test suite with external CLIs on PATH: `scripts/with-env.sh pytest -m integration` (after CLIs are installed)
+- Smoke-check real files via MCP (writes JSON to stdout or `--out`): `scripts/with-env.sh python scripts/mcp_smoke_real.py --dir /path/to/test_dir`
 - Regenerate documented tool outputs: see `docs/tool-output-examples.md` for the one-liner
 
 ## Notes
 - Outputs are JSON-first to play well with downstream pipelines.
 - Plotting helpers emit file paths (PNG); no base64 payloads are returned.
-

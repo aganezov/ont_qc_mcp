@@ -7,7 +7,7 @@
   - BAM: `tests/fixtures/real/haplotag.large.bam`
   - VCF: `tests/fixtures/real/haplotag.large.vcf.gz`
   - High-depth BAM: `tests/fixtures/synthetic/highdepth.bam` (50 x 100bp reads over 1kb)
-- Notes: nanoq v0.10.0 JSON omits histogram blocks, so histograms stay empty though length/quality stats are present. Cramino’s current JSON lacks mapped/unmapped counts, so those are `null` even though identity metrics are populated. The real BAM is extremely downsampled; coverage is near-zero there, but the synthetic BAM shows non-zero coverage.
+- Notes: nanoq v0.10.0 JSON omits histogram blocks, so histograms stay empty unless you use the aux-output fallback (enabled by default via `MCP_NANOQ_AUX_STATS=1`, which computes histograms/percentiles from `nanoq --read-lengths/--read-qualities`; set it to `0` to disable). Cramino’s current JSON lacks mapped/unmapped counts, so those are `null` even though identity metrics are populated. The real BAM is extremely downsampled; coverage is near-zero there, but the synthetic BAM shows non-zero coverage.
 
 ## Quick regeneration
 Run this to refresh both JSON files with the real + synthetic fixtures:
@@ -171,7 +171,7 @@ Values come from `docs/tool_output_examples_summary.json` unless noted; see the 
 - **env_status** — call `env_status` (no args). Available: nanoq, chopper, cramino, mosdepth, samtools; resolved paths point to sanitized toolchain paths (e.g., `/opt/tools/bin/nanoq` or `/usr/local/bin/*`).
 
 - **qc_reads_fastq_tool** — call with `{"path": "tests/fixtures/real/haplotag.large.fq.gz"}`.
-  - Output excerpt: `read_count=221`, `total_bases=1,268,233`, `mean_len=5738`, `median_len=5087`, `n50=7476`, `mean_qscore≈33`; histograms remain empty in this nanoq build.
+  - Output excerpt: `read_count=221`, `total_bases=1,268,233`, `mean_len=5738`, `median_len=5087`, `n50=7476`, `mean_qscore≈33`; histograms are populated by default via the aux fallback (set `MCP_NANOQ_AUX_STATS=0` to see the raw nanoq JSON behavior with empty histograms).
 
 - **filter_reads_fastq_tool** — call with `{"path": ".../haplotag.large.fq.gz", "output_fastq": "/tmp/out.fastq"}`.
   - Output excerpt:
@@ -187,16 +187,16 @@ Values come from `docs/tool_output_examples_summary.json` unless noted; see the 
     Counts are null because this chopper build does not emit JSON stats.
 
 - **read_length_distribution_fastq_tool** — call with the FASTQ path.
-  - Output excerpt: percentiles all `null`, histogram empty (nanoq JSON lacks the histogram block).
+  - Output excerpt: percentiles all `null`, histogram empty in raw nanoq JSON; the aux fallback (default) fills them (set `MCP_NANOQ_AUX_STATS=0` to disable).
 
 - **qscore_distribution_fastq_tool** — call with the FASTQ path.
-  - Output excerpt: `mean_qscore≈33`, `median_qscore≈33`, histogram empty.
+  - Output excerpt: `mean_qscore≈33`, `median_qscore≈33`; histogram filled by default via the aux fallback (set `MCP_NANOQ_AUX_STATS=0` to disable).
 
 - **read_length_distribution_bam_tool** — call with `{"path": "tests/fixtures/real/haplotag.large.bam"}`.
-  - Output excerpt: percentiles all `null`, histogram empty (same nanoq JSON limitation when streaming via samtools).
+  - Output excerpt: percentiles all `null`, histogram empty in raw nanoq JSON; the aux fallback (default) fills them (set `MCP_NANOQ_AUX_STATS=0` to disable).
 
 - **qscore_distribution_bam_tool** — call with the BAM path.
-  - Output excerpt: qscore stats `≈33`, histogram empty.
+  - Output excerpt: qscore stats `≈33`; histogram filled by default via the aux fallback (set `MCP_NANOQ_AUX_STATS=0` to disable).
 
 - **qc_alignment_tool** — call with the BAM path.
   - Output excerpt:
@@ -236,7 +236,7 @@ Values come from `docs/tool_output_examples_summary.json` unless noted; see the 
   - Summary text: `VCF header; 3 contigs (e.g., chr1, chr2, chr3); samples: NA12878; 1 FORMAT fields`.
 
 ## Notes and gaps
-- nanoq v0.10.0 JSON omits histogram blocks, so histograms/percentiles are empty even though length/quality stats are present.
+- nanoq v0.10.0 JSON omits histogram blocks, so histograms/percentiles are empty unless you use the aux fallback (enabled by default via `MCP_NANOQ_AUX_STATS=1`; set to `0` to disable).
 - cramino’s current JSON lacks mapped/unmapped counts; identities come through, counts are `null`.
 - The real BAM is extremely downsampled relative to whole-genome contig lengths (coverage ~0); the synthetic high-depth BAM is included to show non-zero coverage paths.
 - Flag schemas, recipes, and guidance resources remain available via `tool://flags/{tool}`, `tool://recipes/{tool}`, and `tool://guidance/{tool}`.
