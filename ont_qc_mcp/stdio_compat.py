@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import anyio
@@ -17,9 +18,11 @@ async def stdio_server_compat(
     *,
     encoding: str = "utf-8",
     errors: str = "strict",
-) -> tuple[
+) -> AsyncIterator[
+    tuple[
     MemoryObjectReceiveStream[SessionMessage | Exception],
     MemoryObjectSendStream[SessionMessage],
+    ]
 ]:
     """
     Stdio transport that avoids anyio's AsyncFile wrappers.

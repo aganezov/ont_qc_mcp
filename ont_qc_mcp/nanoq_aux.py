@@ -65,7 +65,7 @@ def _histogram_and_values_from_file(
             if not raw:
                 continue
             try:
-                val = cast(raw)  # type: ignore[call-arg]
+                val = cast(raw)
             except ValueError:
                 continue
 

@@ -65,15 +65,15 @@ def _threadsafe_wakeup_supported(loop: asyncio.AbstractEventLoop) -> bool:
 
     try:
         ssock.setblocking(False)
-    except Exception:
-        pass
+    except (AttributeError, OSError, ValueError):
+        return True
 
     # Drain any existing wake bytes (avoid false positives).
     try:
         while ssock.recv(4096):
-            pass
+            continue
     except (BlockingIOError, AttributeError, OSError):
-        pass
+        return True
 
     finished = threading.Event()
 
