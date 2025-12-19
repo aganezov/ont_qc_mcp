@@ -139,11 +139,13 @@ jobs:
         if: matrix.runtime == 'apptainer'
         shell: bash -l {0}
         env:
-          APPTAINER_CACHEDIR: ${{ github.workspace }}/igv_runtime/apptainer_cache
-          APPTAINER_TMPDIR: ${{ github.workspace }}/igv_runtime/apptainer_tmp
+          IGV_RUNTIME_DIR: ${{ runner.temp }}/igv_runtime
+          APPTAINER_CACHEDIR: ${{ runner.temp }}/igv_runtime/cache
+          APPTAINER_TMPDIR: ${{ runner.temp }}/igv_runtime/tmp
+          APPTAINER_DISABLE_CACHE: "1"
         run: |
-          mkdir -p igv_runtime/apptainer_cache igv_runtime/apptainer_tmp
-          "${APPTAINER:-apptainer}" pull igv_runtime/igv_snapper.sif docker://${{ env.MCP_IGV_CONTAINER_IMAGE }}
+          mkdir -p "$IGV_RUNTIME_DIR/cache" "$IGV_RUNTIME_DIR/tmp"
+          "${APPTAINER:-apptainer}" pull "$IGV_RUNTIME_DIR/igv_snapper.sif" docker://${{ env.MCP_IGV_CONTAINER_IMAGE }}
 
       - name: Create snapshot output directory
         run: mkdir -p igv_snapshots
@@ -161,9 +163,10 @@ jobs:
         env:
           IGV_SNAPSHOT_DIR: ${{ github.workspace }}/igv_snapshots
           DOCKER: __no_docker__
-          MCP_IGV_SIF_PATH: ${{ github.workspace }}/igv_runtime/igv_snapper.sif
-          APPTAINER_CACHEDIR: ${{ github.workspace }}/igv_runtime/apptainer_cache
-          APPTAINER_TMPDIR: ${{ github.workspace }}/igv_runtime/apptainer_tmp
+          MCP_IGV_SIF_PATH: ${{ runner.temp }}/igv_runtime/igv_snapper.sif
+          APPTAINER_CACHEDIR: ${{ runner.temp }}/igv_runtime/cache
+          APPTAINER_TMPDIR: ${{ runner.temp }}/igv_runtime/tmp
+          APPTAINER_DISABLE_CACHE: "1"
         run: pytest -m "integration or igv_integration or not integration" -ra
 
       - name: Upload IGV snapshots
