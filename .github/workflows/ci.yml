@@ -126,7 +126,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y apptainer
-          echo "APPTAINER=/usr/bin/apptainer" >> "$GITHUB_ENV"
+          mkdir -p .ci-bin
+          cat > .ci-bin/apptainer <<'EOF'
+          #!/usr/bin/env bash
+          exec sudo --preserve-env=APPTAINER_CACHEDIR,APPTAINER_TMPDIR,APPTAINER_DISABLE_CACHE /usr/bin/apptainer "$@"
+          EOF
+          chmod +x .ci-bin/apptainer
+          echo "APPTAINER=$GITHUB_WORKSPACE/.ci-bin/apptainer" >> "$GITHUB_ENV"
 
       - name: Build IGV SIF
         if: matrix.runtime == 'apptainer'
