@@ -121,15 +121,16 @@ jobs:
         if: matrix.runtime == 'docker'
         run: docker pull ${{ env.MCP_IGV_CONTAINER_IMAGE }}
 
-      - name: Install Apptainer (system)
+      - name: Install Apptainer (conda-forge)
         if: matrix.runtime == 'apptainer'
+        shell: bash -l {0}
         run: |
-          sudo apt-get update
-          sudo apt-get install -y apptainer
+          micromamba install -n ci apptainer
+          APPTAINER_BIN="$(micromamba run -n ci which apptainer)"
           mkdir -p .ci-bin
-          cat > .ci-bin/apptainer <<'EOF'
+          cat > .ci-bin/apptainer <<EOF
           #!/usr/bin/env bash
-          exec sudo --preserve-env=APPTAINER_CACHEDIR,APPTAINER_TMPDIR,APPTAINER_DISABLE_CACHE /usr/bin/apptainer "$@"
+          exec sudo --preserve-env=APPTAINER_CACHEDIR,APPTAINER_TMPDIR,APPTAINER_DISABLE_CACHE "${APPTAINER_BIN}" "\$@"
           EOF
           chmod +x .ci-bin/apptainer
           echo "APPTAINER=$GITHUB_WORKSPACE/.ci-bin/apptainer" >> "$GITHUB_ENV"
