@@ -1,4 +1,5 @@
 import os
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from shutil import which
@@ -16,6 +17,13 @@ def _env_int(env_var: str, default: int | None) -> int | None:
         return int(raw)
     except (TypeError, ValueError):
         return default
+
+
+def _env_bool(env_var: str, default: bool = False) -> bool:
+    raw = os.getenv(env_var)
+    if raw is None:
+        return default
+    return raw.lower() not in {"", "0", "false", "no", "off"}
 
 
 def _env_bytes(env_var: str, default: int | None) -> int | None:
@@ -38,8 +46,24 @@ def _conda_env_bin() -> Path | None:
         return None
     return Path(prefix) / "bin"
 
+def _python_env_bin() -> Path | None:
+    """
+    Resolve the Python environment bin directory from sys.executable.
+
+    This helps when running the server with a specific interpreter (e.g. a conda env)
+    without having CONDA_PREFIX set or the env `bin/` on PATH.
+    """
+    executable = getattr(sys, "executable", None)
+    if not executable:
+        return None
+    try:
+        return Path(executable).resolve().parent
+    except OSError:
+        return None
+
 
 _CONDA_ENV_BIN = _conda_env_bin()
+_PYTHON_ENV_BIN = _python_env_bin()
 _CARGO_BIN = Path.home() / ".cargo" / "bin"
 
 
@@ -63,42 +87,61 @@ class ToolPaths:
     nanoq: str = field(
         default_factory=lambda: _preferred_tool_path(
             "NANOQ",
-            [(_CARGO_BIN / "nanoq"), (_CONDA_ENV_BIN / "nanoq") if _CONDA_ENV_BIN else None],
+            [
+                (_CARGO_BIN / "nanoq"),
+                (_PYTHON_ENV_BIN / "nanoq") if _PYTHON_ENV_BIN else None,
+                (_CONDA_ENV_BIN / "nanoq") if _CONDA_ENV_BIN else None,
+            ],
             "nanoq",
         )
     )
     chopper: str = field(
         default_factory=lambda: _preferred_tool_path(
             "CHOPPER",
-            [(_CONDA_ENV_BIN / "chopper") if _CONDA_ENV_BIN else None],
+            [
+                (_PYTHON_ENV_BIN / "chopper") if _PYTHON_ENV_BIN else None,
+                (_CONDA_ENV_BIN / "chopper") if _CONDA_ENV_BIN else None,
+            ],
             "chopper",
         )
     )
     cramino: str = field(
         default_factory=lambda: _preferred_tool_path(
             "CRAMINO",
-            [(_CONDA_ENV_BIN / "cramino") if _CONDA_ENV_BIN else None],
+            [
+                (_PYTHON_ENV_BIN / "cramino") if _PYTHON_ENV_BIN else None,
+                (_CONDA_ENV_BIN / "cramino") if _CONDA_ENV_BIN else None,
+            ],
             "cramino",
         )
     )
     mosdepth: str = field(
         default_factory=lambda: _preferred_tool_path(
             "MOSDEPTH",
-            [(_CONDA_ENV_BIN / "mosdepth") if _CONDA_ENV_BIN else None],
+            [
+                (_PYTHON_ENV_BIN / "mosdepth") if _PYTHON_ENV_BIN else None,
+                (_CONDA_ENV_BIN / "mosdepth") if _CONDA_ENV_BIN else None,
+            ],
             "mosdepth",
         )
     )
     samtools: str = field(
         default_factory=lambda: _preferred_tool_path(
             "SAMTOOLS",
-            [(_CONDA_ENV_BIN / "samtools") if _CONDA_ENV_BIN else None],
+            [
+                (_PYTHON_ENV_BIN / "samtools") if _PYTHON_ENV_BIN else None,
+                (_CONDA_ENV_BIN / "samtools") if _CONDA_ENV_BIN else None,
+            ],
             "samtools",
         )
     )
     bcftools: str = field(
         default_factory=lambda: _preferred_tool_path(
             "BCFTOOLS",
-            [(_CONDA_ENV_BIN / "bcftools") if _CONDA_ENV_BIN else None],
+            [
+                (_PYTHON_ENV_BIN / "bcftools") if _PYTHON_ENV_BIN else None,
+                (_CONDA_ENV_BIN / "bcftools") if _CONDA_ENV_BIN else None,
+            ],
             "bcftools",
         )
     )
@@ -157,7 +200,7 @@ DEFAULT_TOOL_TIMEOUTS: dict[str, int] = {
 }
 
 # Tools for which we do NOT set threads by default (leave unset unless explicitly overridden).
-DISABLE_THREADS_DEFAULT: set[str] = {"nanoq", "samtools"}
+DISABLE_THREADS_DEFAULT: set[str] = {"nanoq"}
 
 
 @dataclass
@@ -178,6 +221,14 @@ class ExecutionConfig:
     default_timeout: int | None = field(default_factory=lambda: _env_int("MCP_TIMEOUT_DEFAULT", 600))
     max_file_size_bytes: int | None = field(default_factory=lambda: _env_bytes("MCP_MAX_FILE_MB", None))
     max_concurrent_operations: int | None = field(default_factory=lambda: _env_int("MCP_MAX_CONCURRENCY", 4))
+    nanoq_aux_stats: bool = field(default_factory=lambda: _env_bool("MCP_NANOQ_AUX_STATS", True))
+    nanoq_length_bin_width: int = field(default_factory=lambda: _env_int("MCP_NANOQ_LENGTH_BIN_WIDTH", 2000) or 2000)
+    nanoq_qscore_bin_width: float = field(
+        default_factory=lambda: float(_env_int("MCP_NANOQ_QSCORE_BIN_WIDTH", 1) or 1)
+    )
+    nanoq_percentiles_exact_max_reads: int = field(
+        default_factory=lambda: _env_int("MCP_NANOQ_PERCENTILES_EXACT_MAX_READS", 200_000) or 200_000
+    )
     igv_container_image: str = field(
         default_factory=lambda: _env_or_default("MCP_IGV_CONTAINER_IMAGE", "aganezov/igv_snapper:0.2")
     )

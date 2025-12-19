@@ -41,6 +41,7 @@ jobs:
         run: pytest --cov=ont_qc_mcp --cov-report=xml
 
   integration:
+    name: Integration (${{ matrix.runtime }} / ${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -48,8 +49,16 @@ jobs:
         include:
           - os: ubuntu-latest
             arch: x86_64
+            runtime: docker
           - os: ubuntu-24.04-arm
             arch: arm64
+            runtime: docker
+          - os: ubuntu-latest
+            arch: x86_64
+            runtime: apptainer
+          - os: ubuntu-24.04-arm
+            arch: arm64
+            runtime: apptainer
     env:
       MCP_IGV_MOCK: "0"
       MCP_IGV_CONTAINER_IMAGE: "aganezov/igv_snapper:0.2"
@@ -109,23 +118,62 @@ jobs:
           mosdepth --help | head -3 || echo "mosdepth help failed"
 
       - name: Pull IGV container image
+        if: matrix.runtime == 'docker'
         run: docker pull ${{ env.MCP_IGV_CONTAINER_IMAGE }}
+
+      - name: Install Apptainer (conda-forge)
+        if: matrix.runtime == 'apptainer'
+        shell: bash -l {0}
+        run: |
+          micromamba install -n ci apptainer
+          APPTAINER_BIN="$(micromamba run -n ci which apptainer)"
+          mkdir -p .ci-bin
+          cat > .ci-bin/apptainer <<EOF
+          #!/usr/bin/env bash
+          exec sudo --preserve-env=APPTAINER_CACHEDIR,APPTAINER_TMPDIR,APPTAINER_DISABLE_CACHE "${APPTAINER_BIN}" "\$@"
+          EOF
+          chmod +x .ci-bin/apptainer
+          echo "APPTAINER=$GITHUB_WORKSPACE/.ci-bin/apptainer" >> "$GITHUB_ENV"
+
+      - name: Build IGV SIF
+        if: matrix.runtime == 'apptainer'
+        shell: bash -l {0}
+        env:
+          IGV_RUNTIME_DIR: ${{ runner.temp }}/igv_runtime
+          APPTAINER_CACHEDIR: ${{ runner.temp }}/igv_runtime/cache
+          APPTAINER_TMPDIR: ${{ runner.temp }}/igv_runtime/tmp
+          APPTAINER_DISABLE_CACHE: "1"
+        run: |
+          mkdir -p "$IGV_RUNTIME_DIR/cache" "$IGV_RUNTIME_DIR/tmp"
+          "${APPTAINER:-apptainer}" pull "$IGV_RUNTIME_DIR/igv_snapper.sif" docker://${{ env.MCP_IGV_CONTAINER_IMAGE }}
 
       - name: Create snapshot output directory
         run: mkdir -p igv_snapshots
 
-      - name: Integration tests (full suite)
+      - name: Integration tests (full suite, docker)
+        if: matrix.runtime == 'docker'
         shell: bash -l {0}
         env:
           IGV_SNAPSHOT_DIR: ${{ github.workspace }}/igv_snapshots
+        run: pytest -m "integration or igv_integration or not integration" -ra
+
+      - name: Integration tests (full suite, apptainer)
+        if: matrix.runtime == 'apptainer'
+        shell: bash -l {0}
+        env:
+          IGV_SNAPSHOT_DIR: ${{ github.workspace }}/igv_snapshots
+          DOCKER: __no_docker__
+          MCP_IGV_SIF_PATH: ${{ runner.temp }}/igv_runtime/igv_snapper.sif
+          APPTAINER_CACHEDIR: ${{ runner.temp }}/igv_runtime/cache
+          APPTAINER_TMPDIR: ${{ runner.temp }}/igv_runtime/tmp
+          APPTAINER_DISABLE_CACHE: "1"
         run: pytest -m "integration or igv_integration or not integration" -ra
 
       - name: Upload IGV snapshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: igv-snapshots-${{ matrix.arch }}
+          name: igv-snapshots-${{ matrix.runtime }}-${{ matrix.arch }}
           path: igv_snapshots/
           if-no-files-found: ignore
           retention-days: 7
-
