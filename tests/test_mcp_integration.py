@@ -308,7 +308,10 @@ def test_nanoq_aux_histograms_fastq_and_bam(mcp_server_params, sample_fastq, sam
             async with ClientSession(read, write) as session:
                 await session.initialize()
 
-                lengths_fastq = await session.call_tool("read_length_distribution_fastq_tool", {"path": str(sample_fastq)})
+                lengths_fastq = await session.call_tool(
+                    "read_length_distribution_fastq_tool",
+                    {"path": str(sample_fastq)},
+                )
                 assert not lengths_fastq.isError
                 lengths_payload = json.loads(_text_content(lengths_fastq.content[0]).text)
                 assert lengths_payload["histogram"], "Expected nanoq aux length histogram for FASTQ"

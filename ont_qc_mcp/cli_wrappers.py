@@ -7,7 +7,7 @@ from collections import deque
 from pathlib import Path
 from shutil import which
 from threading import Thread
-from typing import Any, Literal, Sequence
+from typing import Any, Literal
 
 from .config import ExecutionConfig, ToolPaths
 from .flag_schemas import FlagDef, get_tool_flags
@@ -442,8 +442,12 @@ def nanoq_from_bam_streaming(
         if stderr_tail:
             tail_text = "\n".join(stderr_tail)
             sam_err_text = tail_text if sam_err_text == "" else sam_err_text or tail_text
-        nano_out_text = nano_out.decode("utf-8", errors="replace") if isinstance(nano_out, (bytes, bytearray)) else nano_out
-        nano_err_text = nano_err.decode("utf-8", errors="replace") if isinstance(nano_err, (bytes, bytearray)) else nano_err
+        nano_out_text = (
+            nano_out.decode("utf-8", errors="replace") if isinstance(nano_out, (bytes, bytearray)) else nano_out
+        )
+        nano_err_text = (
+            nano_err.decode("utf-8", errors="replace") if isinstance(nano_err, (bytes, bytearray)) else nano_err
+        )
 
         if sam_rc not in (0, 141):  # samtools may exit with SIGPIPE (141) if downstream closes early
             raise RuntimeError(f"samtools fastq failed: {format_cmd(sam_cmd)}\n{_truncate_stderr(sam_err_text)}")

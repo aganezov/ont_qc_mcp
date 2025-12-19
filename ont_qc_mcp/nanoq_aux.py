@@ -23,7 +23,12 @@ def _quantile_sorted(values: list[float], q: float) -> float | None:
     return float(values[lo] * (1 - frac) + values[hi] * frac)
 
 
-def _build_histogram(counts: dict[int, int], bin_width: float, max_index: int, start: float = 0.0) -> list[HistogramBin]:
+def _build_histogram(
+    counts: dict[int, int],
+    bin_width: float,
+    max_index: int,
+    start: float = 0.0,
+) -> list[HistogramBin]:
     if max_index < 0:
         return []
     bins: list[HistogramBin] = []
@@ -128,4 +133,3 @@ def qscore_histogram(
 
 
 __all__ = ["length_histogram_and_percentiles", "qscore_histogram"]
-
