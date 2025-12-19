@@ -121,11 +121,12 @@ jobs:
         if: matrix.runtime == 'docker'
         run: docker pull ${{ env.MCP_IGV_CONTAINER_IMAGE }}
 
-      - name: Install Apptainer (conda-forge)
+      - name: Install Apptainer (system)
         if: matrix.runtime == 'apptainer'
-        shell: bash -l {0}
         run: |
-          micromamba install -n ci apptainer
+          sudo apt-get update
+          sudo apt-get install -y apptainer
+          echo "APPTAINER=/usr/bin/apptainer" >> "$GITHUB_ENV"
 
       - name: Build IGV SIF
         if: matrix.runtime == 'apptainer'
@@ -135,7 +136,7 @@ jobs:
           APPTAINER_TMPDIR: ${{ github.workspace }}/igv_runtime/apptainer_tmp
         run: |
           mkdir -p igv_runtime/apptainer_cache igv_runtime/apptainer_tmp
-          apptainer pull igv_runtime/igv_snapper.sif docker://${{ env.MCP_IGV_CONTAINER_IMAGE }}
+          "${APPTAINER:-apptainer}" pull igv_runtime/igv_snapper.sif docker://${{ env.MCP_IGV_CONTAINER_IMAGE }}
 
       - name: Create snapshot output directory
         run: mkdir -p igv_snapshots
