@@ -7,7 +7,7 @@
   - BAM: `tests/fixtures/real/haplotag.large.bam`
   - VCF: `tests/fixtures/real/haplotag.large.vcf.gz`
   - High-depth BAM: `tests/fixtures/synthetic/highdepth.bam` (50 x 100bp reads over 1kb)
-- Notes: nanoq v0.10.0 JSON omits histogram blocks, so histograms stay empty unless you use the aux-output fallback (enabled by default via `MCP_NANOQ_AUX_STATS=1`, which computes histograms/percentiles from `nanoq --read-lengths/--read-qualities`; set it to `0` to disable). Cramino’s current JSON lacks mapped/unmapped counts, so those are `null` even though identity metrics are populated. The real BAM is extremely downsampled; coverage is near-zero there, but the synthetic BAM shows non-zero coverage.
+- Notes: nanoq v0.10.0 JSON omits histogram blocks, so histograms stay empty unless you use the aux-output fallback (enabled by default via `MCP_NANOQ_AUX_STATS=1`, which computes histograms/percentiles from `nanoq --read-lengths/--read-qualities`; set it to `0` to disable). Cramino’s current JSON lacks mapped/unmapped counts, so those are `null` even though identity metrics are populated. `use_scaled` returns base-weighted length bins from cramino JSON when available; otherwise it falls back to midpoint-based estimates and marks `length_histogram_scaled_is_estimated=true`. Q-score histograms from cramino are surfaced when histogram flags are set. The real BAM is extremely downsampled; coverage is near-zero there, but the synthetic BAM shows non-zero coverage.
 
 ## Quick regeneration
 Run this to refresh both JSON files with the real + synthetic fixtures:
@@ -60,6 +60,7 @@ async def main():
     )
 
     outputs['qc_alignment_tool'] = serialize_model(qc_alignment(str(BAM), tools=tools))
+    outputs['qc_alignment_tool_scaled'] = serialize_model(qc_alignment(str(BAM), tools=tools, use_scaled=True))
     outputs['coverage_stats_tool'] = serialize_model(coverage_stats(str(BAM), tools=tools))
     outputs['alignment_error_profile_tool'] = serialize_model(
         alignment_error_profile(str(BAM), tools=tools)
@@ -121,6 +122,13 @@ async def main():
         } | {
             'length_histogram_head': head(outputs['qc_alignment_tool'].get('length_histogram')),
             'mapq_histogram_head': head(outputs['qc_alignment_tool'].get('mapq_histogram')),
+        },
+        'qc_alignment_tool_scaled': {
+            k: outputs['qc_alignment_tool_scaled'].get(k)
+            for k in ['total_reads', 'mapped', 'unmapped', 'mean_length', 'median_length', 'n50', 'mean_identity', 'median_identity', 'length_histogram_scaled_is_estimated']
+        } | {
+            'length_histogram_scaled_head': head(outputs['qc_alignment_tool_scaled'].get('length_histogram_scaled')),
+            'mapq_histogram_scaled_head': head(outputs['qc_alignment_tool_scaled'].get('mapq_histogram_scaled')),
         },
         'coverage_stats_tool': {
             'mean_depth': outputs['coverage_stats_tool'].get('mean_depth'),
@@ -215,7 +223,10 @@ Values come from `docs/tool_output_examples_summary.json` unless noted; see the 
       "mean_identity": 87.7
     }
     ```
-    The length histogram comes from cramino; mapped/unmapped are `null` because the current cramino JSON lacks those counts even though identity metrics are present.
+    The length histogram comes from cramino; mapped/unmapped are `null` because the current cramino JSON lacks those counts even though identity metrics are present. When `use_scaled` is true, `length_histogram_scaled` is populated using base-weighted bins from cramino JSON when available; older cramino builds fall back to a midpoint-based estimate and set `length_histogram_scaled_is_estimated=true`.
+
+- **qc_alignment_tool_scaled** — call with the BAM path plus `use_scaled=true`.
+  - Output excerpt: same alignment summary fields plus `length_histogram_scaled` and `length_histogram_scaled_is_estimated` (false when sourced from cramino JSON; true when estimated).
 
 - **coverage_stats_tool** — call with the BAM path.
   - Output excerpt: `mean_depth=0.0`, `coverage_distribution=[]`, first contigs show `mean_depth=0.0` (the tiny BAM over chromosome-length references rounds to ~0 depth).
