@@ -80,7 +80,19 @@ class CraminoStats(BaseModel):
     mean_identity: float | None = None
     median_identity: float | None = None
     length_histogram: list[HistogramBin] | None = None  # count-based bins
-    length_histogram_scaled: list[HistogramBin] | None = None  # reserved for future scaled support
+    length_histogram_scaled: list[HistogramBin] | None = None  # base-weighted bins when available
+    length_histogram_scaled_is_estimated: bool | None = Field(
+        default=None,
+        description="True when scaled bins are estimated from count bins using bin midpoints.",
+    )
+    qscore_histogram: list[HistogramBin] | None = Field(
+        default=None,
+        description="Phred-scaled accuracy histogram (counts) from cramino when available.",
+    )
+    qscore_histogram_scaled: list[HistogramBin] | None = Field(
+        default=None,
+        description="Phred-scaled accuracy histogram (base-weighted) from cramino when available.",
+    )
     mapq_histogram: list[HistogramBin] | None = None  # count-based bins
     mapq_histogram_scaled: list[HistogramBin] | None = None  # base-weighted bins when --scaled
 

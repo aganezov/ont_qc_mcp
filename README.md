@@ -99,7 +99,7 @@ ont-qc-mcp  # launches the MCP stdio server
 - `qscore_distribution_fastq_tool`: per-read q-score histogram from nanoq.
 
 ### Alignment QC (BAM/CRAM)
-- `qc_alignment_tool`: cramino alignment QC (identity, MAPQ hist; use `use_scaled` for base-weighted bins).
+- `qc_alignment_tool`: cramino alignment QC (identity, length/Q-score hist; `use_scaled` returns base-weighted bins from cramino JSON when available, otherwise estimated from count bins).
 - `coverage_stats_tool`: mosdepth coverage summary.
 - `alignment_error_profile_tool`: error rates parsed from `samtools stats`.
 - `alignment_summary_tool`: aggregates cramino + mosdepth (+ error profile).

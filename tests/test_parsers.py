@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from ont_qc_mcp.parsers import (
+    extract_cramino_histograms,
     parse_alignment_header,
     parse_cramino_json,
     parse_error_profile,
@@ -15,6 +16,7 @@ from ont_qc_mcp.parsers import (
     parse_vcf_header,
     summarize_header,
 )
+from ont_qc_mcp.schemas import HistogramBin
 from ont_qc_mcp.tools import header_metadata_lookup
 
 
@@ -82,6 +84,49 @@ def test_parse_cramino_json_scaled():
     parsed = parse_cramino_json(payload)
     assert parsed.mapq_histogram_scaled is not None
     assert parsed.mapq_histogram_scaled[1].count == 1500
+
+
+def test_parse_cramino_json_qscore_bins():
+    payload = {"summary": {"file": "align.bam", "reads": {"total": 1}}}
+    qscore_bins = [HistogramBin(start=0.0, end=1.0, count=2)]
+    qscore_bins_scaled = [HistogramBin(start=0.0, end=1.0, count=10)]
+    parsed = parse_cramino_json(
+        payload,
+        qscore_bins=qscore_bins,
+        qscore_bins_scaled=qscore_bins_scaled,
+    )
+    assert parsed.qscore_histogram is not None
+    assert parsed.qscore_histogram[0].count == 2
+    assert parsed.qscore_histogram_scaled is not None
+    assert parsed.qscore_histogram_scaled[0].count == 10
+
+
+def test_extract_cramino_histograms_includes_overflow_bins():
+    payload = {
+        "histograms": {
+            "read_length": {
+                "step": 2000,
+                "bins": [
+                    {"start": 0, "end": 2000, "count": 1, "bases": 1000},
+                    {"start": 2000, "count": 2, "bases": 6000},  # overflow bin with no end
+                ],
+            },
+            "q_score": {
+                "step": 1,
+                "bins": [
+                    {"start": 0, "end": 1, "count": 1, "bases": 1000},
+                    {"start": 40, "count": 2, "bases": 2000},  # Q40+ overflow
+                ],
+            },
+        }
+    }
+    length_bins, length_bins_scaled, q_bins, q_bins_scaled = extract_cramino_histograms(payload)
+    assert length_bins is not None and length_bins_scaled is not None
+    assert q_bins is not None and q_bins_scaled is not None
+    assert [(b.start, b.end, b.count) for b in length_bins] == [(0.0, 2000.0, 1), (2000.0, 4000.0, 2)]
+    assert [(b.start, b.end, b.count) for b in length_bins_scaled] == [(0.0, 2000.0, 1000), (2000.0, 4000.0, 6000)]
+    assert [(b.start, b.end, b.count) for b in q_bins] == [(0.0, 1.0, 1), (40.0, 41.0, 2)]
+    assert [(b.start, b.end, b.count) for b in q_bins_scaled] == [(0.0, 1.0, 1000), (40.0, 41.0, 2000)]
 
 
 def test_parse_nanoq_json_real_fixture():

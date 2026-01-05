@@ -286,7 +286,9 @@ def mcp_server_params():
     """Return StdioServerParameters for launching the MCP server."""
     from mcp.client.stdio import StdioServerParameters
 
-    env = {"MCP_STDIO_TRANSPORT": "compat"}
+    env = {"MCP_STDIO_TRANSPORT": os.getenv("MCP_STDIO_TRANSPORT", "compat")}
+    if (blocking_mode := os.getenv("MCP_BLOCKING_MODE")):
+        env["MCP_BLOCKING_MODE"] = blocking_mode
     if (sif := os.getenv("MCP_IGV_SIF_PATH")):
         env["MCP_IGV_SIF_PATH"] = sif
     for key in ("APPTAINER", "APPTAINER_CACHEDIR", "APPTAINER_TMPDIR", "APPTAINER_DISABLE_CACHE"):

@@ -48,6 +48,86 @@ def _histogram_or_none(bins: Sequence[Sequence[float]] | None, present: bool) ->
     return _histogram_from_seq(bins)
 
 
+def extract_cramino_histograms(
+    payload: str | dict,
+) -> tuple[
+    list[HistogramBin] | None,
+    list[HistogramBin] | None,
+    list[HistogramBin] | None,
+    list[HistogramBin] | None,
+]:
+    """
+    Extract read-length and Q-score histograms from cramino JSON output.
+
+    Returns (length_bins, length_bins_scaled, qscore_bins, qscore_bins_scaled).
+    """
+    data = json.loads(payload) if isinstance(payload, str) else payload
+    summary = data.get("summary", data) if isinstance(data, dict) else {}
+    histograms = summary.get("histograms") if isinstance(summary, dict) else None
+    if not isinstance(histograms, dict):
+        return None, None, None, None
+
+    def _bins(hist: object) -> tuple[list[HistogramBin] | None, list[HistogramBin] | None]:
+        if not isinstance(hist, dict):
+            return None, None
+        step_val: float | None = None
+        step_raw = hist.get("step")
+        if step_raw is not None:
+            try:
+                step_val = float(step_raw)
+            except (TypeError, ValueError):
+                step_val = None
+        bins = hist.get("bins")
+        if not isinstance(bins, list):
+            return None, None
+        count_bins: list[HistogramBin] = []
+        bases_bins: list[HistogramBin] = []
+        for entry in bins:
+            if not isinstance(entry, dict):
+                continue
+            start = entry.get("start")
+            end = entry.get("end")
+            if start is None:
+                continue
+            if end is None:
+                # Some cramino histograms include an overflow bin (e.g. Q40+) with no explicit upper bound.
+                # Represent it as one extra bin of width `step` so downstream consumers still see the counts.
+                if step_val is None:
+                    continue
+                try:
+                    end = float(start) + step_val
+                except (TypeError, ValueError):
+                    continue
+            try:
+                start_val = float(start)
+                end_val = float(end)
+                count_val = int(entry.get("count", 0))
+                bases_val = int(entry.get("bases", 0))
+            except (TypeError, ValueError):
+                continue
+            count_bins.append(HistogramBin(start=start_val, end=end_val, count=count_val))
+            bases_bins.append(HistogramBin(start=start_val, end=end_val, count=bases_val))
+        return count_bins, bases_bins
+
+    length_bins, length_bins_scaled = _bins(histograms.get("read_length"))
+    qscore_bins, qscore_bins_scaled = _bins(histograms.get("q_score"))
+    return length_bins, length_bins_scaled, qscore_bins, qscore_bins_scaled
+
+
+def estimate_scaled_histogram(bins: Sequence[HistogramBin]) -> list[HistogramBin]:
+    """
+    Estimate base-weighted histogram bins using bin midpoints.
+
+    This is an approximation for tools that only emit count-based bins.
+    """
+    scaled: list[HistogramBin] = []
+    for entry in bins:
+        midpoint = (entry.start + entry.end) / 2.0
+        scaled_count = int(round(entry.count * midpoint))
+        scaled.append(HistogramBin(start=entry.start, end=entry.end, count=scaled_count))
+    return scaled
+
+
 def _safe_percentiles(data: dict[str, float]) -> LengthPercentiles:
     return LengthPercentiles(
         p1=data.get("p1"),
@@ -182,6 +262,9 @@ def parse_cramino_json(
     payload: str | dict,
     length_bins: list[HistogramBin] | None = None,
     length_bins_scaled: list[HistogramBin] | None = None,
+    length_bins_scaled_is_estimated: bool | None = None,
+    qscore_bins: list[HistogramBin] | None = None,
+    qscore_bins_scaled: list[HistogramBin] | None = None,
 ) -> CraminoStats:
     """
     Parse cramino JSON output (e.g., --format json), supporting both count and scaled histograms.
@@ -231,6 +314,11 @@ def parse_cramino_json(
         median_identity=summary.get("median_identity") or identity_stats.get("median_identity"),
         length_histogram=length_bins or None,
         length_histogram_scaled=length_bins_scaled or None,
+        length_histogram_scaled_is_estimated=length_bins_scaled_is_estimated
+        if length_bins_scaled is not None
+        else None,
+        qscore_histogram=qscore_bins or None,
+        qscore_histogram_scaled=qscore_bins_scaled or None,
         mapq_histogram=_histogram_from_seq(mapq_bins_counts),
         mapq_histogram_scaled=_histogram_from_seq(mapq_bins_scaled) if mapq_bins_scaled else None,
     )

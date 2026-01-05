@@ -11,7 +11,13 @@ from typing import Any, Literal
 
 from .config import ExecutionConfig, ToolPaths
 from .flag_schemas import FlagDef, get_tool_flags
-from .parsers import parse_cramino_json, parse_mosdepth_summary, parse_nanoq_json
+from .parsers import (
+    estimate_scaled_histogram,
+    extract_cramino_histograms,
+    parse_cramino_json,
+    parse_mosdepth_summary,
+    parse_nanoq_json,
+)
 from .schemas import (
     ChopperReport,
     CraminoStats,
@@ -275,7 +281,12 @@ def cramino_stats(
     flag_data: dict[str, Any] = dict(flags or {})
     hist_count_path: Path | None = None
     hist_args: list[str] = []
-    length_bins: list[HistogramBin] = []
+    length_bins_tsv_counts: list[HistogramBin] = []
+    length_bins_tsv_bases: list[HistogramBin] = []
+    length_bins_scaled: list[HistogramBin] | None = None
+    length_bins_scaled_is_estimated: bool | None = None
+    qscore_bins: list[HistogramBin] | None = None
+    qscore_bins_scaled: list[HistogramBin] | None = None
     report_progress(f"cramino start: {path}")
 
     if include_hist:
@@ -283,10 +294,15 @@ def cramino_stats(
         with tempfile.NamedTemporaryFile(suffix=".cramino.hist.tsv", delete=False) as tmp:
             hist_count_path = Path(tmp.name)
         hist_args = ["--hist-count", str(hist_count_path)]
+    # Keep stdout parseable and avoid cramino's optional-value flags consuming the input path.
+    # Histogram generation and scaling are controlled via include_hist/use_scaled.
+    flag_data.pop("hist", None)
+    flag_data.pop("format", None)
+    flag_data.pop("scaled", None)
     if use_scaled:
-        flag_data.setdefault("scaled", True)
-    # Force JSON output regardless of user-supplied flags; parser expects JSON.
-    flag_data.setdefault("format", "json")
+        flag_data["scaled"] = True
+    # Force JSON output; parser expects JSON.
+    flag_data["format"] = "json"
 
     flag_data, timeout = _prepare_execution("cramino", flag_data, exec_cfg)
     flag_args = build_cli_args("cramino", flag_data)
@@ -294,10 +310,25 @@ def cramino_stats(
     try:
         logger.debug("Executing cramino: %s", format_cmd(cmd))
         result = run_command(cmd, timeout=timeout)
+        length_bins_json = None
+        length_bins_scaled_json = None
+        qscore_bins_json = None
+        qscore_bins_scaled_json = None
+        if include_hist:
+            (
+                length_bins_json,
+                length_bins_scaled_json,
+                qscore_bins_json,
+                qscore_bins_scaled_json,
+            ) = extract_cramino_histograms(result.stdout)
+
         if hist_count_path and hist_count_path.exists():
             with open(hist_count_path, "r", encoding="utf-8") as fh:
                 lines = [line.strip() for line in fh if line.strip()]
-            # Expect header then rows: bin_start bin_end count
+            # Expect header then rows: bin_start bin_end <count|bases>
+            header = lines[0].split("\t") if lines else []
+            value_field = header[2].lower() if len(header) >= 3 else "count"
+            is_bases = value_field == "bases"
             for line in lines[1:]:
                 parts = line.split("\t")
                 if len(parts) < 3:
@@ -306,12 +337,43 @@ def cramino_stats(
                     start, end, count = float(parts[0]), float(parts[1]), float(parts[2])
                 except ValueError:
                     continue
-                length_bins.append(HistogramBin(start=start, end=end, count=int(count)))
+                entry = HistogramBin(start=start, end=end, count=int(count))
+                if is_bases:
+                    length_bins_tsv_bases.append(entry)
+                else:
+                    length_bins_tsv_counts.append(entry)
+
+        if length_bins_json is not None:
+            length_bins = length_bins_json
+        else:
+            length_bins = length_bins_tsv_counts
+
+        if use_scaled:
+            if length_bins_scaled_json is not None:
+                length_bins_scaled = length_bins_scaled_json
+                length_bins_scaled_is_estimated = False
+            elif length_bins_tsv_bases:
+                length_bins_scaled = length_bins_tsv_bases
+                length_bins_scaled_is_estimated = False
+            elif length_bins:
+                length_bins_scaled = estimate_scaled_histogram(length_bins)
+                length_bins_scaled_is_estimated = True
+
+        qscore_bins = qscore_bins_json
+        if use_scaled:
+            qscore_bins_scaled = qscore_bins_scaled_json
     finally:
         if hist_count_path:
             hist_count_path.unlink(missing_ok=True)
     report_progress(f"cramino done: {path}")
-    return parse_cramino_json(result.stdout, length_bins=length_bins)
+    return parse_cramino_json(
+        result.stdout,
+        length_bins=length_bins,
+        length_bins_scaled=length_bins_scaled,
+        length_bins_scaled_is_estimated=length_bins_scaled_is_estimated,
+        qscore_bins=qscore_bins,
+        qscore_bins_scaled=qscore_bins_scaled,
+    )
 
 
 def nanoq_from_bam_streaming(

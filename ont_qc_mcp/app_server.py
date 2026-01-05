@@ -420,7 +420,14 @@ _TOOL_SPECS = [
             "properties": {
                 "path": {**_PATH_PROP, "description": "Path to BAM/CRAM alignment file"},
                 "include_hist": {"type": "boolean", "description": "Include histogram data", "default": True},
-                "use_scaled": {"type": "boolean", "description": "Use scaled histogram bins", "default": False},
+                "use_scaled": {
+                    "type": "boolean",
+                    "description": (
+                        "Use base-weighted histogram bins (estimated from count bins when true scaled bins "
+                        "are unavailable)"
+                    ),
+                    "default": False,
+                },
                 "flags": _FLAGS_PROP,
             },
             "required": ["path"],
@@ -696,7 +703,14 @@ _TOOL_SPECS = [
                 "path": {**_PATH_PROP, "description": "Path to BAM/CRAM alignment file"},
                 "include_coverage": {"type": "boolean", "description": "Include coverage stats", "default": True},
                 "include_hist": {"type": "boolean", "description": "Include histogram data", "default": True},
-                "use_scaled": {"type": "boolean", "description": "Use scaled histogram bins", "default": False},
+                "use_scaled": {
+                    "type": "boolean",
+                    "description": (
+                        "Use base-weighted histogram bins (estimated from count bins when true scaled bins "
+                        "are unavailable)"
+                    ),
+                    "default": False,
+                },
                 "include_error_profile": {
                     "type": "boolean",
                     "description": "Include samtools stats error profile",
