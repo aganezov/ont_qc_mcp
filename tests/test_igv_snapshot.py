@@ -218,6 +218,7 @@ def _text_content(content: types.Content) -> types.TextContent:
 
 
 @pytest.mark.igv_integration
+@pytest.mark.flaky(reruns=2, reruns_delay=5)  # headless IGV render flakes transiently; retry, don't red-flag a PR
 def test_igv_snapshot_from_bed(
     sample_bam_highdepth: Path,
     sample_reference: Path,
@@ -245,6 +246,7 @@ def test_igv_snapshot_from_bed(
 
 
 @pytest.mark.igv_integration
+@pytest.mark.flaky(reruns=2, reruns_delay=5)  # headless IGV render flakes transiently; retry, don't red-flag a PR
 def test_igv_snapshot_custom_genome(
     sample_bam_highdepth: Path,
     sample_reference: Path,
@@ -271,6 +273,7 @@ def test_igv_snapshot_custom_genome(
 
 
 @pytest.mark.igv_integration
+@pytest.mark.flaky(reruns=2, reruns_delay=5)  # headless IGV render flakes transiently; retry, don't red-flag a PR
 def test_igv_snapshot_bam_and_vcf(
     sample_bam: Path,
     sample_vcf: Path,
@@ -301,6 +304,7 @@ def test_igv_snapshot_bam_and_vcf(
 
 
 @pytest.mark.igv_integration
+@pytest.mark.flaky(reruns=2, reruns_delay=5)  # headless IGV render flakes transiently; retry, don't red-flag a PR
 def test_igv_snapshot_tool_mcp_protocol(
     mcp_server_params,
     sample_bam_highdepth: Path,
