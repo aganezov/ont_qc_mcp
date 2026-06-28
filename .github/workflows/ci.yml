@@ -20,10 +20,10 @@ jobs:
         python-version: ["3.10", "3.11", "3.12"]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -74,10 +74,10 @@ jobs:
       MCP_IGV_CONTAINER_IMAGE: "aganezov/igv_snapper:0.2"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up micromamba with bioinformatics CLIs
-        uses: mamba-org/setup-micromamba@v2
+        uses: mamba-org/setup-micromamba@v3
         with:
           micromamba-version: "latest"
           environment-name: ci
@@ -181,7 +181,7 @@ jobs:
 
       - name: Upload IGV snapshots
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: igv-snapshots-${{ matrix.runtime }}-${{ matrix.arch }}
           path: igv_snapshots/
