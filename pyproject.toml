@@ -85,3 +85,12 @@ warn_unused_ignores = true
 ignore_missing_imports = true
 show_error_codes = true
 
+# Do not type-check third-party stubs we don't own. Newer numpy ships PEP 695
+# `type` aliases in its .pyi files, which mypy rejects under python_version=3.10.
+# This only surfaces in CI's fresh install (latest numpy), not in a stale local
+# env — the classic unpinned-dependency drift. We never analyze numpy internals.
+[[tool.mypy.overrides]]
+module = ["numpy.*"]
+follow_imports = "skip"
+follow_imports_for_stubs = true
+

@@ -2,8 +2,15 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
+
+# One CI run per ref; a newer push/PR update cancels the superseded run. Also stops
+# the old push+pull_request double-run on branches that have an open PR.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lint-and-test:
@@ -35,7 +42,10 @@ jobs:
         run: bandit -r ont_qc_mcp -x tests
 
       - name: Dependency audit (pip-audit)
-        run: pip-audit
+        # pytest is a test-only dependency (not in the shipped wheel). Its only
+        # advisory, CVE-2025-71176, is fixed in pytest 9, which forces a
+        # pytest-asyncio 1.x major upgrade — tracked separately. Suppress narrowly.
+        run: pip-audit --ignore-vuln CVE-2025-71176
 
       - name: Unit tests (skip integration)
         run: pytest --cov=ont_qc_mcp --cov-report=xml
