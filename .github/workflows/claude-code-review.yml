@@ -48,6 +48,9 @@ jobs:
           # Use the workflow's scoped token for GitHub operations (can comment, cannot
           # push code) instead of a write-scoped app token.
           github_token: ${{ github.token }}
+          # Defense in depth: only ingest the owner's comments. (Auto-review is
+          # `opened`-only so a fresh PR has none, but this keeps it robust.)
+          include_comments_by_actor: ${{ github.repository_owner }}
           # Automation mode does NOT post a comment by default; this enables it.
           track_progress: true
           prompt: |

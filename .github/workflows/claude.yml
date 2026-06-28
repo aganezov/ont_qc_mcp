@@ -53,3 +53,7 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
+          # Only feed the repo owner's comments into Claude's context, so an external
+          # commenter's text in a trusted thread cannot prompt-inject the run (Codex
+          # finding). Extend this list if trusted collaborators are added.
+          include_comments_by_actor: ${{ github.repository_owner }}
