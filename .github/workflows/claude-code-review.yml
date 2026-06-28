@@ -1,9 +1,8 @@
 name: Claude review
 
 # Advisory AI code review. Fires when a PR is opened, reopened, or marked
-# ready-for-review — NOT on every push (the vendor default included `synchronize`;
-# we dropped it). Re-review on demand by commenting "@claude review" (see
-# claude.yml). Advisory only: ruff / mypy / pytest / CodeQL are the merge gates.
+# ready-for-review — NOT on every push. Re-review on demand by commenting
+# "@claude review". Advisory only: ruff / mypy / pytest / CodeQL are the merge gates.
 
 on:
   pull_request:
@@ -19,33 +18,43 @@ concurrency:
 
 jobs:
   review:
-    # Abuse guard for a public repo: only auto-review PRs from trusted authors.
-    # A stranger opening many PRs spends ZERO review quota; opt an outside
-    # contributor in with an "@claude review" comment instead. (Vendor default
-    # left this commented out — we enable it.)
+    # Public-repo abuse guard: only auto-review PRs from trusted authors. A stranger
+    # opening many PRs spends ZERO review quota; opt an outside PR in via "@claude review".
     if: contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
     runs-on: ubuntu-latest
+    # Advisory BY CONSTRUCTION: the action uses this scoped GITHUB_TOKEN (passed as
+    # github_token below) for GitHub ops — pull-requests:write to post the review,
+    # contents:read so it CANNOT push code. We deliberately do NOT set
+    # additional_permissions / id-token, which would make the action mint a
+    # write-scoped GitHub App token instead (flagged by Codex review, P1).
     permissions:
-      contents: read # read the code/diff
-      pull-requests: read # the action comments via the GitHub App, not GITHUB_TOKEN
-      id-token: write # OIDC handshake used by the action
-      actions: read # let the reviewer read CI results
+      contents: read
+      pull-requests: write
+      actions: read
     steps:
       - name: Checkout PR
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          fetch-depth: 0 # full history so the reviewer can see the diff base
+          fetch-depth: 0
 
       - name: Claude advisory review
         uses: anthropics/claude-code-action@a92e7c70a4da9793dc164451d829089dc057a464 # v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          additional_permissions: |
-            actions: read
-          # Use the official code-review plugin's slash command: it is purpose-built to
-          # POST a PR review. A freeform `prompt` on a pull_request event runs Claude
-          # headlessly and returns success WITHOUT posting. Claude still reads AGENTS.md
-          # as repo context, so the output style follows our review contract.
-          plugin_marketplaces: "https://github.com/anthropics/claude-code.git"
-          plugins: "code-review@claude-code-plugins"
-          prompt: "/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}"
+          # Use the workflow's scoped token for GitHub operations (can comment, cannot
+          # push code) instead of a write-scoped app token.
+          github_token: ${{ github.token }}
+          # Automation mode does NOT post a comment by default; this enables it.
+          track_progress: true
+          prompt: |
+            Review this pull request as an advisory reviewer.
+            Follow the "Code review output contract" in CLAUDE.md / AGENTS.md:
+            a glanceable verdict line + counts (blockers / suggestions / nits),
+            a findings table (| Sev | Location | Finding | with file:line), and one
+            collapsed <details> per finding with a ```suggestion``` block where useful.
+            Severity: 🔴 Blocker · 🟠 High · 🟡 Medium · 🔵 Nit · 💭 Question.
+            Do NOT comment on formatting (ruff owns it); do NOT restate the diff; do NOT
+            duplicate findings CodeQL reports. Prioritize correctness, security — inputs
+            from MCP clients and files are UNTRUSTED, so watch for command/argument
+            injection and path traversal — and maintainability. Advisory only; the merge
+            gates are ruff / mypy / pytest / CodeQL.
