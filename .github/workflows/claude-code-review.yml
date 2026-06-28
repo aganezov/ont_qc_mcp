@@ -42,20 +42,10 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           additional_permissions: |
             actions: read
-          prompt: |
-            You are an advisory pull-request reviewer for the ont_qc_mcp project.
-            Read AGENTS.md and follow its "Code review output contract" exactly.
-
-            Post ONE structured summary comment:
-            - A verdict line + counts (blockers / suggestions / nits) for a 2-second glance.
-            - A findings table: | Sev | Location | Finding | with file:line locations.
-            - One collapsed <details> per finding: the explanation, why it matters,
-              and a ```suggestion``` block where a concrete fix applies.
-
-            Severity vocabulary: 🔴 Blocker · 🟠 High · 🟡 Medium · 🔵 Nit · 💭 Question.
-
-            Do NOT comment on formatting (ruff owns it). Do NOT restate the diff.
-            Do NOT duplicate findings CodeQL already reports. Prioritize correctness,
-            security — inputs from MCP clients and files are UNTRUSTED, so watch for
-            command/argument injection and path traversal — and maintainability.
-            You are advisory; ruff / mypy / pytest / CodeQL are the merge gates.
+          # Use the official code-review plugin's slash command: it is purpose-built to
+          # POST a PR review. A freeform `prompt` on a pull_request event runs Claude
+          # headlessly and returns success WITHOUT posting. Claude still reads AGENTS.md
+          # as repo context, so the output style follows our review contract.
+          plugin_marketplaces: "https://github.com/anthropics/claude-code.git"
+          plugins: "code-review@claude-code-plugins"
+          prompt: "/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}"
