@@ -16,7 +16,10 @@ on:
 permissions: {}
 
 concurrency:
-  group: codeql-${{ github.ref }}
+  # Key by event_name too: a push to main and the weekly schedule both resolve
+  # github.ref to refs/heads/main, so without this they'd share a slot and
+  # cancel-in-progress would let one silently kill the other (Claude review).
+  group: codeql-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -31,7 +34,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
+        uses: github/codeql-action/init@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4
         with:
           languages: python
           # Broader than the default query pack (adds more security queries);
@@ -39,4 +42,4 @@ jobs:
           queries: security-extended
 
       - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
+        uses: github/codeql-action/analyze@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4
