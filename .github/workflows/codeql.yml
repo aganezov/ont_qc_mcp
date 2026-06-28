@@ -1,0 +1,42 @@
+name: CodeQL
+
+# Static-analysis security scanning. Builds a queryable database of the code and
+# runs security queries against it (no code execution). Runs on PRs and pushes to
+# main, PLUS weekly — the schedule re-scans unchanged code so newly-published query
+# patterns (i.e. vulnerability classes discovered later) still get applied.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "27 6 * * 1" # Mondays ~06:27 UTC (off the top-of-hour scheduler stampede)
+
+# Least privilege at the top; the job grants only what CodeQL needs.
+permissions: {}
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (python)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # read the source
+      security-events: write # upload findings to the repo's Security tab
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
+        with:
+          languages: python
+          # Broader than the default query pack (adds more security queries);
+          # "security-and-quality" exists too but is noisier with style/maintainability.
+          queries: security-extended
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3

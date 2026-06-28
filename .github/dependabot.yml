@@ -1,0 +1,24 @@
+version: 2
+updates:
+  # 1) Python dependencies declared in pyproject.toml (runtime deps + extras).
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      # One grouped PR for all Python bumps, instead of one PR per package — far
+      # less noise, and related updates get tested together.
+      python-dependencies:
+        patterns: ["*"]
+    open-pull-requests-limit: 5
+
+  # 2) The GitHub Actions we pinned by commit SHA. Dependabot bumps the SHA *and*
+  # the `# vN` comment for us, so SHA-pinning stays current without manual toil —
+  # this is what makes "pin by SHA" sustainable rather than a maintenance burden.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      github-actions:
+        patterns: ["*"]
