@@ -23,10 +23,10 @@ if [ "${1:-}" != "--fast" ]; then
   echo "==> interpreter: $PY ($("$PY" --version 2>&1))"
   VENV="$(mktemp -d)/ci-venv"
   echo "==> fresh venv: $VENV"
-  "$PY" -m venv "$VENV"
+  "$PY" -m venv "$VENV" || { echo "❌ could not create venv with $PY (missing venv/ensurepip?)"; exit 1; }
   # shellcheck disable=SC1091
-  source "$VENV/bin/activate"
-  python -m pip install --quiet --upgrade pip
+  source "$VENV/bin/activate" || { echo "❌ could not activate venv"; exit 1; }
+  python -m pip install --quiet --upgrade pip || { echo "❌ pip upgrade failed"; exit 1; }
   echo "==> pip install -e .[all]  (fresh resolution — this is what catches drift)"
   python -m pip install --quiet -e ".[all]" || { echo "❌ install failed"; exit 1; }
 fi

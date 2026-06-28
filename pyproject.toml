@@ -90,7 +90,9 @@ show_error_codes = true
 # This only surfaces in CI's fresh install (latest numpy), not in a stale local
 # env — the classic unpinned-dependency drift. We never analyze numpy internals.
 [[tool.mypy.overrides]]
-module = ["numpy.*"]
+# `numpy` covers the top-level package stub (numpy/__init__.pyi, where the
+# PEP 695 `type` error lives); `numpy.*` covers submodules.
+module = ["numpy", "numpy.*"]
 follow_imports = "skip"
 follow_imports_for_stubs = true
 
