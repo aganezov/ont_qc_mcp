@@ -5,7 +5,7 @@ description = "Model Context Protocol server exposing QC/EDA helpers for ONT FAS
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "ONT QC MCP Maintainers" }]
+authors = [{ name = "Sergey Aganezov", email = "sergeyaganezovjr@gmail.com" }]
 urls = { "Repository" = "https://github.com/aganezov/ont_qc_mcp", "Issues" = "https://github.com/aganezov/ont_qc_mcp/issues" }
 classifiers = [
     "License :: OSI Approved :: MIT License",
@@ -19,11 +19,13 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Bio-Informatics",
 ]
 dependencies = [
-    "mcp>=0.1.0",
+    # Floor pinned to the lowest version verified to expose the server APIs we use
+    # (validate_input on call_tool, ReadResourceContents, CallToolResult); <2 guards
+    # against a breaking major. The old ">=0.1.0" could resolve to an incompatible 0.x.
+    "mcp>=1.13,<2",
     "anyio>=4,<5",
     "pydantic>=2.6,<3",
     "typer>=0.12,<1",
-    "rich>=13,<14",
 ]
 
 [project.optional-dependencies]
@@ -58,6 +60,10 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 include = ["ont_qc_mcp*"]
 exclude = ["docker*", "tests*", "docs*", "scripts*"]
+
+[tool.setuptools.package-data]
+# Ship the PEP 561 marker so type-checkers see ont_qc_mcp as typed when installed.
+ont_qc_mcp = ["py.typed"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
