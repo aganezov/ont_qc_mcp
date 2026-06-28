@@ -19,10 +19,9 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Bio-Informatics",
 ]
 dependencies = [
-    # Floor pinned to the lowest version verified to expose the server APIs we use
-    # (validate_input on call_tool, ReadResourceContents, CallToolResult); <2 guards
-    # against a breaking major. The old ">=0.1.0" could resolve to an incompatible 0.x.
-    "mcp>=1.13,<2",
+    # >=1.19: first SDK release whose Server.call_tool passes a returned CallToolResult
+    # through (1.13-1.18 mangle it, breaking our dispatch); <2 guards a breaking major.
+    "mcp>=1.19,<2",
     "anyio>=4,<5",
     "pydantic>=2.6,<3",
     "typer>=0.12,<1",
