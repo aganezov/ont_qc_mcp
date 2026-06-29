@@ -32,3 +32,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Fixed
 - Sanitized tool output example artifacts to remove machine-specific paths
 
+### Security
+- Reject control characters in IGV batch fields, fixing a command-injection issue:
+  a newline in a region `chrom`/`name`, the `genome`, a track path, or
+  `extra_commands`/`extra_preferences` could inject arbitrary IGV batch commands.
+  All such fields are now validated and rejected fail-closed.
+  Advisory: [GHSA-634p-vpv6-fxg8](https://github.com/aganezov/ont_qc_mcp/security/advisories/GHSA-634p-vpv6-fxg8).
+
