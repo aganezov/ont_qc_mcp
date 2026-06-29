@@ -73,8 +73,8 @@ export MCP_IGV_SIF_PATH=/path/to/igv_snapper.sif
 
 ## Quick start
 ```bash
-pip install -e .
-ont-qc-mcp  # launches the MCP stdio server
+uv sync               # reproducible venv from uv.lock  (or: pip install -e .)
+uv run ont-qc-mcp     # launches the MCP stdio server
 ```
 
 ### Consistent environment for tests/tools
@@ -136,11 +136,11 @@ ont-qc-mcp  # launches the MCP stdio server
 
 ## Development
 ```bash
-pip install -e ".[dev]"           # tests + linting/coverage helpers
-pip install -e ".[plots]"         # add matplotlib for PNG histograms
-pip install -e ".[all]"           # everything above in one go
-scripts/with-env.sh pytest
+uv sync --all-extras    # dev + plot deps, exact versions from uv.lock
+uv run pytest           # or: scripts/ci-local.sh  (mirrors the CI lint tier)
 ```
+uv uses the committed `uv.lock` for a reproducible env. Plain pip works too:
+`pip install -e ".[dev]"` (tests/lint) · `".[plots]"` (matplotlib) · `".[all]"`.
 
 ### Helpful wrappers
 - `scripts/with-env.sh <cmd>`: activates `.venv` (if present) and prepends optional toolchain paths. It honors:
