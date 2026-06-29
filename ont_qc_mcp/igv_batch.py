@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Iterable
 
@@ -8,9 +9,30 @@ from .schemas import IgvRegion
 
 SNAPSHOT_EXTENSIONS = {"png", "svg"}
 
+# The IGV batch format is line-oriented with no escaping mechanism: each line is a
+# separate command. Any control character (newline/CR especially) in a caller-supplied
+# field would inject additional IGV commands. Reject such values — fail closed — so the
+# script's line structure is controlled by this code, never by untrusted field content.
+# Covers C0 controls (incl. \n, \r, \t), DEL, and C1 controls (0x80-0x9f).
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+
+
+class IgvBatchValidationError(ValueError):
+    """Raised when an IGV batch field contains characters that could inject commands."""
+
+
+def _safe(value: str, field: str) -> str:
+    """Return ``value`` unchanged, or raise if it contains a control character."""
+    if _CONTROL_CHARS.search(value):
+        raise IgvBatchValidationError(
+            f"IGV batch field {field!r} contains a control character that could inject an "
+            f"IGV command; refusing to build the batch script (value={value!r})"
+        )
+    return value
+
 
 def _format_preference(key: str, value: str | int | float | bool) -> str:
-    return f"preference {key} {value}"
+    return f"preference {_safe(key, 'preference key')} {_safe(str(value), 'preference value')}"
 
 
 def _snapshot_name(region: IgvRegion, snapshot_format: str) -> str:
@@ -58,9 +80,9 @@ def _header_lines(
     extra_commands: list[str] | None,
 ) -> list[str]:
     lines: list[str] = []
-    lines.append(f"genome {genome}")
+    lines.append(f"genome {_safe(genome, 'genome')}")
     for track in tracks:
-        lines.append(f"load {track}")
+        lines.append(f"load {_safe(track, 'track')}")
 
     # Preferences
     hide_small_indels = not small_indels_show
@@ -70,12 +92,12 @@ def _header_lines(
     lines.append(_format_preference("SAM.ALLELE_THRESHOLD", f"{allele_threshold:.2f}"))
 
     # Display options
-    lines.append(compact)
+    lines.append(_safe(compact, "compact"))
     if color_by:
-        lines.append(f"colorBy {color_by}")
+        lines.append(f"colorBy {_safe(color_by, 'color_by')}")
     if group_by:
-        lines.append(f"group {group_by}")
-    lines.append(f"snapshotDirectory {snapshot_dir}")
+        lines.append(f"group {_safe(group_by, 'group_by')}")
+    lines.append(f"snapshotDirectory {_safe(str(snapshot_dir), 'snapshot_dir')}")
 
     # Extra preferences
     for key, value in (extra_preferences or {}).items():
@@ -83,7 +105,7 @@ def _header_lines(
 
     # Global extra commands
     if extra_commands:
-        lines.extend(extra_commands)
+        lines.extend(_safe(cmd, "extra_commands") for cmd in extra_commands)
 
     return lines
 
@@ -94,12 +116,12 @@ def _region_lines(
     min_snapshot_width: int,
 ) -> list[str]:
     start, end = _expand_region(region.start, region.end, min_snapshot_width)
-    region_str = f"{region.chrom}:{start}-{end}"
-    snapshot_name = _snapshot_name(region, snapshot_format)
+    region_str = f"{_safe(region.chrom, 'region.chrom')}:{start}-{end}"
+    snapshot_name = _safe(_snapshot_name(region, snapshot_format), "region.name")
 
     lines: list[str] = [f"goto {region_str}"]
     if region.extra_commands:
-        lines.extend(region.extra_commands)
+        lines.extend(_safe(cmd, "region.extra_commands") for cmd in region.extra_commands)
     lines.append(f"snapshot {snapshot_name}")
     return lines
 
@@ -152,4 +174,4 @@ def generate_igv_batch(
     return output_path
 
 
-__all__ = ["generate_igv_batch"]
+__all__ = ["generate_igv_batch", "IgvBatchValidationError"]
