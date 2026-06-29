@@ -1,10 +1,15 @@
 version: 2
 updates:
-  # 1) Python dependencies declared in pyproject.toml (runtime deps + extras).
-  - package-ecosystem: "pip"
+  # 1) Python dependencies — the "uv" ecosystem reads pyproject.toml AND maintains
+  # uv.lock (it bumps the pinned versions). cooldown delays each bump 7 days so a
+  # freshly-published (possibly compromised) release has time to be caught/yanked
+  # before we adopt it; security updates are exempt from the delay.
+  - package-ecosystem: "uv"
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
     groups:
       # One grouped PR for all Python bumps, instead of one PR per package — far
       # less noise, and related updates get tested together.
@@ -19,6 +24,8 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
     groups:
       github-actions:
         patterns: ["*"]

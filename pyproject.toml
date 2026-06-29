@@ -29,8 +29,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.0,<10",
-    "pytest-asyncio>=0.23,<2",
+    "pytest>=8.2,<10",
+    "pytest-asyncio>=0.24,<2",
     "pytest-cov>=4,<8",
     "pytest-rerunfailures>=14,<17",
     "ruff>=0.6,<0.16",
@@ -40,8 +40,8 @@ dev = [
 ]
 plots = ["matplotlib>=3.8,<4"]
 all = [
-    "pytest>=8.0,<10",
-    "pytest-asyncio>=0.23,<2",
+    "pytest>=8.2,<10",
+    "pytest-asyncio>=0.24,<2",
     "pytest-cov>=4,<8",
     "pytest-rerunfailures>=14,<17",
     "ruff>=0.6,<0.16",

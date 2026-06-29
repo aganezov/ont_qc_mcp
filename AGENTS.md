@@ -11,8 +11,9 @@ sequencing data (FASTQ / BAM / CRAM / VCF / BED).
 - **Branches & commits:** never commit to `main`. Use a feature branch and small
   [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`,
   `chore:`, `docs:`, `ci:`).
-- **Verify before commit:** run `scripts/ci-local.sh` (reproduces the CI gate in a
-  fresh venv), or quickly: `ruff check . && mypy ont_qc_mcp tests && pytest`.
+- **Verify before commit:** run `scripts/ci-local.sh` (reproduces the CI lint tier
+  via uv + the lockfile; `--floors` mirrors the min-deps job), or quickly:
+  `uv run ruff check . && uv run mypy ont_qc_mcp tests && uv run pytest`.
   (`ruff format --check` enforcement is added in a later quality-gates step.)
 - **Merge gates are deterministic:** `ruff`, `mypy`, `pytest`, CodeQL. AI review
   is **advisory** and never blocks a merge.
