@@ -26,9 +26,8 @@ Model Context Protocol server exposing lightweight QC/EDA helpers for Oxford Nan
 
 **Using conda/mamba (recommended):**
 ```bash
-mamba create -n ont-qc-mcp python=3.11 chopper cramino mosdepth samtools bcftools -c conda-forge -c bioconda
+mamba create -n ont-qc-mcp python=3.11 chopper cramino mosdepth samtools bcftools nanoq -c conda-forge -c bioconda
 conda activate ont-qc-mcp
-cargo install --locked nanoq  # nanoq via Rust toolchain
 ```
 
 **Using system package managers:**
@@ -43,7 +42,7 @@ brew install samtools bcftools
 cargo install --locked nanoq
 ```
 
-For `chopper`, `cramino`, and `mosdepth`, conda/mamba is the easiest installation method.
+For `chopper`, `cramino`, `mosdepth`, and `nanoq`, conda/mamba is the easiest installation method.
 
 ## IGV snapshot tool (optional)
 - Container runtime: Docker (preferred) or Apptainer/Singularity
