@@ -1,6 +1,8 @@
 from pathlib import Path
 
-from ont_qc_mcp.igv_batch import _region_lines, generate_igv_batch
+import pytest
+
+from ont_qc_mcp.igv_batch import IgvBatchValidationError, _region_lines, generate_igv_batch
 from ont_qc_mcp.schemas import IgvRegion
 from ont_qc_mcp.tools import _parse_bed_regions
 
@@ -106,3 +108,65 @@ def test_region_min_width_expansion(tmp_path: Path) -> None:
     lines = _region_lines(region, snapshot_format="png", min_snapshot_width=100)
     assert lines[0] == "goto chr5:60-160"
     assert lines[-1] == "snapshot chr5_100_120.png"
+
+
+# --- C1: IGV batch injection safety (GHSA-634p-vpv6-fxg8) --------------------
+# The batch format is line-oriented; a control char (esp. newline) in any caller
+# field would inject an extra IGV command. Every interpolated field must be rejected.
+
+_INJECTION = ["\n", "\r", "\nexecute evil", "x\nload /etc/passwd", "\x00", "\x1b"]
+
+
+@pytest.mark.parametrize("payload", _INJECTION)
+def test_injection_rejected_in_chrom(tmp_path: Path, payload: str) -> None:
+    region = IgvRegion(chrom=f"chr1{payload}", start=1, end=100)
+    with pytest.raises(IgvBatchValidationError):
+        generate_igv_batch(genome="hg38", tracks=["a.bam"], regions=[region], output_path=tmp_path / "b")
+
+
+@pytest.mark.parametrize("payload", _INJECTION)
+def test_injection_rejected_in_genome(tmp_path: Path, payload: str) -> None:
+    region = IgvRegion(chrom="chr1", start=1, end=100)
+    with pytest.raises(IgvBatchValidationError):
+        generate_igv_batch(genome=f"hg38{payload}", tracks=["a.bam"], regions=[region], output_path=tmp_path / "b")
+
+
+def test_injection_rejected_in_track(tmp_path: Path) -> None:
+    region = IgvRegion(chrom="chr1", start=1, end=100)
+    with pytest.raises(IgvBatchValidationError):
+        generate_igv_batch(genome="hg38", tracks=["a.bam\nexecute evil"], regions=[region], output_path=tmp_path / "b")
+
+
+def test_injection_rejected_in_region_name(tmp_path: Path) -> None:
+    region = IgvRegion(chrom="chr1", start=1, end=100, name="r\nload /etc/passwd")
+    with pytest.raises(IgvBatchValidationError):
+        generate_igv_batch(genome="hg38", tracks=["a.bam"], regions=[region], output_path=tmp_path / "b")
+
+
+def test_injection_rejected_in_extra_commands(tmp_path: Path) -> None:
+    region = IgvRegion(chrom="chr1", start=1, end=100)
+    with pytest.raises(IgvBatchValidationError):
+        generate_igv_batch(
+            genome="hg38",
+            tracks=["a.bam"],
+            regions=[region],
+            output_path=tmp_path / "b",
+            extra_commands=["setSleepInterval 50\nexecute evil"],
+        )
+
+
+def test_legit_input_still_builds(tmp_path: Path) -> None:
+    """The guard must not reject valid input (no false positives)."""
+    region = IgvRegion(chrom="chr1", start=1000, end=2000, name="my_region")
+    out = generate_igv_batch(
+        genome="hg38",
+        tracks=["sample.bam"],
+        regions=[region],
+        output_path=tmp_path / "b",
+        extra_commands=["maxPanelHeight 500"],
+    )
+    text = out.read_text(encoding="utf-8")
+    assert "goto chr1:1000-2000" in text
+    assert "load sample.bam" in text
+    assert "snapshot my_region.png" in text
+    assert "execute" not in text
