@@ -66,6 +66,8 @@ jobs:
         uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
         with:
           repository-url: https://test.pypi.org/legacy/
+          attestations: true
+          skip-existing: true # dry-runs re-publish the same version; don't fail on re-run
 
   # Real release: a vX.Y.Z tag publishes to PyPI via Trusted Publishing.
   publish-pypi:
@@ -86,6 +88,7 @@ jobs:
         with:
           # Trusted Publishing (no token) is auto-detected via the id-token permission.
           attestations: true # PEP 740 build provenance, signed via Sigstore
+          skip-existing: true # idempotent: a re-run after a partial failure won't error on an already-published file
 
   github-release:
     needs: publish-pypi
