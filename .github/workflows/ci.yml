@@ -100,7 +100,7 @@ jobs:
         run: uv run mypy ont_qc_mcp tests
 
       - name: Security scan (bandit)
-        run: uv run bandit -r ont_qc_mcp -x tests
+        run: uv run bandit -q -r ont_qc_mcp -x tests
 
       - name: Dependency audit (pip-audit)
         # pytest is a test-only dependency (not in the shipped wheel). Its only
@@ -297,10 +297,10 @@ jobs:
             echo "::error::change-detection did not succeed ($CHANGES_RESULT); cannot certify."
             exit 1
           fi
-          for r in "$LINT_RESULT" "$MINDEPS_RESULT"; do
-            case "$r" in
+          for pair in "lint-and-test=$LINT_RESULT" "min-deps=$MINDEPS_RESULT"; do
+            case "${pair#*=}" in
               success | skipped) ;;
-              *) echo "::error::a lint-tier job result is '$r'." ; exit 1 ;;
+              *) echo "::error::${pair%%=*} result is '${pair#*=}'." ; exit 1 ;;
             esac
           done
           echo "lint-gate OK (lint-and-test=$LINT_RESULT, min-deps=$MINDEPS_RESULT)"

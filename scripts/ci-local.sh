@@ -3,7 +3,7 @@
 # set — the same versions CI uses — so this reproduces the lint-and-test job exactly.
 #
 #   scripts/ci-local.sh            # locked deps (mirrors the lint-and-test job)
-#   scripts/ci-local.sh --fast     # checks only, reuse the current uv env (no sync)
+#   scripts/ci-local.sh --fast     # run checks in the current env, skip install/sync
 #   scripts/ci-local.sh --floors   # lowest allowed versions (mirrors the min-deps job)
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
