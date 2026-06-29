@@ -13,7 +13,8 @@ SNAPSHOT_EXTENSIONS = {"png", "svg"}
 # separate command. Any control character (newline/CR especially) in a caller-supplied
 # field would inject additional IGV commands. Reject such values — fail closed — so the
 # script's line structure is controlled by this code, never by untrusted field content.
-_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
+# Covers C0 controls (incl. \n, \r, \t), DEL, and C1 controls (0x80-0x9f).
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 
 
 class IgvBatchValidationError(ValueError):

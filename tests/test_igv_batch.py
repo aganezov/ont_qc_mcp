@@ -170,3 +170,22 @@ def test_legit_input_still_builds(tmp_path: Path) -> None:
     assert "load sample.bam" in text
     assert "snapshot my_region.png" in text
     assert "execute" not in text
+
+
+def test_injection_rejected_in_region_extra_commands(tmp_path: Path) -> None:
+    region = IgvRegion(chrom="chr1", start=1, end=100, extra_commands=["maxPanelHeight 500\nexecute evil"])
+    with pytest.raises(IgvBatchValidationError):
+        generate_igv_batch(genome="hg38", tracks=["a.bam"], regions=[region], output_path=tmp_path / "b")
+
+
+@pytest.mark.parametrize("bad", [{"BAD\nKEY": "v"}, {"pref": "val\nexecute evil"}])
+def test_injection_rejected_in_extra_preferences(tmp_path: Path, bad: dict[str, str]) -> None:
+    region = IgvRegion(chrom="chr1", start=1, end=100)
+    with pytest.raises(IgvBatchValidationError):
+        generate_igv_batch(
+            genome="hg38",
+            tracks=["a.bam"],
+            regions=[region],
+            output_path=tmp_path / "b",
+            extra_preferences=bad,
+        )
