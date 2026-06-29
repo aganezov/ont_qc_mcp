@@ -44,6 +44,7 @@ jobs:
               - 'ont_qc_mcp/**'
               - 'tests/**'
               - 'pyproject.toml'
+              - 'uv.lock'
               - '.github/workflows/ci.yml'
             integration:
               - 'ont_qc_mcp/**'
