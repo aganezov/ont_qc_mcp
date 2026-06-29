@@ -4,17 +4,77 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    # Nightly full run (04:32 UTC, off the top-of-hour scheduler stampede). PRs may
+    # skip the heavy integration tier via change-detection; this guarantees main is
+    # exercised end-to-end at least daily, catching dependency drift and real flakes.
+    - cron: "32 4 * * *"
   workflow_dispatch:
 
-# One CI run per ref; a newer push/PR update cancels the superseded run. Also stops
-# the old push+pull_request double-run on branches that have an open PR.
+# One CI run per ref+event; a newer push/PR update cancels the superseded run.
+# event_name is part of the key so a push to main and the nightly schedule (both
+# resolve github.ref to refs/heads/main) take separate slots instead of cancelling
+# each other under cancel-in-progress.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege: grant nothing by default; each job opts into only what it needs.
+permissions: {}
+
 jobs:
-  lint-and-test:
+  # Change-detection: decides which tiers run. On a PR it inspects the changed paths;
+  # on push/schedule/dispatch it forces the full suite (main must always be fully
+  # validated). Downstream jobs read these outputs to skip heavy work safely.
+  changes:
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read # paths-filter lists the PR's changed files via the API
+    outputs:
+      code: ${{ steps.decide.outputs.code }}
+      integration: ${{ steps.decide.outputs.integration }}
+    steps:
+      - name: Detect changed paths (PRs only)
+        id: filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            code:
+              - 'ont_qc_mcp/**'
+              - 'tests/**'
+              - 'pyproject.toml'
+              - '.github/workflows/ci.yml'
+            integration:
+              - 'ont_qc_mcp/**'
+              - 'tests/**'
+              - 'docker/**'
+              - 'pyproject.toml'
+              - '.github/workflows/ci.yml'
+
+      - name: Decide what to run
+        id: decide
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          FILTER_CODE: ${{ steps.filter.outputs.code }}
+          FILTER_INTEGRATION: ${{ steps.filter.outputs.integration }}
+        run: |
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "Non-PR event ($EVENT_NAME): running the full suite."
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            echo "integration=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "PR event: code=$FILTER_CODE integration=$FILTER_INTEGRATION"
+            echo "code=$FILTER_CODE" >> "$GITHUB_OUTPUT"
+            echo "integration=$FILTER_INTEGRATION" >> "$GITHUB_OUTPUT"
+          fi
+
+  lint-and-test:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
@@ -51,8 +111,12 @@ jobs:
         run: pytest --cov=ont_qc_mcp --cov-report=xml
 
   integration:
+    needs: changes
+    if: needs.changes.outputs.integration == 'true'
     name: Integration (${{ matrix.runtime }} / ${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -187,3 +251,49 @@ jobs:
           path: igv_snapshots/
           if-no-files-found: ignore
           retention-days: 7
+
+  # ---- Required gates -------------------------------------------------------
+  # Branch protection requires these two stable names, NOT the matrix legs above.
+  # Each gate always runs and certifies its tier: a tier SKIPPED by change-detection
+  # counts as a pass (nothing to test), while a real failure/cancellation — or a
+  # broken change-detection job — fails the gate. This lets a docs-only PR merge
+  # without deadlocking on a "required" check that never reported.
+  lint-gate:
+    needs: [changes, lint-and-test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Certify lint-and-test
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          JOB_RESULT: ${{ needs.lint-and-test.result }}
+        run: |
+          echo "change-detection=$CHANGES_RESULT  lint-and-test=$JOB_RESULT"
+          if [ "$CHANGES_RESULT" != "success" ]; then
+            echo "::error::change-detection did not succeed ($CHANGES_RESULT); cannot certify."
+            exit 1
+          fi
+          case "$JOB_RESULT" in
+            success | skipped) echo "lint-gate OK ($JOB_RESULT)" ;;
+            *) echo "::error::lint-and-test result is '$JOB_RESULT'." ; exit 1 ;;
+          esac
+
+  integration-gate:
+    needs: [changes, integration]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Certify integration
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          JOB_RESULT: ${{ needs.integration.result }}
+        run: |
+          echo "change-detection=$CHANGES_RESULT  integration=$JOB_RESULT"
+          if [ "$CHANGES_RESULT" != "success" ]; then
+            echo "::error::change-detection did not succeed ($CHANGES_RESULT); cannot certify."
+            exit 1
+          fi
+          case "$JOB_RESULT" in
+            success | skipped) echo "integration-gate OK ($JOB_RESULT)" ;;
+            *) echo "::error::integration result is '$JOB_RESULT'." ; exit 1 ;;
+          esac
