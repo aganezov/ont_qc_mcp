@@ -1,0 +1,114 @@
+name: Release
+
+# Tag-driven publishing. Push a tag `vX.Y.Z` that MATCHES the pyproject version to
+# build, publish to PyPI via Trusted Publishing (OIDC — no stored token) with PEP 740
+# build attestations, and cut a GitHub Release. A manual `workflow_dispatch` runs the
+# same build and publishes to TestPyPI, as a safe dry-run of the whole pipeline.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+# Least privilege: grant nothing by default; each job opts into only what it needs.
+permissions: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          python-version: "3.12"
+
+      - name: Verify tag matches pyproject version
+        # Only on tag releases; the dry-run (workflow_dispatch) has no tag to check.
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          ver="$(uv version --short)"
+          echo "tag=$GITHUB_REF_NAME  pyproject=v$ver"
+          if [ "$GITHUB_REF_NAME" != "v$ver" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match pyproject version v$ver — bump pyproject or fix the tag"
+            exit 1
+          fi
+
+      - name: Build sdist + wheel
+        run: uv build
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  # Dry-run: a manual run publishes to TestPyPI (a separate trusted publisher), so the
+  # full build→publish path can be exercised without touching the real index.
+  publish-testpypi:
+    needs: build
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: testpypi
+    permissions:
+      id-token: write # OIDC token for Trusted Publishing
+    steps:
+      - name: Download dist
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dist
+          path: dist/
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          attestations: true
+          skip-existing: true # dry-runs re-publish the same version; don't fail on re-run
+
+  # Real release: a vX.Y.Z tag publishes to PyPI via Trusted Publishing.
+  publish-pypi:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: pypi # protect this environment with a required reviewer (manual approve)
+    permissions:
+      id-token: write # OIDC token for Trusted Publishing
+    steps:
+      - name: Download dist
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dist
+          path: dist/
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # v1.14.0
+        with:
+          # Trusted Publishing (no token) is auto-detected via the id-token permission.
+          attestations: true # PEP 740 build provenance, signed via Sigstore
+          skip-existing: true # idempotent: a re-run after a partial failure won't error on an already-published file
+
+  github-release:
+    needs: publish-pypi
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the GitHub Release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Download dist
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dist
+          path: dist/
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            --verify-tag
