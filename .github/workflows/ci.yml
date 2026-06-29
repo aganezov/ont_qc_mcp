@@ -37,7 +37,7 @@ jobs:
       - name: Detect changed paths (PRs only)
         id: filter
         if: github.event_name == 'pull_request'
-        uses: dorny/paths-filter@v4
+        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         with:
           filters: |
             code:
@@ -80,10 +80,10 @@ jobs:
         python-version: ["3.10", "3.11", "3.12"]
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -138,10 +138,10 @@ jobs:
       MCP_IGV_CONTAINER_IMAGE: "aganezov/igv_snapper:0.2"
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Set up micromamba with bioinformatics CLIs
-        uses: mamba-org/setup-micromamba@v3
+        uses: mamba-org/setup-micromamba@d7c9bd84e824b79d2af72a2d4196c7f4300d3476 # v3.0.0
         with:
           micromamba-version: "latest"
           environment-name: ci
@@ -238,7 +238,7 @@ jobs:
 
       - name: Upload IGV snapshots
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: igv-snapshots-${{ matrix.runtime }}-${{ matrix.arch }}
           path: igv_snapshots/
@@ -255,6 +255,7 @@ jobs:
     needs: [changes, lint-and-test]
     if: always()
     runs-on: ubuntu-latest
+    permissions: {}
     steps:
       - name: Certify lint-and-test
         env:
@@ -275,6 +276,7 @@ jobs:
     needs: [changes, integration]
     if: always()
     runs-on: ubuntu-latest
+    permissions: {}
     steps:
       - name: Certify integration
         env:
