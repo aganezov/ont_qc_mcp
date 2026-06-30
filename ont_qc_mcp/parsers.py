@@ -638,6 +638,27 @@ def summarize_header(metadata: HeaderMetadata) -> str:
     return summary
 
 
+def _find_column(
+    column_map: dict[str, int],
+    exact_names: tuple[str, ...],
+    substrings: tuple[str, ...],
+) -> int | None:
+    """Resolve a column index by exact (lowercased) name first, then by substring.
+
+    Exact canonical names take priority; the substring fallback applies only when no
+    exact name is present, and the first matching column in header order wins. This
+    avoids loose-match mis-binding — e.g. a decoy ``*time*`` column hijacking
+    ``start_time`` (#17).
+    """
+    for name in exact_names:
+        if name in column_map:
+            return column_map[name]
+    for col_name, idx in column_map.items():
+        if any(s in col_name for s in substrings):
+            return idx
+    return None
+
+
 def parse_sequencing_summary(file_path: Path) -> SequencingSummaryStats:
     """
     Parse ONT sequencing summary file (tab-separated).
@@ -667,21 +688,12 @@ def parse_sequencing_summary(file_path: Path) -> SequencingSummaryStats:
     columns = header_line.split("\t")
     column_map = {col.lower(): idx for idx, col in enumerate(columns)}
 
-    # Find required columns (with flexible naming)
-    length_col_idx = None
-    qscore_col_idx = None
-    start_time_col_idx = None
-    channel_col_idx = None
-
-    for col_name, idx in column_map.items():
-        if "length" in col_name or "sequence_length" in col_name:
-            length_col_idx = idx
-        if "qscore" in col_name or "quality" in col_name:
-            qscore_col_idx = idx
-        if "start_time" in col_name or "time" in col_name:
-            start_time_col_idx = idx
-        if "channel" in col_name:
-            channel_col_idx = idx
+    # Find required columns: exact canonical name first, then a substring fallback,
+    # first match wins — so a decoy "*time*" column can't hijack start_time (#17).
+    length_col_idx = _find_column(column_map, ("sequence_length_template",), ("sequence_length", "length"))
+    qscore_col_idx = _find_column(column_map, ("mean_qscore_template",), ("qscore", "quality"))
+    start_time_col_idx = _find_column(column_map, ("start_time",), ("start_time",))
+    channel_col_idx = _find_column(column_map, ("channel",), ("channel",))
 
     if length_col_idx is None:
         raise ValueError(f"Required column 'sequence_length_template' not found in {file_path}")
