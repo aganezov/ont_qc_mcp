@@ -38,4 +38,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   `extra_commands`/`extra_preferences` could inject arbitrary IGV batch commands.
   All such fields are now validated and rejected fail-closed.
   Advisory: [GHSA-634p-vpv6-fxg8](https://github.com/aganezov/ont_qc_mcp/security/advisories/GHSA-634p-vpv6-fxg8).
+- Neutralize CLI argument injection via `-`-leading file paths (CWE-88): an
+  MCP-client-supplied path whose name begins with `-` (e.g. `-rf.bam` or
+  `--reference=/etc/passwd`) could be parsed by a wrapped tool as an *option*
+  instead of an input file. Every untrusted path passed to `nanoq`, `chopper`,
+  `cramino`, `samtools`, `mosdepth`, and `bcftools` is now prefixed with `./`
+  when needed, so it is always read as a file.
 

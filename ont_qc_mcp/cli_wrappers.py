@@ -105,6 +105,18 @@ def build_cli_args(tool: str, flags: dict[str, Any] | None) -> list[str]:
     return args
 
 
+def _safe_path_arg(path: str | Path) -> str:
+    """Render a path as a CLI argument that can never be parsed as an option.
+
+    A path whose string form starts with ``-`` (only possible for a relative path)
+    is prefixed with ``./`` so the tool treats it as a file, not a flag; absolute
+    and ordinary relative paths are returned unchanged. This blocks argument
+    injection when an MCP-client-supplied path is passed to a CLI.
+    """
+    s = str(path)
+    return f"./{s}" if s.startswith("-") else s
+
+
 def nanoq_stats(
     path: Path,
     tools: ToolPaths,
@@ -120,7 +132,7 @@ def nanoq_stats(
     read_lengths_path: Path | None = None
     read_qualities_path: Path | None = None
 
-    cmd: list[str] = [tools.nanoq, "--stats", "--json", "--input", str(path)]
+    cmd: list[str] = [tools.nanoq, "--stats", "--json", "--input", _safe_path_arg(path)]
     if cfg.nanoq_aux_stats:
         with tempfile.NamedTemporaryFile(suffix=".nanoq.lengths.txt", delete=False) as tmp:
             read_lengths_path = Path(tmp.name)
@@ -197,7 +209,7 @@ def chopper_filter(
             tools.chopper,
             "filter",
             "--input",
-            str(input_fastq),
+            _safe_path_arg(input_fastq),
             "--output",
             str(output_fastq),
             "--report-json",
@@ -227,7 +239,7 @@ def chopper_filter(
                 f"chopper failed (exit {exit_code}): {format_cmd(exc.result.cmd)}\n{_truncate_stderr(stderr_text)}"
             ) from exc
 
-        fallback_cmd: list[str] = [tools.chopper, "--input", str(input_fastq), *flag_args]
+        fallback_cmd: list[str] = [tools.chopper, "--input", _safe_path_arg(input_fastq), *flag_args]
         try:
             command_executed = fallback_cmd
             logger.warning(
@@ -290,7 +302,7 @@ def cramino_stats(
 
     flag_data, timeout = _prepare_execution("cramino", flag_data, exec_cfg)
     flag_args = build_cli_args("cramino", flag_data)
-    cmd: list[str] = [tools.cramino, *flag_args, *hist_args, str(path)]
+    cmd: list[str] = [tools.cramino, *flag_args, *hist_args, _safe_path_arg(path)]
     try:
         logger.debug("Executing cramino: %s", format_cmd(cmd))
         result = run_command(cmd, timeout=timeout)
@@ -334,7 +346,7 @@ def nanoq_from_bam_streaming(
     sam_cmd: list[str] = [tools.samtools, "fastq"]
     if sam_threads is not None:
         sam_cmd += ["-@", str(sam_threads)]
-    sam_cmd += [str(path)]
+    sam_cmd += [_safe_path_arg(path)]
 
     nano_cmd: list[str] = [tools.nanoq, "--stats", "--json"]
     read_lengths_path: Path | None = None
@@ -518,7 +530,7 @@ def mosdepth_coverage(
             tools.mosdepth,
         ]
         cmd += flag_args
-        cmd += [str(prefix), str(path)]
+        cmd += [str(prefix), _safe_path_arg(path)]
 
         try:
             run_command(cmd, timeout=timeout)
@@ -661,7 +673,7 @@ def run_bcftools_stats(
     """
     merged_flags, timeout = _prepare_execution("bcftools", flags, exec_cfg)
     flag_args = build_cli_args("bcftools", merged_flags)
-    cmd: list[str] = [tools.bcftools, "stats", *flag_args, str(path)]
+    cmd: list[str] = [tools.bcftools, "stats", *flag_args, _safe_path_arg(path)]
     report_progress(f"bcftools stats start: {path}")
     logger.debug("Executing bcftools stats: %s", format_cmd(cmd))
     try:
