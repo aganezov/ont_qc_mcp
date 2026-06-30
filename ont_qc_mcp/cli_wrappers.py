@@ -211,7 +211,7 @@ def chopper_filter(
             "--input",
             _safe_path_arg(input_fastq),
             "--output",
-            str(output_fastq),
+            _safe_path_arg(output_fastq),
             "--report-json",
             str(json_path),
             *flag_args,
@@ -711,7 +711,7 @@ def run_samtools_bedcov(
     cmd: list[str] = [tools.samtools, "bedcov"]
     if sam_threads is not None:
         cmd += ["-@", str(sam_threads)]
-    cmd += [str(bed_path), str(bam_path)]
+    cmd += [_safe_path_arg(bed_path), _safe_path_arg(bam_path)]
 
     report_progress(f"samtools bedcov start: {bam_path} x {bed_path}")
     logger.debug("Executing samtools bedcov: %s", format_cmd(cmd))
@@ -758,13 +758,13 @@ def run_mosdepth_targeted(
 
     cmd: list[str] = [tools.mosdepth]
     cmd += flag_args
-    cmd += ["--by", str(bed_path)]
+    cmd += ["--by", _safe_path_arg(bed_path)]
 
     if thresholds:
         threshold_str = ",".join(str(t) for t in thresholds)
         cmd += ["--thresholds", threshold_str]
 
-    cmd += [str(prefix), str(bam_path)]
+    cmd += [str(prefix), _safe_path_arg(bam_path)]
 
     report_progress(f"mosdepth targeted start: {bam_path} x {bed_path}")
     logger.debug("Executing mosdepth targeted: %s", format_cmd(cmd))

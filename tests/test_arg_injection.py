@@ -8,15 +8,19 @@ these tests pin both the helper's logic and its application at the positional
 call sites that pass an untrusted path as a bare argument.
 """
 
+import shutil
 from pathlib import Path
 
 import pytest
 
 from ont_qc_mcp.cli_wrappers import (
     _safe_path_arg,
+    chopper_filter,
     cramino_stats,
     mosdepth_coverage,
     run_bcftools_stats,
+    run_mosdepth_targeted,
+    run_samtools_bedcov,
 )
 from ont_qc_mcp.config import ToolPaths
 
@@ -97,3 +101,47 @@ def test_bcftools_neutralizes_dash_leading_path(monkeypatch: pytest.MonkeyPatch)
     cmd = captured["cmd"]
     assert cmd[-1] == "./-rf.vcf"
     assert "-rf.vcf" not in cmd
+
+
+def test_samtools_bedcov_neutralizes_dash_leading_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured = _capture_run_command(monkeypatch)
+    with pytest.raises(_StopRun):
+        run_samtools_bedcov(Path("-rf.bam"), Path("-Qjunk.bed"), ToolPaths())
+    cmd = captured["cmd"]
+    # Both positional paths are client-supplied; "-Qjunk.bed" would otherwise
+    # inject samtools' -Q quality-filter flag.
+    assert "./-rf.bam" in cmd
+    assert "./-Qjunk.bed" in cmd
+    assert "-rf.bam" not in cmd
+    assert "-Qjunk.bed" not in cmd
+
+
+def test_mosdepth_targeted_neutralizes_dash_leading_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured = _capture_run_command(monkeypatch)
+    with pytest.raises(_StopRun):
+        run_mosdepth_targeted(Path("-rf.bam"), Path("-Qjunk.bed"), ToolPaths())
+    cmd = captured["cmd"]
+    assert cmd[-1] == "./-rf.bam"  # positional BAM
+    assert "./-Qjunk.bed" in cmd  # --by value (bound, neutralized for consistency)
+    assert "-rf.bam" not in cmd
+    assert "-Qjunk.bed" not in cmd
+    assert cmd[-2].endswith("/coverage")  # internal mkdtemp prefix stays untouched
+    shutil.rmtree(Path(cmd[-2]).parent, ignore_errors=True)  # clean the mkdtemp dir
+
+
+def test_chopper_neutralizes_dash_leading_output_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    # chopper's preferred path uses run_command_with_retry, and output_fastq is an
+    # MCP-tool input (exposed by app_server), so the output path needs neutralizing too.
+    captured: dict[str, list[str]] = {}
+
+    def fake_retry(cmd: list[str], *args: object, **kwargs: object) -> None:
+        captured["cmd"] = list(cmd)
+        raise _StopRun
+
+    monkeypatch.setattr("ont_qc_mcp.cli_wrappers.run_command_with_retry", fake_retry)
+    with pytest.raises(_StopRun):
+        chopper_filter(Path("reads.fastq"), ToolPaths(), output_fastq=Path("-evil.fastq"))
+    cmd = captured["cmd"]
+    assert "./-evil.fastq" in cmd  # --output value neutralized
+    assert "-evil.fastq" not in cmd
+    Path(cmd[cmd.index("--report-json") + 1]).unlink(missing_ok=True)  # clean json temp
