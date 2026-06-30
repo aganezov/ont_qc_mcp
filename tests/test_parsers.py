@@ -12,6 +12,7 @@ from ont_qc_mcp.parsers import (
     parse_error_profile,
     parse_mosdepth_summary,
     parse_nanoq_json,
+    parse_sequencing_summary,
     parse_vcf_header,
     summarize_header,
 )
@@ -363,3 +364,44 @@ def test_nanoq_cache_thread_safe(monkeypatch, tmp_path):
 
     assert call_count["n"] == 1
     m_tools._NANOQ_CACHE.clear()
+
+
+def test_sequencing_summary_binds_exact_start_time_not_decoy(tmp_path: Path) -> None:
+    # Regression for #17: a decoy "*time*" column AFTER start_time. The loose
+    # substring matcher (last-match-wins) binds start_time to template_duration_time,
+    # corrupting run_duration_hours / yield_per_hour.
+    content = (
+        "read_id\tchannel\tstart_time\tsequence_length_template\tmean_qscore_template\ttemplate_duration_time\n"
+        "read1\t1\t0.0\t1000\t12.0\t100.0\n"
+        "read2\t2\t1.0\t2000\t11.0\t100.0\n"
+        "read3\t3\t2.0\t1500\t13.0\t100.0\n"
+    )
+    summary = tmp_path / "sequencing_summary.txt"
+    summary.write_text(content)
+
+    stats = parse_sequencing_summary(summary)
+
+    # start_time spans 0..2 (duration 2.0); the decoy column is constant 100.0.
+    # Binding to the decoy collapses duration to 0.0 and empties the windows.
+    assert stats.run_duration_hours == 2.0
+    assert len(stats.yield_per_hour) > 0
+
+
+def test_sequencing_summary_binds_exact_length_qscore_not_decoy(tmp_path: Path) -> None:
+    # length/qscore share the start_time failure mode (#17): a decoy column that
+    # also matches the substring and appears later would win under last-match-wins.
+    content = (
+        "read_id\tsequence_length_template\tmean_qscore_template\tmeasurement_length\tread_quality\n"
+        "read1\t1000\t12.0\t1\t99.0\n"
+        "read2\t2000\t11.0\t1\t99.0\n"
+        "read3\t1500\t13.0\t1\t99.0\n"
+    )
+    summary = tmp_path / "sequencing_summary.txt"
+    summary.write_text(content)
+
+    stats = parse_sequencing_summary(summary)
+
+    # Exact names win over the decoys: total_yield from sequence_length_template
+    # (4500, not 3) and mean_qscore from mean_qscore_template (12.0, not 99.0).
+    assert stats.total_yield == 4500
+    assert stats.mean_qscore == 12.0
