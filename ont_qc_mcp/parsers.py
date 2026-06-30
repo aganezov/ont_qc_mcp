@@ -688,8 +688,10 @@ def parse_sequencing_summary(file_path: Path) -> SequencingSummaryStats:
     columns = header_line.split("\t")
     column_map = {col.lower(): idx for idx, col in enumerate(columns)}
 
-    # Find required columns: exact canonical name first, then a substring fallback,
-    # first match wins — so a decoy "*time*" column can't hijack start_time (#17).
+    # Resolve each column by exact canonical name first (dict lookup), then a
+    # "contains" fallback for vendor name variants (e.g. start_time_utc); first
+    # match wins. Dropping the loose bare-"time" match is the #17 fix — a decoy
+    # *time* column can no longer hijack start_time.
     length_col_idx = _find_column(column_map, ("sequence_length_template",), ("sequence_length", "length"))
     qscore_col_idx = _find_column(column_map, ("mean_qscore_template",), ("qscore", "quality"))
     start_time_col_idx = _find_column(column_map, ("start_time",), ("start_time",))
