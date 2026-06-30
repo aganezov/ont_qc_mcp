@@ -17,6 +17,7 @@ from ont_qc_mcp.cli_wrappers import (
     chopper_filter,
     cramino_stats,
     mosdepth_coverage,
+    nanoq_stats,
     run_bcftools_stats,
     run_mosdepth_targeted,
     run_samtools_bedcov,
@@ -45,7 +46,7 @@ from ont_qc_mcp.utils import safe_path_arg
         ("./already.bam", "./already.bam"),  # already explicit-relative — untouched
     ],
 )
-def testsafe_path_arg_neutralizes_only_leading_dash(raw: str, expected: str) -> None:
+def test_safe_path_arg_neutralizes_only_leading_dash(raw: str, expected: str) -> None:
     result = safe_path_arg(raw)
     assert result == expected
     # Must return a str, not a Path: Path("./-x") collapses back to "-x", which
@@ -53,7 +54,7 @@ def testsafe_path_arg_neutralizes_only_leading_dash(raw: str, expected: str) -> 
     assert isinstance(result, str)
 
 
-def testsafe_path_arg_accepts_path_objects() -> None:
+def test_safe_path_arg_accepts_path_objects() -> None:
     # str(Path(...)) preserves a leading dash, so Path inputs are handled too.
     assert safe_path_arg(Path("-evil.bam")) == "./-evil.bam"
     assert safe_path_arg(Path("/data/sample.bam")) == "/data/sample.bam"
@@ -149,9 +150,9 @@ def test_chopper_neutralizes_dash_leading_output_path(monkeypatch: pytest.Monkey
     with pytest.raises(_StopRun):
         chopper_filter(Path("reads.fastq"), ToolPaths(), output_fastq=Path("-evil.fastq"))
     cmd = captured["cmd"]
+    Path(cmd[cmd.index("--report-json") + 1]).unlink(missing_ok=True)  # clean json temp before asserting
     assert "./-evil.fastq" in cmd  # --output value neutralized
     assert "-evil.fastq" not in cmd
-    Path(cmd[cmd.index("--report-json") + 1]).unlink(missing_ok=True)  # clean json temp
 
 
 # --------------------------------------------------------------------------- #
@@ -189,3 +190,20 @@ def test_samtools_view_header_neutralizes_dash_leading_path(monkeypatch: pytest.
     cmd = captured["cmd"]
     assert cmd[-1] == "./-x.bam"
     assert "-x.bam" not in cmd
+
+
+def test_nanoq_stats_neutralizes_dash_leading_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    # nanoq_stats uses run_command_with_retry; the input is bound via --input <path>.
+    captured: dict[str, list[str]] = {}
+
+    def fake_retry(cmd: list[str], *args: object, **kwargs: object) -> None:
+        captured["cmd"] = list(cmd)
+        raise _StopRun
+
+    monkeypatch.setattr("ont_qc_mcp.cli_wrappers.run_command_with_retry", fake_retry)
+    with pytest.raises(_StopRun):
+        nanoq_stats(Path("-x.fastq"), ToolPaths())
+    cmd = captured["cmd"]
+    idx = cmd.index("--input")
+    assert cmd[idx + 1] == "./-x.fastq"
+    assert "-x.fastq" not in cmd
