@@ -194,6 +194,22 @@ def format_cmd(cmd: Sequence[str]) -> str:
     return " ".join(shlex.quote(part) for part in cmd)
 
 
+def safe_path_arg(path: str | Path) -> str:
+    """Render a path as a CLI argument that can never be parsed as an option.
+
+    A path whose string form starts with ``-`` (only possible for a relative path)
+    is prefixed with ``./`` so the tool treats it as a file, not a flag; absolute
+    and ordinary relative paths are returned unchanged. This blocks argument
+    injection (CWE-88) when an MCP-client-supplied path is passed — positionally
+    or as a flag value — to any wrapped CLI. Shared by cli_wrappers and tools.
+
+    Returns ``str`` (not ``Path``) deliberately: ``Path("./-x")`` collapses back
+    to ``"-x"``, which would re-expose the leading dash.
+    """
+    s = str(path)
+    return f"./{s}" if s.startswith("-") else s
+
+
 __all__ = [
     "CommandError",
     "CommandResult",
@@ -202,5 +218,6 @@ __all__ = [
     "run_command",
     "run_command_async",
     "run_command_with_retry",
+    "safe_path_arg",
     "_truncate_stderr",
 ]

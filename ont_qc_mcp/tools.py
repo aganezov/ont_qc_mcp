@@ -54,7 +54,7 @@ from .schemas import (
     TargetedCoverageReport,
     VCFStats,
 )
-from .utils import CommandError, _truncate_stderr, format_cmd, report_progress, run_command
+from .utils import CommandError, _truncate_stderr, format_cmd, report_progress, run_command, safe_path_arg
 from .igv_batch import generate_igv_batch
 
 
@@ -377,7 +377,7 @@ def alignment_error_profile(
     flag_data: dict[str, Any] = dict(flags or {})
     flag_data.setdefault("threads", cfg.threads_for("samtools"))
     flag_args = build_cli_args("samtools", flag_data)
-    cmd = [tools.samtools, "stats", *flag_args, str(aln_path)]
+    cmd = [tools.samtools, "stats", *flag_args, safe_path_arg(aln_path)]
     report_progress(f"alignment_error_profile start: {aln_path}")
     try:
         logger.debug("alignment_error_profile via samtools stats: %s", format_cmd(cmd))
@@ -546,7 +546,7 @@ def _maybe_quickcheck(path: Path, tools: ToolPaths, fmt: str, exec_cfg: Executio
     if not samtools_path:
         return
 
-    cmd = [samtools_path, "quickcheck", "-v", str(path)]
+    cmd = [samtools_path, "quickcheck", "-v", safe_path_arg(path)]
     try:
         run_command(cmd, timeout=exec_cfg.timeout_for("samtools"))
     except CommandError as exc:
@@ -564,7 +564,7 @@ def _read_alignment_header_text(
     flag_data: dict[str, Any] = dict(flags or {})
     flag_data.setdefault("threads", exec_cfg.threads_for("samtools"))
     flag_args = build_cli_args("samtools", flag_data)
-    cmd = [tools.samtools, "view", "-H", *flag_args, str(path)]
+    cmd = [tools.samtools, "view", "-H", *flag_args, safe_path_arg(path)]
     try:
         result = run_command(cmd, timeout=exec_cfg.timeout_for("samtools"))
     except CommandError as exc:
