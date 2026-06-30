@@ -381,9 +381,10 @@ def test_sequencing_summary_binds_exact_start_time_not_decoy(tmp_path: Path) -> 
 
     stats = parse_sequencing_summary(summary)
 
-    # start_time spans 0..2 (duration 2.0); the decoy column is constant 100.0.
-    # Binding to the decoy collapses duration to 0.0 and empties the windows.
-    assert stats.run_duration_hours == 2.0
+    # The decoy column is constant, so binding to it collapses run_duration to 0
+    # and empties the windows; binding to the real (varying) start_time gives a
+    # positive duration. Units-agnostic on purpose — the seconds→hours fix is #19.
+    assert stats.run_duration_hours is not None and stats.run_duration_hours > 0
     assert len(stats.yield_per_hour) > 0
 
 
@@ -405,3 +406,22 @@ def test_sequencing_summary_binds_exact_length_qscore_not_decoy(tmp_path: Path) 
     # (4500, not 3) and mean_qscore from mean_qscore_template (12.0, not 99.0).
     assert stats.total_yield == 4500
     assert stats.mean_qscore == 12.0
+
+
+def test_sequencing_summary_run_duration_in_hours_not_seconds(tmp_path: Path) -> None:
+    # ONT start_time is in SECONDS since run start; run_duration_hours and the
+    # yield_per_hour window starts must be in hours, not raw seconds (#19).
+    content = (
+        "read_id\tstart_time\tsequence_length_template\n"
+        "r1\t0.0\t1000\n"
+        "r2\t7200.0\t1000\n"  # 7200 s = 2 h
+    )
+    summary = tmp_path / "sequencing_summary.txt"
+    summary.write_text(content)
+
+    stats = parse_sequencing_summary(summary)
+
+    assert stats.run_duration_hours == 2.0  # not 7200.0
+    # windows are 1 hour wide: r1 in hour 0, r2 in hour 2 (start in hours, not seconds)
+    starts = sorted(w.window_start_hours for w in stats.yield_per_hour)
+    assert starts == [0.0, 2.0]  # not [0.0, 7200.0]
