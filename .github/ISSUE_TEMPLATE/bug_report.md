@@ -33,6 +33,11 @@ code snippet too as a fallback.
 
 <!-- Concrete inputs/steps, or a minimal fixture, that trigger it. -->
 
+## Environment
+
+<!-- OPTIONAL — OS, Python version, and relevant CLI tool versions (nanoq, chopper,
+cramino, samtools, mosdepth, bcftools) when the bug may depend on them. -->
+
 ## Proposed direction
 
 <!-- OPTIONAL — include only if the fix is genuinely clear; omit rather than guess. -->
