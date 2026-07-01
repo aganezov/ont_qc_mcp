@@ -901,7 +901,7 @@ def parse_bcftools_stats(stdout: str, include_snps: bool, include_indels: bool) 
                         ts_count = int(parts[1])
                         tv_count = int(parts[2])
                         ratio_str = parts[3]
-                    
+
                     # Try to parse ratio directly first
                     try:
                         ts_tv_ratio = float(ratio_str)
@@ -1216,13 +1216,15 @@ def parse_mosdepth_regions_bed(
             # Get region name from original BED or generate default
             region_name = region_names.get((chrom, start, end), f"{chrom}:{start}-{end}")
 
-            results.append({
-                "chrom": chrom,
-                "start": start,
-                "end": end,
-                "region_name": region_name,
-                "mean_depth": mean_depth,
-            })
+            results.append(
+                {
+                    "chrom": chrom,
+                    "start": start,
+                    "end": end,
+                    "region_name": region_name,
+                    "mean_depth": mean_depth,
+                }
+            )
 
     return results
 

@@ -59,7 +59,7 @@ def _apptainer_exec_works(apptainer_cmd: str, sif_path: str) -> bool:
 def _should_use_mock() -> str:
     """
     Determine mock mode based on environment and platform.
-    
+
     - MCP_IGV_MOCK=0: Force real execution (even on ARM64)
     - MCP_IGV_MOCK=1: Force mock execution
     - Unset: Auto-detect (mock on ARM64 Mac; otherwise real only when a runnable container runtime is available)
@@ -323,7 +323,7 @@ def test_igv_snapshot_tool_mcp_protocol(
             "MCP_IGV_CONTAINER_IMAGE": os.getenv("MCP_IGV_CONTAINER_IMAGE", "aganezov/igv_snapper:0.2"),
         }
     )
-    if (sif := os.getenv("MCP_IGV_SIF_PATH")):
+    if sif := os.getenv("MCP_IGV_SIF_PATH"):
         base_env["MCP_IGV_SIF_PATH"] = sif
     server_params.env = base_env
 

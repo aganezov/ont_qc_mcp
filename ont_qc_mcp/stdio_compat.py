@@ -20,8 +20,8 @@ async def stdio_server_compat(
     errors: str = "strict",
 ) -> AsyncIterator[
     tuple[
-    MemoryObjectReceiveStream[SessionMessage | Exception],
-    MemoryObjectSendStream[SessionMessage],
+        MemoryObjectReceiveStream[SessionMessage | Exception],
+        MemoryObjectSendStream[SessionMessage],
     ]
 ]:
     """
@@ -80,5 +80,6 @@ async def stdio_server_compat(
         tg.start_soon(stdin_reader)
         tg.start_soon(stdout_writer)
         yield read_stream, write_stream
+
 
 __all__ = ["stdio_server_compat"]

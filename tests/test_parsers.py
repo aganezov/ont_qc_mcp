@@ -411,11 +411,7 @@ def test_sequencing_summary_binds_exact_length_qscore_not_decoy(tmp_path: Path) 
 def test_sequencing_summary_run_duration_in_hours_not_seconds(tmp_path: Path) -> None:
     # ONT start_time is in SECONDS since run start; run_duration_hours and the
     # yield_per_hour window starts must be in hours, not raw seconds (#19).
-    content = (
-        "read_id\tstart_time\tsequence_length_template\n"
-        "r1\t0.0\t1000\n"
-        "r2\t7200.0\t1000\n"  # 7200 s = 2 h
-    )
+    content = "read_id\tstart_time\tsequence_length_template\nr1\t0.0\t1000\nr2\t7200.0\t1000\n"  # 7200 s = 2 h
     summary = tmp_path / "sequencing_summary.txt"
     summary.write_text(content)
 
