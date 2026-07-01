@@ -11,6 +11,9 @@ sequencing data (FASTQ / BAM / CRAM / VCF / BED).
 - **Branches & commits:** never commit to `main`. Use a feature branch and small
   [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`,
   `chore:`, `docs:`, `ci:`).
+- **Attribution:** only **commit messages** carry the `Co-Authored-By: Claude …`
+  trailer. PR bodies, issues, and comments carry **no** trailer or footer — no
+  `Co-Authored-By`, no "🤖 Generated with Claude Code".
 - **Verify before commit:** run `scripts/ci-local.sh` (reproduces the CI lint tier
   via uv + the lockfile; `--floors` mirrors the min-deps job), or quickly:
   `uv run ruff check . && uv run mypy ont_qc_mcp tests && uv run pytest`.
