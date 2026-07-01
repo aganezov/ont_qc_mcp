@@ -1,22 +1,30 @@
 # Contributing
 
-Thanks for helping improve ONT QC MCP! This guide covers setup and common workflows.
+Thanks for helping improve ONT QC MCP! This guide covers **setup and commands**;
+[AGENTS.md](AGENTS.md) covers **how changes are shipped and reviewed**.
 
 ## Setup
-- Use Python 3.10+.
-- Create a virtualenv in the repo root (`python -m venv .venv && source .venv/bin/activate`).
-- Install deps: `pip install -e ".[all]"` (or `.[dev]` without matplotlib).
-- Optional: install CLI tools (nanoq, chopper, cramino, mosdepth, samtools) or point to them via env vars `NANOQ`, `CHOPPER`, etc.
+
+- Python 3.10+.
+- Install [uv](https://docs.astral.sh/uv/), then create the environment from the
+  lockfile: `uv sync --all-extras`.
+- Optional: install the wrapped CLIs (nanoq, chopper, cramino, mosdepth, samtools,
+  bcftools), or point to them via env vars `NANOQ`, `CHOPPER`, `CRAMINO`, etc.
 
 ## Commands
-- Run unit tests: `scripts/with-env.sh pytest`
-- Run integration tests (requires CLIs): `scripts/with-env.sh pytest -m integration`
-- Lint: `ruff check .`
-- Type check: `mypy .`
+
+- **Full local gate** (lint + types + tests, as CI runs them): `scripts/ci-local.sh`
+  (`--floors` also runs the min-deps floor job).
+- Or individually, through `uv run`:
+  - Lint — `uv run ruff check .`
+  - Format — `uv run ruff format` (check only: `uv run ruff format --check`)
+  - Types — `uv run mypy ont_qc_mcp tests`
+  - Unit tests — `uv run pytest`
+  - Integration tests (require the CLIs) — `uv run pytest -m integration`
 
 ## Development tips
-- Use `scripts/with-env.sh <cmd>` to ensure consistent PATH/venv activation.
-- Keep outputs JSON-first; prefer returning file paths for large artifacts.
-- When adding new tools, update `flag_schemas.py`, `app_server.py` tool registry, and add tests/fixtures where possible.
-- Please update `CHANGELOG.md` for user-visible changes.
 
+- Keep outputs JSON-first; prefer returning file paths for large artifacts.
+- When adding a tool, update `flag_schemas.py`, the `app_server.py` tool registry, and
+  add tests/fixtures.
+- Update `CHANGELOG.md` for user-visible changes.
