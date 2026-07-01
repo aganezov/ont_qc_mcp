@@ -994,7 +994,7 @@ def targeted_coverage(
         # Create temporary BED file with gene coordinates
         with tempfile.NamedTemporaryFile(mode="w", suffix=".bed", delete=False) as tmp:
             for idx, (chrom, start, end) in enumerate(coordinates):
-                region_name = f"{gene_name}_{idx+1}" if len(coordinates) > 1 else gene_name
+                region_name = f"{gene_name}_{idx + 1}" if len(coordinates) > 1 else gene_name
                 tmp.write(f"{chrom}\t{start}\t{end}\t{region_name}\n")
             bed_file = Path(tmp.name)
             created_temp_bed = True
