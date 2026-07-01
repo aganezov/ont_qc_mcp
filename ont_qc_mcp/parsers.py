@@ -700,10 +700,11 @@ def parse_sequencing_summary(file_path: Path) -> SequencingSummaryStats:
     if length_col_idx is None:
         raise ValueError(f"Required column 'sequence_length_template' not found in {file_path}")
 
-    # Parse data rows
-    lengths: list[int] = []
+    # Parse data rows. Collect (length, start_time) as one record per row so the two
+    # stay aligned: a row whose start_time fails to parse must not shift lengths onto
+    # another read's window (#23). qscore (mean) and channel (set) are aggregates.
+    reads: list[tuple[int, float | None]] = []
     qscores: list[float] = []
-    start_times: list[float] = []
     channels: set[int] = set()
 
     for line_num, line in enumerate(lines[1:], start=2):
@@ -717,30 +718,30 @@ def parse_sequencing_summary(file_path: Path) -> SequencingSummaryStats:
 
         try:
             length = int(parts[length_col_idx])
-            lengths.append(length)
-
-            if qscore_col_idx is not None and len(parts) > qscore_col_idx:
-                try:
-                    qscore = float(parts[qscore_col_idx])
-                    qscores.append(qscore)
-                except (ValueError, IndexError):
-                    pass
-
-            if start_time_col_idx is not None and len(parts) > start_time_col_idx:
-                try:
-                    start_time = float(parts[start_time_col_idx])
-                    start_times.append(start_time)
-                except (ValueError, IndexError):
-                    pass
-
-            if channel_col_idx is not None and len(parts) > channel_col_idx:
-                try:
-                    channel = int(parts[channel_col_idx])
-                    channels.add(channel)
-                except (ValueError, IndexError):
-                    pass
         except (ValueError, IndexError):
             continue
+
+        start_time: float | None = None
+        if start_time_col_idx is not None and len(parts) > start_time_col_idx:
+            try:
+                start_time = float(parts[start_time_col_idx])
+            except (ValueError, IndexError):
+                start_time = None
+        reads.append((length, start_time))
+
+        if qscore_col_idx is not None and len(parts) > qscore_col_idx:
+            try:
+                qscores.append(float(parts[qscore_col_idx]))
+            except (ValueError, IndexError):
+                pass
+
+        if channel_col_idx is not None and len(parts) > channel_col_idx:
+            try:
+                channels.add(int(parts[channel_col_idx]))
+            except (ValueError, IndexError):
+                pass
+
+    lengths = [length for length, _ in reads]
 
     total_reads = len(lengths)
     total_yield = sum(lengths)
@@ -762,20 +763,22 @@ def parse_sequencing_summary(file_path: Path) -> SequencingSummaryStats:
                 n50 = length
                 break
 
-    # start_time is recorded in SECONDS since run start; convert to hours so
-    # run_duration_hours and the 1-hour windows are actually in hours (#19).
-    start_times_hours = [t / 3600.0 for t in start_times]
+    # Reads with a parsed start_time, paired (length, start_time_hours). start_time is
+    # recorded in SECONDS since run start; convert to hours (#19).
+    timed = [(length, st / 3600.0) for length, st in reads if st is not None]
 
     # Calculate run duration
     run_duration_hours = None
-    if start_times_hours:
-        run_duration_hours = max(start_times_hours) - min(start_times_hours)
+    if timed:
+        times = [t for _, t in timed]
+        run_duration_hours = max(times) - min(times)
 
     # Calculate yield per hour windows (1-hour bins)
     yield_per_hour: list[RunYieldWindow] = []
-    if start_times_hours and lengths:
-        min_time = min(start_times_hours)
-        max_time = max(start_times_hours)
+    if timed:
+        times = [t for _, t in timed]
+        min_time = min(times)
+        max_time = max(times)
         if max_time > min_time:
             # Create 1-hour windows
             window_size = 1.0  # hours
@@ -788,9 +791,9 @@ def parse_sequencing_summary(file_path: Path) -> SequencingSummaryStats:
                 window_yield = 0
                 window_reads = 0
 
-                for i, start_time in enumerate(start_times_hours):
+                for length, start_time in timed:
                     if window_start <= start_time < window_end:
-                        window_yield += lengths[i]
+                        window_yield += length
                         window_reads += 1
 
                 if window_reads > 0:
