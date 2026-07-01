@@ -762,16 +762,20 @@ def parse_sequencing_summary(file_path: Path) -> SequencingSummaryStats:
                 n50 = length
                 break
 
+    # start_time is recorded in SECONDS since run start; convert to hours so
+    # run_duration_hours and the 1-hour windows are actually in hours (#19).
+    start_times_hours = [t / 3600.0 for t in start_times]
+
     # Calculate run duration
     run_duration_hours = None
-    if start_times:
-        run_duration_hours = max(start_times) - min(start_times)
+    if start_times_hours:
+        run_duration_hours = max(start_times_hours) - min(start_times_hours)
 
     # Calculate yield per hour windows (1-hour bins)
     yield_per_hour: list[RunYieldWindow] = []
-    if start_times and lengths:
-        min_time = min(start_times)
-        max_time = max(start_times)
+    if start_times_hours and lengths:
+        min_time = min(start_times_hours)
+        max_time = max(start_times_hours)
         if max_time > min_time:
             # Create 1-hour windows
             window_size = 1.0  # hours
@@ -784,7 +788,7 @@ def parse_sequencing_summary(file_path: Path) -> SequencingSummaryStats:
                 window_yield = 0
                 window_reads = 0
 
-                for i, start_time in enumerate(start_times):
+                for i, start_time in enumerate(start_times_hours):
                     if window_start <= start_time < window_end:
                         window_yield += lengths[i]
                         window_reads += 1
