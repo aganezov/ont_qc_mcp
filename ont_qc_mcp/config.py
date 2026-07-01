@@ -46,6 +46,7 @@ def _conda_env_bin() -> Path | None:
         return None
     return Path(prefix) / "bin"
 
+
 def _python_env_bin() -> Path | None:
     """
     Resolve the Python environment bin directory from sys.executable.
@@ -223,9 +224,7 @@ class ExecutionConfig:
     max_concurrent_operations: int | None = field(default_factory=lambda: _env_int("MCP_MAX_CONCURRENCY", 4))
     nanoq_aux_stats: bool = field(default_factory=lambda: _env_bool("MCP_NANOQ_AUX_STATS", True))
     nanoq_length_bin_width: int = field(default_factory=lambda: _env_int("MCP_NANOQ_LENGTH_BIN_WIDTH", 2000) or 2000)
-    nanoq_qscore_bin_width: float = field(
-        default_factory=lambda: float(_env_int("MCP_NANOQ_QSCORE_BIN_WIDTH", 1) or 1)
-    )
+    nanoq_qscore_bin_width: float = field(default_factory=lambda: float(_env_int("MCP_NANOQ_QSCORE_BIN_WIDTH", 1) or 1))
     nanoq_percentiles_exact_max_reads: int = field(
         default_factory=lambda: _env_int("MCP_NANOQ_PERCENTILES_EXACT_MAX_READS", 200_000) or 200_000
     )

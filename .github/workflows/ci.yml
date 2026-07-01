@@ -96,6 +96,9 @@ jobs:
       - name: Ruff lint
         run: uv run ruff check .
 
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
       - name: Type check (mypy)
         run: uv run mypy ont_qc_mcp tests
 

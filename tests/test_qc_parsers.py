@@ -317,10 +317,7 @@ def test_parse_bed_qc_empty(tmp_path):
 def test_parse_bed_qc_minimal_columns(tmp_path):
     """Test parsing BED file with minimal 3 columns."""
     bed_file = tmp_path / "minimal.bed"
-    bed_file.write_text(
-        "chr1\t1000\t2000\n"
-        "chr1\t5000\t6000\n"
-    )
+    bed_file.write_text("chr1\t1000\t2000\n" "chr1\t5000\t6000\n")
 
     result = parse_bed_qc(bed_file)
 

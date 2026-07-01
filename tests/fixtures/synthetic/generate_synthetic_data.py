@@ -74,9 +74,7 @@ def generate_sequencing_summary(path: Path, rows: int = 20, seed: int = 42) -> N
             start_time = random.uniform(0.0, 72.0)  # Hours
             seq_length = random.randint(1000, 50000)
             mean_qscore = round(random.uniform(8.0, 15.0), 2)
-            fh.write(
-                f"{filename}\t{read_id}\t{run_id}\t{channel}\t{start_time:.2f}\t{seq_length}\t{mean_qscore:.2f}\n"
-            )
+            fh.write(f"{filename}\t{read_id}\t{run_id}\t{channel}\t{start_time:.2f}\t{seq_length}\t{mean_qscore:.2f}\n")
 
 
 def generate_vcf(vcf_path: Path, seed: int = 42) -> None:
@@ -85,7 +83,7 @@ def generate_vcf(vcf_path: Path, seed: int = 42) -> None:
     header_lines = [
         "##fileformat=VCFv4.3",
         "##contig=<ID=chr1,length=248956422>",
-        "##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">",
+        '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
         "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE1",
     ]
     variants = [

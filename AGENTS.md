@@ -28,7 +28,7 @@ conventions specific to how we ship and review changes.
 
 ## Review & merge
 
-- **Deterministic gates:** `ruff`, `mypy`, `pytest`, CodeQL. Read pass/fail from the
+- **Deterministic gates:** `ruff`, `ruff format`, `mypy`, `pytest`, `bandit`, CodeQL. Read pass/fail from the
   authoritative run conclusion / check-runs; diagnose any failure from real logs.
 - **Dual review is advisory** — every PR gets a Claude *and* a Codex review; neither
   blocks, but **wait for both on the latest commit** before merging.

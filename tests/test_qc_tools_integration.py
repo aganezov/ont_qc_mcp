@@ -153,9 +153,9 @@ def test_targeted_coverage_tool_bed(mcp_server_params, sample_bam, synthetic_bed
                 # Verify that the region_name is properly extracted from BED (not coordinates)
                 # This would have failed with the original bedcov bug that tried to parse
                 # "gene1_exon1" as an integer coverage value
-                assert report["region_name"] != f"{report['chrom']}:{report['start']}-{report['end']}", (
-                    "region_name should be extracted from BED column 4, not generated from coordinates"
-                )
+                assert (
+                    report["region_name"] != f"{report['chrom']}:{report['start']}-{report['end']}"
+                ), "region_name should be extracted from BED column 4, not generated from coordinates"
 
                 # Check that coverage threshold percentages are present (mosdepth feature)
                 assert "pct_coverage_1x" in report

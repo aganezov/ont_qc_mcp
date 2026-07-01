@@ -31,4 +31,3 @@ def test_invalid_bin_width_raises(tmp_path: Path) -> None:
     path.write_text("1\n2\n", encoding="utf-8")
     with pytest.raises(ValueError):
         length_histogram_and_percentiles(path, bin_width=0)
-
