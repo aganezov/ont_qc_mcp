@@ -1,28 +1,56 @@
 # Repository guide for AI agents
 
-Context and conventions for AI coding/reviewing agents (e.g. Codex, Claude)
-working in **ont_qc_mcp** — a Model Context Protocol (MCP) server that wraps
-bioinformatics CLI tools (`nanoq`, `chopper`, `cramino`, `mosdepth`, `samtools`,
-`bcftools`) and a containerized IGV to produce QC statistics for Oxford Nanopore
-sequencing data (FASTQ / BAM / CRAM / VCF / BED).
+Conventions for the AI agents (Codex, Claude) and humans working in **ont_qc_mcp** — a
+Model Context Protocol (MCP) server that wraps bioinformatics CLIs (`nanoq`, `chopper`,
+`cramino`, `mosdepth`, `samtools`, `bcftools`) and a containerized IGV to produce QC
+statistics for Oxford Nanopore sequencing data (FASTQ / BAM / CRAM / VCF / BED).
 
-## Working conventions
+> Committed on purpose — the shared rulebook every contributor reads. Keep it
+> **public-safe**: process and conventions only; secrets, credentials, and
+> unpatched-vulnerability details never go in tracked files.
 
-- **Branches & commits:** never commit to `main`. Use a feature branch and small
-  [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`,
-  `chore:`, `docs:`, `ci:`).
-- **Attribution:** only **commit messages** carry the `Co-Authored-By: Claude …`
-  trailer. PR bodies, issues, and comments carry **no** trailer or footer — no
-  `Co-Authored-By`, no "🤖 Generated with Claude Code".
-- **Verify before commit:** run `scripts/ci-local.sh` (reproduces the CI lint tier
-  via uv + the lockfile; `--floors` mirrors the min-deps job), or quickly:
-  `uv run ruff check . && uv run mypy ont_qc_mcp tests && uv run pytest`.
-  (`ruff format --check` enforcement is added in a later quality-gates step.)
-- **Merge gates are deterministic:** `ruff`, `mypy`, `pytest`, CodeQL. AI review
-  is **advisory** and never blocks a merge.
-- **Untrusted input:** file paths, CLI flags, and BED/region content arrive from
-  MCP clients and user files — treat them as untrusted. Stay alert to command/
-  argument injection and path traversal.
+**Setup and commands live in [CONTRIBUTING.md](CONTRIBUTING.md).** This guide adds the
+conventions specific to how we ship and review changes.
+
+## Contribution workflow
+
+1. **Issue first** for non-trivial work — file a GitHub Issue with the
+   [bug template](.github/ISSUE_TEMPLATE/bug_report.md). Point at code with **durable
+   permalinks** (`…/blob/<sha>/path#Lx-Ly`), never a bare `file:line`.
+2. **Branch** off `main` as `<type>/<issue#>-<slug>`; never commit to `main`.
+3. **Tests travel with the change** — new behavior ships with tests; for bug fixes go
+   **test-first** (a failing regression test that fails for the *right* reason, then the fix).
+4. **Small [Conventional Commits](https://www.conventionalcommits.org/)** —
+   `feat:` · `fix:` · `chore:` · `docs:` · `ci:`.
+5. **PR with `Closes #N`**; update `CHANGELOG.md` for user-visible changes. Keep the diff
+   focused — file adjacent bugs as *new* issues, and don't let an autoformatter pull
+   unrelated code into it.
+
+## Review & merge
+
+- **Deterministic gates:** `ruff`, `mypy`, `pytest`, CodeQL. Read pass/fail from the
+  authoritative run conclusion / check-runs; diagnose any failure from real logs.
+- **Dual review is advisory** — every PR gets a Claude *and* a Codex review; neither
+  blocks, but **wait for both on the latest commit** before merging.
+- **Codex signals:** a 👍 reaction (often no comment) = no findings; a comment = findings.
+  Its review can lag — wait rather than re-trigger.
+- **Merge when clean:** 0 blockers, required gates green, mergeable. Never merge over an
+  actionable finding — fix it or file a follow-up issue.
+- **Verify a review's claims before acting** — reviewers can cite the wrong line,
+  fabricate a SHA/API, or misstate impact.
+
+## Attribution
+
+Only **commit messages** carry the `Co-Authored-By:` trailer. PR bodies, issues, and
+comments carry **no** trailer or footer.
+
+## Untrusted input & security
+
+File paths, CLI flags, and BED/region content arrive from MCP clients and user files —
+treat them as **untrusted**; watch for command/argument injection and path traversal.
+When fixing a class of bug (especially security), enumerate the **sink pattern** across
+*all* call sites, not one grepped name. Report vulnerabilities per
+[SECURITY.md](SECURITY.md) — a **private** advisory, never a public issue.
 
 ## Code review output contract (BOTH reviewers follow this)
 
