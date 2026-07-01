@@ -425,3 +425,24 @@ def test_sequencing_summary_run_duration_in_hours_not_seconds(tmp_path: Path) ->
     # windows are 1 hour wide: r1 in hour 0, r2 in hour 2 (start in hours, not seconds)
     starts = sorted(w.window_start_hours for w in stats.yield_per_hour)
     assert starts == [0.0, 2.0]  # not [0.0, 7200.0]
+
+
+def test_sequencing_summary_no_desync_on_partial_row_parse(tmp_path: Path) -> None:
+    # r1's start_time is unparseable, so it drops out of the timed reads. length must
+    # stay paired with start_time so each yield window carries the RIGHT read's length,
+    # not one shifted onto a neighbor (#23).
+    content = (
+        "read_id\tstart_time\tsequence_length_template\n"
+        "r1\tbad\t9999\n"  # length parses, start_time does not
+        "r2\t0.0\t1000\n"  # hour 0
+        "r3\t7200.0\t2000\n"  # hour 2
+    )
+    summary = tmp_path / "sequencing_summary.txt"
+    summary.write_text(content)
+
+    stats = parse_sequencing_summary(summary)
+
+    windows = {w.window_start_hours: w.yield_bp for w in stats.yield_per_hour}
+    # r2 at hour 0 → its own length 1000; r3 at hour 2 → its own 2000.
+    # The desync bug would attribute 9999 (r1) and 1000 (r2) instead.
+    assert windows == {0.0: 1000, 2.0: 2000}
