@@ -32,7 +32,7 @@ dev = [
     "pytest>=8.2,<10",
     "pytest-asyncio>=0.24,<2",
     "pytest-cov>=4,<8",
-    "pytest-rerunfailures>=14,<17",
+    "pytest-rerunfailures>=16.4,<17",
     "ruff>=0.6,<0.16",
     "mypy>=1.8,<3",
     "bandit>=1.7,<2",
@@ -43,7 +43,7 @@ all = [
     "pytest>=8.2,<10",
     "pytest-asyncio>=0.24,<2",
     "pytest-cov>=4,<8",
-    "pytest-rerunfailures>=14,<17",
+    "pytest-rerunfailures>=16.4,<17",
     "ruff>=0.6,<0.16",
     "mypy>=1.8,<3",
     "bandit>=1.7,<2",
@@ -55,7 +55,7 @@ all = [
 ont-qc-mcp = "ont_qc_mcp.app_server:main"
 
 [build-system]
-requires = ["setuptools>=82.0.1"]
+requires = ["setuptools>=83.0.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
