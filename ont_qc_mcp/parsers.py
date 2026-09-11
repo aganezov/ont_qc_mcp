@@ -910,11 +910,16 @@ def is_bed_metadata_line(line: str) -> bool:
     return line in {"track", "browser"} or line.startswith(("track ", "browser "))
 
 
+def is_bed_coordinate_field(value: str) -> bool:
+    """Return whether a coordinate field contains only ASCII decimal digits."""
+    return value.isascii() and value.isdecimal()
+
+
 def parse_bed_qc(file_path: Path) -> BedQCReport:
     """
     Parse and validate a BED file.
 
-    Validates that 0 <= start < end and coordinates are integers.
+    Validates that 0 <= start < end and coordinates use ASCII decimal digits.
     Returns a report with validation results and issues.
     """
     issues: list[BedIssue] = []
@@ -955,27 +960,31 @@ def parse_bed_qc(file_path: Path) -> BedQCReport:
         start_str = parts[1]
         end_str = parts[2]
 
-        # Validate coordinates are integers
+        # Parse negatives so range errors retain their existing diagnostics.
         try:
             start = int(start_str)
+            if start >= 0 and not is_bed_coordinate_field(start_str):
+                raise ValueError
         except ValueError:
             issues.append(
                 BedIssue(
                     line_number=line_num,
                     line_content=line,
-                    issue=f"Start coordinate '{start_str}' is not an integer",
+                    issue=f"Start coordinate '{start_str}' is not an ASCII decimal integer",
                 )
             )
             continue
 
         try:
             end = int(end_str)
+            if end >= 0 and not is_bed_coordinate_field(end_str):
+                raise ValueError
         except ValueError:
             issues.append(
                 BedIssue(
                     line_number=line_num,
                     line_content=line,
-                    issue=f"End coordinate '{end_str}' is not an integer",
+                    issue=f"End coordinate '{end_str}' is not an ASCII decimal integer",
                 )
             )
             continue

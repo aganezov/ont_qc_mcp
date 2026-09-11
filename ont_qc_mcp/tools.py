@@ -24,6 +24,7 @@ from .cli_wrappers import (
 from .config import ExecutionConfig, ToolPaths
 from .threadpool import run_sync
 from .parsers import (
+    is_bed_coordinate_field,
     is_bed_metadata_line,
     parse_alignment_header,
     parse_error_profile,
@@ -918,7 +919,7 @@ def _validate_target_intervals(bed_file: Path, reference_lengths: dict[str, int 
             if len(fields) < 3:
                 raise ValueError(f"{context}: expected at least 3 columns (chrom, start, end)")
             chrom = fields[0]
-            if not all(value.isascii() and value.isdecimal() for value in fields[1:3]):
+            if not all(is_bed_coordinate_field(value) for value in fields[1:3]):
                 raise ValueError(f"{context}: coordinates must be ASCII decimal integers with 0 <= start < end")
             start, end = int(fields[1]), int(fields[2])
             if start >= end:

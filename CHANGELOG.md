@@ -44,6 +44,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Parser semantics clarified for missing vs empty histogram blocks
 
 ### Fixed
+- Require ASCII decimal coordinate fields in BED QC, matching targeted coverage validation while preserving negative-coordinate diagnostics.
 - Preserve BED intervals and target names on contigs beginning with `track` or `browser`, including exact keyword names.
 - Convert GFF3 gene starts to zero-based BED coordinates for targeted coverage,
   preserving the first base and single-base features on either strand.
