@@ -931,7 +931,9 @@ def parse_bed_qc(file_path: Path) -> BedQCReport:
 
     for line_num, line in enumerate(lines, start=1):
         line = line.strip()
-        if not line or line.startswith("#") or line.startswith("track") or line.startswith("browser"):
+        if not line or line.startswith("#"):
+            continue
+        if line in {"track", "browser"} or line.startswith(("track ", "browser ")):
             continue
 
         parts = line.split("\t")
@@ -1169,7 +1171,9 @@ def parse_mosdepth_regions_bed(
     with open(bed_path, "r") as f:
         for line in f:
             line = line.strip()
-            if not line or line.startswith("#") or line.startswith("track") or line.startswith("browser"):
+            if not line or line.startswith("#"):
+                continue
+            if line in {"track", "browser"} or line.startswith(("track ", "browser ")):
                 continue
             parts = line.split("\t")
             if len(parts) >= 3:

@@ -44,6 +44,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Parser semantics clarified for missing vs empty histogram blocks
 
 ### Fixed
+- Preserve BED intervals and target names on contigs beginning with `track` or `browser`, including exact keyword names.
 - Convert GFF3 gene starts to zero-based BED coordinates for targeted coverage,
   preserving the first base and single-base features on either strand.
 - Reject negative BED start coordinates and exclude those intervals from valid interval and base totals.
