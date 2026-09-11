@@ -905,6 +905,11 @@ def parse_bcftools_stats(stdout: str, include_snps: bool, include_indels: bool) 
     )
 
 
+def is_bed_metadata_line(line: str) -> bool:
+    """Recognize directives in a stripped line, preserving tab-separated contigs."""
+    return line in {"track", "browser"} or line.startswith(("track ", "browser "))
+
+
 def parse_bed_qc(file_path: Path) -> BedQCReport:
     """
     Parse and validate a BED file.
@@ -931,7 +936,9 @@ def parse_bed_qc(file_path: Path) -> BedQCReport:
 
     for line_num, line in enumerate(lines, start=1):
         line = line.strip()
-        if not line or line.startswith("#") or line.startswith("track") or line.startswith("browser"):
+        if not line or line.startswith("#"):
+            continue
+        if is_bed_metadata_line(line):
             continue
 
         parts = line.split("\t")
@@ -1169,7 +1176,9 @@ def parse_mosdepth_regions_bed(
     with open(bed_path, "r") as f:
         for line in f:
             line = line.strip()
-            if not line or line.startswith("#") or line.startswith("track") or line.startswith("browser"):
+            if not line or line.startswith("#"):
+                continue
+            if is_bed_metadata_line(line):
                 continue
             parts = line.split("\t")
             if len(parts) >= 3:
