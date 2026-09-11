@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import subprocess  # nosec B404
 import tempfile
 import time
@@ -179,87 +180,104 @@ def chopper_filter(
     merged_flags, timeout = _prepare_execution("chopper", flags, exec_cfg)
     report_progress(f"chopper start: {input_fastq}")
     flag_args = build_cli_args("chopper", merged_flags)
-    created_temp_output = False
-    if output_fastq is None:
-        temp_file = tempfile.NamedTemporaryFile(suffix=".fastq", delete=False)
-        output_fastq = Path(temp_file.name)
-        temp_file.close()
-        created_temp_output = True
+    destination = output_fastq.resolve() if output_fastq is not None else None
+    if destination is not None:
+        if destination == input_fastq.resolve() or (destination.exists() and destination.samefile(input_fastq)):
+            raise ValueError("Input and output FASTQ paths refer to the same file")
+        if destination.exists() and not destination.is_file():
+            raise ValueError("Output FASTQ must be a regular file")
 
-    report_data: dict = {}
+    # Stage beside the resolved destination so replacement is atomic and symlinks
+    # retain their existing write-through behavior.
+    staged_output: Path | None = None
     json_path: Path | None = None
-
-    # Preferred path: newer chopper with filter/report-json support.
+    published = False
+    report_data: dict = {}
     command_executed: list[str] = []
     try:
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as json_fp:
-            json_path = Path(json_fp.name)
-        cmd: list[str] = [
-            tools.chopper,
-            "filter",
-            "--input",
-            safe_path_arg(input_fastq),
-            "--output",
-            safe_path_arg(output_fastq),
-            "--report-json",
-            str(json_path),
-            *flag_args,
-        ]
-        command_executed = cmd
-        logger.debug("Executing chopper filter with JSON: %s", format_cmd(cmd))
-        run_command_with_retry(cmd, timeout=timeout, max_attempts=2, backoff_seconds=0.5)
-        if json_path.exists():
-            with open(json_path, "r", encoding="utf-8") as fh:
-                report_data = json.load(fh)
-    except CommandError as exc:
-        # Fallback for older chopper versions: no subcommand, no JSON; stream stdout directly to output_fastq.
-        stderr_text = exc.result.stderr or ""
-        exit_code = exc.result.returncode
-        capability_error = exit_code in (1, 2) and (
-            "report-json" in stderr_text
-            or ("unknown" in stderr_text.lower() and "command" in stderr_text.lower())
-            or ("unrecognized" in stderr_text.lower() and "option" in stderr_text.lower())
-            or "unexpected argument" in stderr_text.lower()
-        )
-        if not capability_error:
-            if created_temp_output and output_fastq.exists():
-                output_fastq.unlink(missing_ok=True)
-            raise RuntimeError(
-                f"chopper failed (exit {exit_code}): {format_cmd(exc.result.cmd)}\n{_truncate_stderr(stderr_text)}"
-            ) from exc
+        with tempfile.NamedTemporaryFile(
+            dir=destination.parent if destination is not None else None,
+            suffix="".join(destination.suffixes) if destination is not None else ".fastq",
+            delete=False,
+        ) as output_fp:
+            staged_output = Path(output_fp.name)
+        if output_fastq is None:
+            output_fastq = staged_output
 
-        fallback_cmd: list[str] = [tools.chopper, "--input", safe_path_arg(input_fastq), *flag_args]
+        # Preferred path: newer chopper with filter/report-json support.
         try:
-            command_executed = fallback_cmd
-            logger.warning(
-                "Falling back to legacy chopper invocation (exit=%d): %s; stderr=%s",
-                exit_code,
-                format_cmd(fallback_cmd),
-                _truncate_stderr(stderr_text, max_lines=5),
+            with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as json_fp:
+                json_path = Path(json_fp.name)
+            cmd: list[str] = [
+                tools.chopper,
+                "filter",
+                "--input",
+                safe_path_arg(input_fastq),
+                "--output",
+                safe_path_arg(staged_output),
+                "--report-json",
+                str(json_path),
+                *flag_args,
+            ]
+            command_executed = cmd
+            logger.debug("Executing chopper filter with JSON: %s", format_cmd(cmd))
+            run_command_with_retry(cmd, timeout=timeout, max_attempts=2, backoff_seconds=0.5)
+            if json_path.exists():
+                with open(json_path, "r", encoding="utf-8") as fh:
+                    report_data = json.load(fh)
+        except CommandError as exc:
+            # Fallback for older chopper versions: no subcommand, no JSON; stream stdout directly to the staging file.
+            stderr_text = exc.result.stderr or ""
+            exit_code = exc.result.returncode
+            capability_error = exit_code in (1, 2) and (
+                "report-json" in stderr_text
+                or ("unknown" in stderr_text.lower() and "command" in stderr_text.lower())
+                or ("unrecognized" in stderr_text.lower() and "option" in stderr_text.lower())
+                or "unexpected argument" in stderr_text.lower()
             )
-            run_command_with_retry(
-                fallback_cmd, timeout=timeout, stdout_path=output_fastq, max_attempts=2, backoff_seconds=0.5
-            )
-        except CommandError as inner_exc:
-            if created_temp_output and output_fastq.exists():
-                output_fastq.unlink(missing_ok=True)
-            raise RuntimeError(
-                f"chopper failed: {format_cmd(inner_exc.result.cmd)}\n{_truncate_stderr(inner_exc.result.stderr)}"
-            ) from inner_exc
-    finally:
-        if json_path:
-            json_path.unlink(missing_ok=True)
+            if not capability_error:
+                raise RuntimeError(
+                    f"chopper failed (exit {exit_code}): {format_cmd(exc.result.cmd)}\n{_truncate_stderr(stderr_text)}"
+                ) from exc
 
-    reads_section = report_data.get("reads", {}) if isinstance(report_data, dict) else {}
-    report_progress(f"chopper done: {input_fastq}")
-    return ChopperReport(
-        input_reads=reads_section.get("input"),
-        output_reads=reads_section.get("output"),
-        filtered_reads=reads_section.get("filtered"),
-        command=list(command_executed),
-        params={"flags": flags or {}},
-        output_fastq=str(output_fastq),
-    )
+            fallback_cmd: list[str] = [tools.chopper, "--input", safe_path_arg(input_fastq), *flag_args]
+            try:
+                command_executed = fallback_cmd
+                logger.warning(
+                    "Falling back to legacy chopper invocation (exit=%d): %s; stderr=%s",
+                    exit_code,
+                    format_cmd(fallback_cmd),
+                    _truncate_stderr(stderr_text, max_lines=5),
+                )
+                run_command_with_retry(
+                    fallback_cmd, timeout=timeout, stdout_path=staged_output, max_attempts=2, backoff_seconds=0.5
+                )
+            except CommandError as inner_exc:
+                raise RuntimeError(
+                    f"chopper failed: {format_cmd(inner_exc.result.cmd)}\n{_truncate_stderr(inner_exc.result.stderr)}"
+                ) from inner_exc
+
+        reads_section = report_data.get("reads", {}) if isinstance(report_data, dict) else {}
+        report = ChopperReport(
+            input_reads=reads_section.get("input"),
+            output_reads=reads_section.get("output"),
+            filtered_reads=reads_section.get("filtered"),
+            command=list(command_executed),
+            params={"flags": flags or {}},
+            output_fastq=str(output_fastq),
+        )
+        if destination is not None:
+            if destination.exists():
+                staged_output.chmod(destination.stat().st_mode & 0o777)
+            os.replace(staged_output, destination)
+        published = True
+        report_progress(f"chopper done: {input_fastq}")
+        return report
+    finally:
+        if json_path is not None:
+            json_path.unlink(missing_ok=True)
+        if staged_output is not None and not published:
+            staged_output.unlink(missing_ok=True)
 
 
 def cramino_stats(

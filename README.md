@@ -94,6 +94,8 @@ uv run ont-qc-mcp     # launches the MCP stdio server
 ### Read-level QC (FASTQ)
 - `qc_reads_fastq_tool`: nanoq read-level QC (counts, lengths, qscore histogram).
 - `filter_reads_fastq_tool`: chopper filtering/trimming; returns command + stats.
+  Rejects input/output aliases and replaces output only after filtering and report validation succeed.
+  Existing file permission bits are retained; new output files are private to the current user.
 - `read_length_distribution_fastq_tool`: percentiles + histogram from nanoq.
 - `qscore_distribution_fastq_tool`: per-read q-score histogram from nanoq.
 
