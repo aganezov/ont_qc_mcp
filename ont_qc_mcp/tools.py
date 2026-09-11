@@ -321,7 +321,6 @@ def qc_alignment(
     path: str,
     tools: ToolPaths | None = None,
     include_hist: bool = True,
-    use_scaled: bool = False,
     flags: dict[str, Any] | None = None,
 ) -> CraminoStats:
     tools = tools or ToolPaths()
@@ -332,7 +331,6 @@ def qc_alignment(
         aln_path,
         tools,
         include_hist=include_hist,
-        use_scaled=use_scaled,
         flags=flags,
         exec_cfg=_EXEC_CFG,
     )
@@ -395,7 +393,6 @@ def alignment_summary(
     path: str,
     include_coverage: bool = True,
     include_hist: bool = True,
-    use_scaled: bool = False,
     include_error_profile: bool = False,
     coverage_window: int | None = None,
     coverage_low_cov_threshold: float | None = None,
@@ -408,7 +405,7 @@ def alignment_summary(
     tools = tools or ToolPaths()
     cfg = exec_cfg or _EXEC_CFG
     report_progress(f"alignment_summary start: {path}")
-    aln_stats = qc_alignment(path, tools=tools, include_hist=include_hist, use_scaled=use_scaled, flags=cramino_flags)
+    aln_stats = qc_alignment(path, tools=tools, include_hist=include_hist, flags=cramino_flags)
     coverage = (
         coverage_stats(
             path,

@@ -1,5 +1,9 @@
 # MCP Tool Output Examples (real fixtures)
 
+These JSON files are legacy snapshots from 2025-12-11, not the current API contract.
+In particular, Cramino histogram and Chopper command fields predate the pinned CLI
+wrapper corrections. See README.md for current fields and regenerate before reuse.
+
 - Generated on 2025-12-11 with `scripts/with-env.sh python` (see regeneration snippet below) against the real fixtures in `tests/fixtures/real/` plus a tiny synthetic high-depth BAM.
 - Full raw outputs live in `docs/tool_output_examples.json`; a trimmed digest lives in `docs/tool_output_examples_summary.json`.
 - Inputs:
@@ -120,7 +124,7 @@ async def main():
             for k in ['total_reads', 'mapped', 'unmapped', 'mean_length', 'median_length', 'n50', 'mean_identity', 'median_identity']
         } | {
             'length_histogram_head': head(outputs['qc_alignment_tool'].get('length_histogram')),
-            'mapq_histogram_head': head(outputs['qc_alignment_tool'].get('mapq_histogram')),
+            'qscore_histogram_head': head(outputs['qc_alignment_tool'].get('qscore_histogram')),
         },
         'coverage_stats_tool': {
             'mean_depth': outputs['coverage_stats_tool'].get('mean_depth'),

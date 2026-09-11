@@ -4,7 +4,7 @@ Model Context Protocol server exposing lightweight QC/EDA helpers for Oxford Nan
 
 ## Features
 - FASTQ read-level QC via `nanoq` (read count, length/N50, GC, q-score/length histograms).
-- BAM/CRAM alignment QC via `cramino` (mapping breakdown, identity, MAPQ hist).
+- BAM/CRAM alignment QC via `cramino` (read lengths, identity, alignment-accuracy histograms).
 - Depth-of-coverage via `mosdepth`.
 - Read filtering/trimming via `chopper`.
 - Optional plotting helpers (length/qscore histograms) when `matplotlib` is installed.
@@ -93,20 +93,34 @@ uv run ont-qc-mcp     # launches the MCP stdio server
 
 ### Read-level QC (FASTQ)
 - `qc_reads_fastq_tool`: nanoq read-level QC (counts, lengths, qscore histogram).
-- `filter_reads_fastq_tool`: chopper filtering/trimming; returns command + stats.
-  Rejects input/output aliases and replaces output only after filtering and report validation succeed.
+- `filter_reads_fastq_tool`: chopper filtering/trimming; returns the command and output path (use `qc_reads_fastq_tool` for output statistics).
+  Rejects input/output aliases and replaces output only after filtering succeeds.
   Existing file permission bits are retained; new output files are private to the current user.
 - `read_length_distribution_fastq_tool`: percentiles + histogram from nanoq.
 - `qscore_distribution_fastq_tool`: per-read q-score histogram from nanoq.
 
 ### Alignment QC (BAM/CRAM)
-- `qc_alignment_tool`: cramino alignment QC (identity, MAPQ hist; use `use_scaled` for base-weighted bins).
+- `qc_alignment_tool`: cramino alignment QC (identity, read-length and alignment-accuracy Phred histograms).
 - `coverage_stats_tool`: mosdepth coverage summary.
 - `alignment_error_profile_tool`: error rates parsed from `samtools stats`.
 - `alignment_summary_tool`: aggregates cramino + mosdepth (+ error profile).
 - `read_length_distribution_bam_tool`: streaming samtools fastq -> nanoq length stats.
 - `qscore_distribution_bam_tool`: streaming samtools fastq -> nanoq qscore histogram.
 - `targeted_coverage_tool`: compute targeted coverage for genomic regions using mosdepth (supports gene names via GFF3, location strings like `chr1:1000-2000`, or BED files; provides mean depth and coverage threshold percentages at 1x/10x/20x).
+
+Cramino 1.4.1 histogram bins contain `start`, `end`, `count` (reads), and `bases`
+(total base pairs). `end: null` means an open-ended final bin. Both `length_histogram`
+and `qscore_histogram` return these values together; `qscore_histogram` represents
+Phred-scaled alignment identity, not MAPQ or FASTQ base quality. `include_hist: false`
+returns `null` for both histograms; an explicitly empty bin array remains `[]`.
+Cramino flags accept only `threads`; output format and histogram switches are managed
+by the wrapper. The `use_scaled` parameter, separate scaled histogram fields, MAPQ
+histogram fields, and old Cramino recipes have been removed.
+
+Chopper 0.14.0 writes FASTQ to stdout. The wrapper stages this output and atomically
+publishes it on success. Cropping requires `trim_approach: "fixed-crop"`; the
+`aggressive_trim` recipe selects this mode and trims 50 bases from each end.
+
 
 ### Variant QC (VCF/BCF)
 - `qc_variants_tool`: VCF/BCF QC statistics via bcftools stats (SNP/indel counts, TS/TV ratio, singletons).
@@ -127,12 +141,12 @@ uv run ont-qc-mcp     # launches the MCP stdio server
 ## Execution defaults and configurability
 - CLI calls are executed in worker threads to avoid blocking the MCP event loop.
 - Defaults are conservative and overridable via environment variables:
-  - `MCP_THREADS_DEFAULT` / `MCP_THREADS_<TOOL>` (e.g., `MCP_THREADS_NANOQ`)
+  - `MCP_THREADS_DEFAULT` / `MCP_THREADS_<TOOL>` (e.g., `MCP_THREADS_CRAMINO`)
   - `MCP_TIMEOUT_DEFAULT` / `MCP_TIMEOUT_<TOOL>` (seconds; e.g., `MCP_TIMEOUT_MOSDEPTH`)
   - `MCP_NANOQ_AUX_STATS=1` (default) to compute FASTQ/BAM length/qscore histograms via nanoq `--read-lengths/--read-qualities` (may produce large temp files for huge inputs; set to `0` to disable)
   - `MCP_STDIO_TRANSPORT=anyio|compat` (default `anyio`) to control how the stdio MCP server reads/writes JSON-RPC (use `compat` in restricted/sandboxed environments that hang with async file wrappers)
   - `MCP_BLOCKING_MODE=auto|executor|sync` (default `auto`) to control how blocking work is executed; `auto` uses a threadpool when thread wakeups are reliable and falls back to `sync` otherwise
-- Per-tool defaults are also reflected in the guidance resource and tool descriptions returned by `list_tools`. By default, threads are applied to all tools except nanoq (set `MCP_THREADS_NANOQ` to override).
+- Per-tool defaults are also reflected in the guidance resource and tool descriptions returned by `list_tools`. Threads are applied to all tools except nanoq. nanoq 0.10.0 has no thread option; explicit `threads` flags and `MCP_THREADS_NANOQ` settings are rejected.
 - Most `MCP_*` environment variables are read at server startup; changing them requires restarting the MCP server. Per-call overrides are available via tool arguments/flags (e.g., `output_dir` for `igv_snapshot_tool`). If multiple clients need different defaults, run separate server instances.
 - Coverage low-depth marking is opt-in via `low_cov_threshold`; error-profile collection in summaries is opt-in via `include_error_profile`.
 

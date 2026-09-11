@@ -1,6 +1,7 @@
 import asyncio
 import io
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -18,8 +19,8 @@ from ont_qc_mcp.utils import CommandError, CommandResult
 
 
 def test_build_cli_args_validation():
-    args = build_cli_args("nanoq", {"min_len": 500, "threads": 2, "min_qual": 7.5})
-    assert args == ["--min-len", "500", "--threads", "2", "--min-qual", "7.5"]
+    args = build_cli_args("nanoq", {"min_len": 500, "min_qual": 7.5})
+    assert args == ["--min-len", "500", "--min-qual", "7.5"]
 
     with pytest.raises(FlagValidationError):
         build_cli_args("nanoq", {"min_len": "bad"})
@@ -32,23 +33,23 @@ def test_cramino_flags_applied_once(monkeypatch):
         captured["cmd"] = cmd
 
         class Result:
-            stdout = "{}"
+            stdout = Path("tests/fixtures/raw/cramino_haplotag.large.json").read_text()
 
         return Result()
 
     monkeypatch.setattr("ont_qc_mcp.cli_wrappers.run_command", fake_run)
-    cramino_stats(Path("dummy.bam"), ToolPaths(), include_hist=True, use_scaled=False, flags={"threads": 4})
+    cramino_stats(Path("dummy.bam"), ToolPaths(), include_hist=True, flags={"threads": 4})
     cmd = captured["cmd"]
     assert Path(cmd[0]).name == "cramino"
     assert cmd.count("--hist-count") == 1
     hist_idx = cmd.index("--hist-count")
-    assert hist_idx + 1 < len(cmd) and cmd[hist_idx + 1].endswith(".cramino.hist.tsv")
+    assert hist_idx + 1 < len(cmd) and cmd[hist_idx + 1] == os.devnull
     assert "--format" in cmd
     assert "json" in cmd
     assert "--threads" in cmd and "4" in cmd
 
 
-def test_chopper_dual_failure_surfaces_both_errors(monkeypatch, tmp_path):
+def test_chopper_failure_surfaces_stderr(monkeypatch, tmp_path):
     fastq_path = tmp_path / "reads.fastq"
     fastq_path.write_text("@r1\nACGT\n+\n!!!!\n")
 

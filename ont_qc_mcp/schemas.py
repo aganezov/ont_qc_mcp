@@ -58,12 +58,18 @@ class QScoreDistribution(BaseModel):
 
 
 class ChopperReport(BaseModel):
-    input_reads: int | None = None
-    output_reads: int | None = None
-    filtered_reads: int | None = None
     command: list[str]
     params: dict[str, object] = Field(default_factory=dict)
     output_fastq: str | None = None
+
+
+class CraminoHistogramBin(BaseModel):
+    """Cramino bin with read counts and base-pair totals; end=None is open-ended."""
+
+    start: float
+    end: float | None = None
+    count: int = Field(ge=0, description="Number of reads in the bin")
+    bases: int = Field(ge=0, description="Total base pairs in the bin")
 
 
 class CraminoStats(BaseModel):
@@ -79,10 +85,10 @@ class CraminoStats(BaseModel):
     n50: int | None = None
     mean_identity: float | None = None
     median_identity: float | None = None
-    length_histogram: list[HistogramBin] | None = None  # count-based bins
-    length_histogram_scaled: list[HistogramBin] | None = None  # reserved for future scaled support
-    mapq_histogram: list[HistogramBin] | None = None  # count-based bins
-    mapq_histogram_scaled: list[HistogramBin] | None = None  # base-weighted bins when --scaled
+    length_histogram: list[CraminoHistogramBin] | None = None
+    qscore_histogram: list[CraminoHistogramBin] | None = Field(
+        default=None, description="Alignment-accuracy Phred scores derived from identity, not mapping quality"
+    )
 
 
 class CoverageByContig(BaseModel):
@@ -297,6 +303,7 @@ __all__ = [
     "ChopperReport",
     "CoverageByContig",
     "CraminoStats",
+    "CraminoHistogramBin",
     "EnvStatus",
     "ErrorProfile",
     "HeaderMetadata",

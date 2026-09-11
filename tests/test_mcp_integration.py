@@ -68,7 +68,7 @@ def test_tool_schemas_define_required_params(mcp_server_params):
                 assert "path" in qc_align_schema.get("required", [])
                 assert "path" in qc_align_schema["properties"]
                 assert "include_hist" in qc_align_schema["properties"]
-                assert "use_scaled" in qc_align_schema["properties"]
+                assert "use_scaled" not in qc_align_schema["properties"]
 
                 # alignment_summary_tool requires path and has many optional params
                 summary_schema = tools_by_name["alignment_summary_tool"].inputSchema
@@ -522,3 +522,16 @@ def test_alignment_summary_serial_with_concurrency_1(monkeypatch):
     outputs = anyio.run(_run)
     assert len(outputs) == 2
     assert all(not r.isError for r in outputs)
+
+
+def test_removed_alignment_toggle_is_rejected(mcp_server_params):
+    async def _test():
+        async with stdio_client(mcp_server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                for name in ("qc_alignment_tool", "alignment_summary_tool"):
+                    result = await session.call_tool(name, {"path": "unused.bam", "use_scaled": True})
+                    assert result.isError
+                    assert "use_scaled" in _text_content(result.content[0]).text
+
+    anyio.run(_test)

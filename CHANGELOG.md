@@ -27,6 +27,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 - Use a shared pinned toolchain for CI and local setup, updating chopper to 0.14.0 and cramino to 1.4.1.
+- **Breaking:** use the Cramino 1.4.1 JSON contract directly. Read-length and
+  alignment-accuracy Phred histograms now retain both `count` (reads) and `bases`
+  (base pairs), including open-ended bins. Remove `use_scaled`, separate scaled
+  histogram fields, mislabeled MAPQ histogram fields, obsolete Cramino recipes,
+  and user-controlled Cramino output flags; retain `threads` and `include_hist`.
+- **Breaking:** reject nanoq thread settings because nanoq 0.10.0 has no thread option.
+- Use Chopper 0.14.0 stdout output directly with atomic staging; remove the unsupported
+  `filter --output --report-json` invocation. The aggressive trim recipe now selects
+  fixed cropping. Remove unavailable Chopper report read-count fields; use FASTQ QC
+  on the output for statistics.
 - Update the CI mosdepth version from 0.3.12 to 0.3.14.
 - Extend lightweight CI coverage to Python 3.13 and 3.14 while retaining Python 3.10 as the minimum.
 - Bounded subprocess capture and safer streaming pipelines

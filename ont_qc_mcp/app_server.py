@@ -141,7 +141,6 @@ async def env_status() -> list[types.TextContent]:
 async def qc_alignment_tool(
     path: str,
     include_hist: bool = True,
-    use_scaled: bool = False,
     flags: dict | None = None,
 ) -> list[types.TextContent]:
     """Run cramino stats on a BAM/CRAM alignment."""
@@ -150,7 +149,6 @@ async def qc_alignment_tool(
         path,
         tools=_tool_paths(),
         include_hist=include_hist,
-        use_scaled=use_scaled,
         flags=flags,
     )
     return _json_content(serialize_model(stats), tool_name="cramino")
@@ -265,7 +263,6 @@ async def alignment_summary_tool(
     path: str,
     include_coverage: bool = True,
     include_hist: bool = True,
-    use_scaled: bool = False,
     include_error_profile: bool = False,
     coverage_window: int | None = None,
     coverage_low_cov_threshold: float | None = None,
@@ -279,7 +276,6 @@ async def alignment_summary_tool(
         path,
         include_coverage=include_coverage,
         include_hist=include_hist,
-        use_scaled=use_scaled,
         include_error_profile=include_error_profile,
         coverage_window=coverage_window,
         coverage_low_cov_threshold=coverage_low_cov_threshold,
@@ -419,8 +415,11 @@ _TOOL_SPECS = [
             "type": "object",
             "properties": {
                 "path": {**_PATH_PROP, "description": "Path to BAM/CRAM alignment file"},
-                "include_hist": {"type": "boolean", "description": "Include histogram data", "default": True},
-                "use_scaled": {"type": "boolean", "description": "Use scaled histogram bins", "default": False},
+                "include_hist": {
+                    "type": "boolean",
+                    "description": "Include read-length and alignment-accuracy bins with read counts and base totals",
+                    "default": True,
+                },
                 "flags": _FLAGS_PROP,
             },
             "required": ["path"],
@@ -695,8 +694,11 @@ _TOOL_SPECS = [
             "properties": {
                 "path": {**_PATH_PROP, "description": "Path to BAM/CRAM alignment file"},
                 "include_coverage": {"type": "boolean", "description": "Include coverage stats", "default": True},
-                "include_hist": {"type": "boolean", "description": "Include histogram data", "default": True},
-                "use_scaled": {"type": "boolean", "description": "Use scaled histogram bins", "default": False},
+                "include_hist": {
+                    "type": "boolean",
+                    "description": "Include read-length and alignment-accuracy bins with read counts and base totals",
+                    "default": True,
+                },
                 "include_error_profile": {
                     "type": "boolean",
                     "description": "Include samtools stats error profile",

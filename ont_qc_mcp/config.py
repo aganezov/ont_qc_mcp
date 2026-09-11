@@ -200,7 +200,7 @@ DEFAULT_TOOL_TIMEOUTS: dict[str, int] = {
     "igv": 600,
 }
 
-# Tools for which we do NOT set threads by default (leave unset unless explicitly overridden).
+# Tools without a CLI thread option. Explicit overrides are rejected by flag validation.
 DISABLE_THREADS_DEFAULT: set[str] = {"nanoq"}
 
 
