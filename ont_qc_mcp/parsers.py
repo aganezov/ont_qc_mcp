@@ -909,7 +909,7 @@ def parse_bed_qc(file_path: Path) -> BedQCReport:
     """
     Parse and validate a BED file.
 
-    Validates that start < end and coordinates are integers.
+    Validates that 0 <= start < end and coordinates are integers.
     Returns a report with validation results and issues.
     """
     issues: list[BedIssue] = []
@@ -969,6 +969,16 @@ def parse_bed_qc(file_path: Path) -> BedQCReport:
                     line_number=line_num,
                     line_content=line,
                     issue=f"End coordinate '{end_str}' is not an integer",
+                )
+            )
+            continue
+
+        if start < 0:
+            issues.append(
+                BedIssue(
+                    line_number=line_num,
+                    line_content=line,
+                    issue=f"Start coordinate ({start}) is negative",
                 )
             )
             continue
