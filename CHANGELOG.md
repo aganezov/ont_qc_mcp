@@ -30,6 +30,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Parser semantics clarified for missing vs empty histogram blocks
 
 ### Fixed
+- Run the CI formatting check in `scripts/ci-local.sh` and propagate failures.
+- Refresh locked cryptography, Pillow, and pip dependencies while retaining MCP v1.
 - Sanitized tool output example artifacts to remove machine-specific paths
 
 ### Security

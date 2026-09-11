@@ -41,6 +41,7 @@ if [ "$mode" = "--floors" ]; then
 else
   # Mirrors the CI lint-and-test job.
   step ruff check .
+  step ruff format --check .
   step mypy ont_qc_mcp tests
   step bandit -q -r ont_qc_mcp -x tests
   # CVE-2025-71176 is a pytest-only (test) advisory; see the ci.yml note. Suppress narrowly.
