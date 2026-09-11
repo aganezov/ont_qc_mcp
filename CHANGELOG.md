@@ -26,6 +26,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Test expansion for plotting, utils, edge cases, concurrency, and protocol smoke checks
 
 ### Changed
+- Extend lightweight CI coverage to Python 3.13 and 3.14 while retaining Python 3.10 as the minimum.
 - Bounded subprocess capture and safer streaming pipelines
 - Parser semantics clarified for missing vs empty histogram blocks
 
