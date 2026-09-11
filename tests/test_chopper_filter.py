@@ -25,6 +25,19 @@ def input_fastq(tmp_path, monkeypatch):
     return path
 
 
+def test_reject_directory_output_before_command(input_fastq, tmp_path, monkeypatch):
+    before = set(tmp_path.iterdir())
+
+    def unexpected_command(*args, **kwargs):
+        pytest.fail("chopper must not run with a directory output")
+
+    monkeypatch.setattr("ont_qc_mcp.cli_wrappers.run_command_with_retry", unexpected_command)
+    with pytest.raises(ValueError, match="regular file"):
+        chopper_filter(input_fastq, ToolPaths(), tmp_path)
+    assert input_fastq.read_text() == FASTQ
+    assert set(tmp_path.iterdir()) == before
+
+
 @pytest.mark.parametrize("alias", ["same", "relative", "symlink", "hardlink"])
 def test_reject_input_output_alias_before_command(input_fastq, tmp_path, monkeypatch, alias):
     output = input_fastq
