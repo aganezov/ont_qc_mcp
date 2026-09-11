@@ -464,10 +464,13 @@ _TOOL_SPECS = [
         },
         metadata={
             "runtime_hint": "medium (minutes for multi-GB FASTQ, depends on flags)",
-            "io_hint": "Reads FASTQ, writes filtered FASTQ, emits JSON stats",
+            "io_hint": "Reads FASTQ, writes filtered FASTQ; returns command, params, and output_fastq",
             "default_threads": EXEC_CFG.threads_for("chopper"),
             "timeout_seconds": EXEC_CFG.timeout_for("chopper"),
-            "when_to_use": "Trim/filter ONT reads with chopper; specify output_fastq if persistence is needed.",
+            "when_to_use": (
+                "Trim/filter ONT reads with chopper; specify output_fastq if persistence is needed. "
+                "Run qc_reads_fastq_tool on the output for read statistics."
+            ),
         },
     ),
     ToolSpec(
