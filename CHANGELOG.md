@@ -26,11 +26,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Test expansion for plotting, utils, edge cases, concurrency, and protocol smoke checks
 
 ### Changed
+- Update the CI mosdepth version from 0.3.12 to 0.3.14.
 - Extend lightweight CI coverage to Python 3.13 and 3.14 while retaining Python 3.10 as the minimum.
 - Bounded subprocess capture and safer streaming pipelines
 - Parser semantics clarified for missing vs empty histogram blocks
 
 ### Fixed
+- Convert mosdepth threshold base counts to percentages using interval length, fixing values above 100% in targeted coverage reports.
 - Preserve FASTQ files during filtering: reject input/output aliases, publish completed output atomically, and clean temporary files on failure.
 - Run the CI formatting check in `scripts/ci-local.sh` and propagate failures.
 - Refresh locked cryptography, Pillow, and pip dependencies while retaining MCP v1.
