@@ -845,7 +845,7 @@ _TOOL_SPECS = [
                 },
                 "location": {
                     "type": "string",
-                    "description": "Location string in format 'chr:start-end' (e.g., 'chr1:1000-2000')",
+                    "description": "0-based, end-exclusive location 'chr:start-end' (e.g., 'chr1:1000-2000')",
                 },
                 "annotation_path": {
                     "type": "string",

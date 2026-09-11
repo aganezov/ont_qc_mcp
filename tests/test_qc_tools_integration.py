@@ -126,7 +126,7 @@ def test_targeted_coverage_tool_bed(mcp_server_params, sample_bam, synthetic_bed
     which caught a bug in the original samtools bedcov implementation where
     the coverage column was incorrectly assumed to be at index 3.
     """
-    require_executable_tools(["mosdepth"])
+    require_executable_tools(["samtools", "mosdepth"])
 
     async def _test():
         async with stdio_client(mcp_server_params) as (read, write):
@@ -171,7 +171,7 @@ def test_targeted_coverage_tool_location(mcp_server_params, sample_bam):
     This verifies that location strings like 'chr1:1000-2000' are correctly
     parsed and coverage is computed using mosdepth.
     """
-    require_executable_tools(["mosdepth"])
+    require_executable_tools(["samtools", "mosdepth"])
 
     async def _test():
         async with stdio_client(mcp_server_params) as (read, write):
@@ -207,7 +207,7 @@ def test_targeted_coverage_tool_gene_name(mcp_server_params, sample_bam, synthet
     Verifies that gene coordinates are correctly looked up from GFF3 and
     coverage is computed using mosdepth.
     """
-    require_executable_tools(["mosdepth"])
+    require_executable_tools(["samtools", "mosdepth"])
 
     async def _test():
         async with stdio_client(mcp_server_params) as (read, write):
