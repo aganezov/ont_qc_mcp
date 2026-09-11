@@ -26,6 +26,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Test expansion for plotting, utils, edge cases, concurrency, and protocol smoke checks
 
 ### Changed
+- Use a shared pinned toolchain for CI and local setup, updating chopper to 0.14.0 and cramino to 1.4.1.
 - Update the CI mosdepth version from 0.3.12 to 0.3.14.
 - Extend lightweight CI coverage to Python 3.13 and 3.14 while retaining Python 3.10 as the minimum.
 - Bounded subprocess capture and safer streaming pipelines

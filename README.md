@@ -24,25 +24,25 @@ Model Context Protocol server exposing lightweight QC/EDA helpers for Oxford Nan
 
 ### Installing CLI tools
 
-**Using conda/mamba (recommended):**
+**Tested toolchain (Linux x86_64/ARM64 and macOS ARM64):**
+
+Use a native C/C++ compiler: the standard build tools on Linux, or Xcode Command
+Line Tools on macOS. Then create and activate the environment:
+
 ```bash
-mamba create -n ont-qc-mcp python=3.11 chopper cramino mosdepth samtools bcftools nanoq -c conda-forge -c bioconda
+mamba env create --file environment.yml --strict-channel-priority
 conda activate ont-qc-mcp
+bash scripts/install-rust-tools.sh
+export NANOQ="$CONDA_PREFIX/bin/nanoq"
 ```
 
-**Using system package managers:**
-```bash
-# Ubuntu/Debian
-sudo apt install samtools bcftools
+If `ont-qc-mcp` already exists, use a fresh name with `--name` and activate that
+name instead. The first installation compiles three Rust tools and takes several
+minutes. The explicit `NANOQ` path selects this environment's binary even when a
+separate Cargo installation exists.
 
-# macOS (Homebrew)
-brew install samtools bcftools
-
-# nanoq requires Rust toolchain
-cargo install --locked nanoq
-```
-
-For `chopper`, `cramino`, `mosdepth`, and `nanoq`, conda/mamba is the easiest installation method.
+CI uses the same environment file and installer. See [toolchain versions and
+validation](docs/toolchain.md) for the pins, source-build details, and test commands.
 
 ## IGV snapshot tool (optional)
 - Container runtime: Docker (preferred) or Apptainer/Singularity
