@@ -37,6 +37,8 @@ def target_runner(tmp_path, monkeypatch):
         ("chr1\t0\n", "3 columns"),
         ("chr1\tzero\t10\n", "integer"),
         ("chr1\t0\t1.5\n", "integer"),
+        ("chr1\t0\t1_0\n", "integer"),
+        ("chr1\t0\t１０\n", "integer"),
         ("chr1\t-1\t10\n", "0 <= start < end"),
         ("chr1\t10\t10\n", "0 <= start < end"),
         ("chr1\t20\t10\n", "0 <= start < end"),

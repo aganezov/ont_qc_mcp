@@ -48,6 +48,36 @@ def test_initialize_and_list_tools(mcp_server_params):
     anyio.run(_test)
 
 
+def test_targeted_guidance_includes_sequential_tools(mcp_server_params):
+    params = mcp_server_params.model_copy(
+        update={
+            "env": {
+                **(mcp_server_params.env or {}),
+                "MCP_TIMEOUT_SAMTOOLS": "7",
+                "MCP_TIMEOUT_MOSDEPTH": "11",
+                "MCP_THREADS_SAMTOOLS": "5",
+                "MCP_THREADS_MOSDEPTH": "2",
+            }
+        }
+    )
+
+    async def check_guidance():
+        async with stdio_client(params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                listed = await session.list_tools()
+                description = next(tool.description for tool in listed.tools if tool.name == "targeted_coverage_tool")
+                assert description is not None
+                assert "samtools" in description and "mosdepth" in description
+                assert "timeout≈18s" in description
+                resource = await session.read_resource(cast(AnyUrl, "tool://guidance/targeted_coverage_tool"))
+                guidance = json.loads(_text_resource(resource.contents[0]).text)
+                assert "samtools" in guidance["io_hint"] and "mosdepth" in guidance["io_hint"]
+                assert guidance["defaults"] == {"threads": 5, "timeout_seconds": 18}
+
+    anyio.run(check_guidance)
+
+
 def test_tool_schemas_define_required_params(mcp_server_params):
     """Test that tool schemas properly define required parameters."""
 

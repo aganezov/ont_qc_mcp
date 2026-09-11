@@ -918,11 +918,10 @@ def _validate_target_intervals(bed_file: Path, reference_lengths: dict[str, int 
             if len(fields) < 3:
                 raise ValueError(f"{context}: expected at least 3 columns (chrom, start, end)")
             chrom = fields[0]
-            try:
-                start, end = int(fields[1]), int(fields[2])
-            except ValueError as exc:
-                raise ValueError(f"{context}: start and end must be integer coordinates") from exc
-            if start < 0 or start >= end:
+            if not all(value.isascii() and value.isdecimal() for value in fields[1:3]):
+                raise ValueError(f"{context}: coordinates must be ASCII decimal integers with 0 <= start < end")
+            start, end = int(fields[1]), int(fields[2])
+            if start >= end:
                 raise ValueError(f"{context}: require 0 <= start < end; got {chrom}:{start}-{end}")
             if chrom not in reference_lengths:
                 raise ValueError(f"{context}: contig '{chrom}' is absent from the alignment header")

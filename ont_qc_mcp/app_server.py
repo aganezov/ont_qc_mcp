@@ -833,7 +833,7 @@ _TOOL_SPECS = [
     ),
     ToolSpec(
         name="targeted_coverage_tool",
-        description="Compute targeted coverage for specified genomic regions using mosdepth",
+        description="Validate target intervals with samtools, then compute coverage with mosdepth",
         handler=targeted_coverage_tool,
         schema={
             "type": "object",
@@ -865,9 +865,9 @@ _TOOL_SPECS = [
         },
         metadata={
             "runtime_hint": "medium (minutes; depends on BAM size and region count)",
-            "io_hint": "Reads BAM/CRAM + BED/GFF3; uses mosdepth with --by and --thresholds",
-            "default_threads": EXEC_CFG.threads_for("mosdepth"),
-            "timeout_seconds": EXEC_CFG.timeout_for("mosdepth"),
+            "io_hint": "Reads BAM/CRAM + BED/GFF3; uses samtools view -H, then mosdepth with --by and --thresholds",
+            "default_threads": _max_threads(EXEC_CFG.threads_for("samtools"), EXEC_CFG.threads_for("mosdepth")),
+            "timeout_seconds": EXEC_CFG.timeout_for("samtools") + EXEC_CFG.timeout_for("mosdepth"),
             "when_to_use": (
                 "Compute mean depth for specific genomic regions. Supports three input modes: "
                 "1) gene_name + annotation_path (looks up gene coordinates in GFF3), "
