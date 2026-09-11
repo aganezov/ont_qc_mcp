@@ -6,6 +6,7 @@ Thanks for helping improve ONT QC MCP! This guide covers **setup and commands**;
 ## Setup
 
 - Python 3.10+.
+- CI tests Python 3.10–3.14. The minimum-dependency job uses 3.10; container integration uses 3.11.
 - Install [uv](https://docs.astral.sh/uv/), then create the environment from the
   lockfile: `uv sync --all-extras`.
 - Optional: install the wrapped CLIs (nanoq, chopper, cramino, mosdepth, samtools,
