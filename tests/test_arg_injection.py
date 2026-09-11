@@ -137,10 +137,11 @@ def test_mosdepth_targeted_neutralizes_dash_leading_paths(monkeypatch: pytest.Mo
     shutil.rmtree(Path(cmd[-2]).parent, ignore_errors=True)  # clean the mkdtemp dir
 
 
-def test_chopper_neutralizes_dash_leading_output_path(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_chopper_neutralizes_dash_leading_output_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # chopper's preferred path uses run_command_with_retry, and output_fastq is an
     # MCP-tool input (exposed by app_server), so the output path needs neutralizing too.
     captured: dict[str, list[str]] = {}
+    monkeypatch.chdir(tmp_path)
 
     def fake_retry(cmd: list[str], *args: object, **kwargs: object) -> None:
         captured["cmd"] = list(cmd)
@@ -150,8 +151,11 @@ def test_chopper_neutralizes_dash_leading_output_path(monkeypatch: pytest.Monkey
     with pytest.raises(_StopRun):
         chopper_filter(Path("reads.fastq"), ToolPaths(), output_fastq=Path("-evil.fastq"))
     cmd = captured["cmd"]
-    Path(cmd[cmd.index("--report-json") + 1]).unlink(missing_ok=True)  # clean json temp before asserting
-    assert "./-evil.fastq" in cmd  # --output value neutralized
+    staged_output = Path(cmd[cmd.index("--output") + 1])
+    assert staged_output.is_absolute()  # generated sibling path is option-safe
+    assert staged_output.parent == tmp_path
+    assert not staged_output.exists()
+    assert not Path(cmd[cmd.index("--report-json") + 1]).exists()
     assert "-evil.fastq" not in cmd
 
 
