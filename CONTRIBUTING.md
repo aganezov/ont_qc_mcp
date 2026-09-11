@@ -9,8 +9,9 @@ Thanks for helping improve ONT QC MCP! This guide covers **setup and commands**;
 - CI tests Python 3.10–3.14. The minimum-dependency job uses 3.10; container integration uses 3.11.
 - Install [uv](https://docs.astral.sh/uv/), then create the environment from the
   lockfile: `uv sync --all-extras`.
-- Optional: install the wrapped CLIs (nanoq, chopper, cramino, mosdepth, samtools,
-  bcftools), or point to them via env vars `NANOQ`, `CHOPPER`, `CRAMINO`, etc.
+- For integration tests, install the [tested toolchain](docs/toolchain.md) from
+  `environment.yml` and `scripts/install-rust-tools.sh`. Explicit paths can be
+  supplied through `NANOQ`, `CHOPPER`, `CRAMINO`, and the other tool variables.
 
 ## Commands
 

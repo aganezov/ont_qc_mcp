@@ -289,7 +289,18 @@ def mcp_server_params():
     env = {"MCP_STDIO_TRANSPORT": "compat"}
     if sif := os.getenv("MCP_IGV_SIF_PATH"):
         env["MCP_IGV_SIF_PATH"] = sif
-    for key in ("APPTAINER", "APPTAINER_CACHEDIR", "APPTAINER_TMPDIR", "APPTAINER_DISABLE_CACHE"):
+    for key in (
+        "NANOQ",
+        "CHOPPER",
+        "CRAMINO",
+        "MOSDEPTH",
+        "SAMTOOLS",
+        "BCFTOOLS",
+        "APPTAINER",
+        "APPTAINER_CACHEDIR",
+        "APPTAINER_TMPDIR",
+        "APPTAINER_DISABLE_CACHE",
+    ):
         if value := os.getenv(key):
             env[key] = value
 

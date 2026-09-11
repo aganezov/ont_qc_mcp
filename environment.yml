@@ -1,0 +1,21 @@
+name: ont-qc-mcp
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - python=3.11
+  - mosdepth=0.3.14
+  - samtools=1.24
+  - bcftools=1.24
+  - htslib=1.24
+  # Build the Rust tools from the revisions in scripts/install-rust-tools.sh.
+  - rust=1.90.0
+  - libclang
+  - pkg-config
+  - cmake
+  - make
+  - openssl
+  - zlib
+  - bzip2
+  - xz
