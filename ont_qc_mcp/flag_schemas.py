@@ -30,11 +30,20 @@ TOOL_FLAGS: dict[str, list[FlagDef]] = {
         FlagDef(param="max_len", name="--max-len", short="-L", type="int", description="Maximum read length (bp)"),
         FlagDef(param="min_qual", name="--min-qual", short="-q", type="float", description="Minimum mean Q-score"),
         FlagDef(param="max_qual", name="--max-qual", type="float", description="Maximum mean Q-score"),
-        FlagDef(param="threads", name="--threads", short="-t", type="int", description="Worker threads"),
     ],
     "chopper": [
-        FlagDef(param="headcrop", name="--headcrop", type="int", description="Trim bases from start"),
-        FlagDef(param="tailcrop", name="--tailcrop", type="int", description="Trim bases from end"),
+        FlagDef(
+            param="headcrop",
+            name="--headcrop",
+            type="int",
+            description="Trim bases from start (requires trim_approach=fixed-crop)",
+        ),
+        FlagDef(
+            param="tailcrop",
+            name="--tailcrop",
+            type="int",
+            description="Trim bases from end (requires trim_approach=fixed-crop)",
+        ),
         FlagDef(param="minlength", name="--minlength", type="int", description="Minimum read length"),
         FlagDef(param="maxlength", name="--maxlength", type="int", description="Maximum read length"),
         FlagDef(param="quality", name="--quality", short="-q", type="int", description="Minimum mean Q-score"),
@@ -54,11 +63,6 @@ TOOL_FLAGS: dict[str, list[FlagDef]] = {
         FlagDef(param="threads", name="--threads", short="-t", type="int", description="Worker threads"),
     ],
     "cramino": [
-        FlagDef(param="hist", name="--hist", type="bool", description="Emit histograms"),
-        FlagDef(param="scaled", name="--scaled", type="bool", description="Weight histograms by bases"),
-        FlagDef(param="mapq", name="--mapq", type="bool", description="Emit MAPQ histogram when supported"),
-        FlagDef(param="flags", name="--flags", type="bool", description="Emit SAM flag histogram when supported"),
-        FlagDef(param="format", name="--format", type="str", description="Output format (text, json, tsv)"),
         FlagDef(param="threads", name="--threads", short="-t", type="int", description="Worker threads"),
     ],
     "mosdepth": [
@@ -103,14 +107,11 @@ RECIPES: dict[str, dict[str, dict[str, Any]]] = {
         "lenient_qc": {"min_len": 200, "min_qual": 7},
     },
     "chopper": {
-        "aggressive_trim": {"headcrop": 50, "tailcrop": 50, "minlength": 500},
+        "aggressive_trim": {"headcrop": 50, "tailcrop": 50, "minlength": 500, "trim_approach": "fixed-crop"},
         "qual_trim": {"quality": 12, "cutoff": 10, "trim_approach": "trim-by-quality"},
         "inverse_short_reads": {"minlength": 1000, "inverse": True},
     },
-    "cramino": {
-        "with_hist_scaled": {"hist": True, "scaled": True},
-        "with_flags_and_mapq": {"hist": True, "mapq": True, "flags": True},
-    },
+    "cramino": {},
     "mosdepth": {
         "window_1kb": {"window": 1000},
         "fast_quantized": {"fast_mode": True, "quantize": "0:1:10:30:100:"},

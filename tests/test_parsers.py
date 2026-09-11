@@ -50,39 +50,23 @@ def test_parse_nanoq_json():
     assert parsed.qscore_histogram[0].count == 2
 
 
-def test_parse_cramino_json():
+def test_parse_cramino_json_preserves_zero_and_histogram_presence():
     payload = {
-        "summary": {
-            "file": "align.bam",
-            "reads": {"total": 10, "mapped": 9, "unmapped": 1, "primary": 8, "secondary": 1},
-            "mean_length": 1200.5,
-            "median_length": 1100,
-            "n50": 1500,
-            "mean_identity": 0.96,
-            "median_identity": 0.95,
-            "mapq_hist": [[0, 10, 2], [10, 20, 5], [20, 30, 3]],
-        }
+        "file_info": {"path": "empty.bam"},
+        "alignment_stats": {"num_reads": 0},
+        "read_stats": {"mean_length": 0, "median_length": 0, "n50": 0},
+        "identity_stats": {"mean_identity": 0, "median_identity": 0},
     }
     parsed = parse_cramino_json(payload)
-    assert parsed.file == "align.bam"
-    assert parsed.total_reads == 10
-    assert parsed.mapped == 9
-    assert parsed.mapq_histogram is not None
-    assert parsed.mapq_histogram[-1].count == 3
-
-
-def test_parse_cramino_json_scaled():
-    payload = {
-        "summary": {
-            "file": "align.bam",
-            "reads": {"total": 10, "mapped": 9, "unmapped": 1},
-            "mapq_hist": [[0, 10, 2], [10, 20, 5]],
-            "mapq_hist_scaled": [[0, 10, 500], [10, 20, 1500]],
-        }
-    }
+    assert parsed.total_reads == 0
+    assert parsed.mean_length == 0
+    assert parsed.mean_identity == 0
+    assert parsed.length_histogram is None
+    assert parsed.qscore_histogram is None
+    payload["histograms"] = {"read_length": {"bins": []}, "q_score": {"bins": []}}
     parsed = parse_cramino_json(payload)
-    assert parsed.mapq_histogram_scaled is not None
-    assert parsed.mapq_histogram_scaled[1].count == 1500
+    assert parsed.length_histogram == []
+    assert parsed.qscore_histogram == []
 
 
 def test_parse_nanoq_json_real_fixture():
@@ -110,8 +94,9 @@ def test_parse_cramino_json_real_fixture():
     assert parsed.total_reads == 221
     assert parsed.mean_length and parsed.mean_length > 0
     assert parsed.mean_identity and parsed.mean_identity > 0
-    # Histogram provided externally via hist TSV; should remain list even if empty.
-    assert parsed.length_histogram is None or isinstance(parsed.length_histogram, list)
+    # This captured JSON did not request histograms.
+    assert parsed.length_histogram is None
+    assert parsed.qscore_histogram is None
 
 
 @pytest.mark.integration

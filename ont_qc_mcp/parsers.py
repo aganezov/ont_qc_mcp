@@ -7,6 +7,7 @@ from .schemas import (
     BedIssue,
     BedQCReport,
     CraminoStats,
+    CraminoHistogramBin,
     ErrorProfile,
     HeaderMetadata,
     HistogramBin,
@@ -178,61 +179,32 @@ def parse_qscore_distribution(payload: str | dict) -> QScoreDistribution:
     )
 
 
-def parse_cramino_json(
-    payload: str | dict,
-    length_bins: list[HistogramBin] | None = None,
-    length_bins_scaled: list[HistogramBin] | None = None,
-) -> CraminoStats:
-    """
-    Parse cramino JSON output (e.g., --format json), supporting both count and scaled histograms.
-    """
+def parse_cramino_json(payload: str | dict) -> CraminoStats:
+    """Parse Cramino 1.4.1 JSON, preserving read counts and base-pair totals."""
     try:
         data = json.loads(payload) if isinstance(payload, str) else payload
     except json.JSONDecodeError as exc:
         raise ValueError(f"Invalid cramino JSON: {exc}") from exc
-    summary = data.get("summary", data)
-    # Support older summary.reads schema and newer cramino >=0.15 schema with alignment_stats/read_stats/identity_stats.
-    alignment_stats = summary.get("alignment_stats", {}) if isinstance(summary, dict) else {}
-    read_stats = summary.get("read_stats", {}) if isinstance(summary, dict) else {}
-    identity_stats = summary.get("identity_stats", {}) if isinstance(summary, dict) else {}
+    alignment_stats = data["alignment_stats"]
+    read_stats = data["read_stats"]
+    identity_stats = data.get("identity_stats", {})
+    histograms = data.get("histograms", {})
 
-    legacy_read_counts = summary.get("reads", summary)
-    if alignment_stats:
-        read_counts = {
-            "total": alignment_stats.get("num_reads") or alignment_stats.get("num_alignments") or 0,
-            # cramino JSON in this version does not emit mapped/unmapped breakdown.
-        }
-    elif isinstance(legacy_read_counts, dict):
-        read_counts = legacy_read_counts
-    else:
-        read_counts = {"total": legacy_read_counts or 0}
-
-    mapq_bins_counts = summary.get("mapq_hist", summary.get("mapq_histogram", []))
-    mapq_bins_scaled = summary.get("mapq_hist_scaled") or summary.get("mapq_hist_scaled_bp") or []
-
-    file_info = summary.get("file_info", {}) if isinstance(summary, dict) else {}
-    file_path = file_info.get("path") or file_info.get("name") or summary.get("file", "unknown")
-
-    mapped_val = read_counts.get("mapped") if isinstance(read_counts, dict) else None
-    unmapped_val = read_counts.get("unmapped") if isinstance(read_counts, dict) else None
+    def histogram(name: str) -> list[CraminoHistogramBin] | None:
+        if name not in histograms:
+            return None
+        return [CraminoHistogramBin.model_validate(bin_data) for bin_data in histograms[name]["bins"]]
 
     return CraminoStats(
-        file=file_path,
-        total_reads=int(read_counts.get("total", read_counts.get("reads", 0) or 0)),
-        mapped=int(mapped_val) if mapped_val is not None else None,
-        unmapped=int(unmapped_val) if unmapped_val is not None else None,
-        primary=read_counts.get("primary") if isinstance(read_counts, dict) else None,
-        secondary=read_counts.get("secondary") if isinstance(read_counts, dict) else None,
-        supplementary=read_counts.get("supplementary") if isinstance(read_counts, dict) else None,
-        mean_length=summary.get("mean_length") or read_stats.get("mean_length"),
-        median_length=summary.get("median_length") or read_stats.get("median_length"),
-        n50=summary.get("n50") or read_stats.get("n50"),
-        mean_identity=summary.get("mean_identity") or identity_stats.get("mean_identity"),
-        median_identity=summary.get("median_identity") or identity_stats.get("median_identity"),
-        length_histogram=length_bins or None,
-        length_histogram_scaled=length_bins_scaled or None,
-        mapq_histogram=_histogram_from_seq(mapq_bins_counts),
-        mapq_histogram_scaled=_histogram_from_seq(mapq_bins_scaled) if mapq_bins_scaled else None,
+        file=data["file_info"]["path"],
+        total_reads=alignment_stats["num_reads"],
+        mean_length=read_stats["mean_length"],
+        median_length=read_stats["median_length"],
+        n50=read_stats["n50"],
+        mean_identity=identity_stats.get("mean_identity"),
+        median_identity=identity_stats.get("median_identity"),
+        length_histogram=histogram("read_length"),
+        qscore_histogram=histogram("q_score"),
     )
 
 
