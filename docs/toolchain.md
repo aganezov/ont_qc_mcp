@@ -12,6 +12,12 @@ CI and local development use the same Conda environment and Rust installer.
 | bcftools | 1.24 | Bioconda |
 | HTSlib | 1.24 | Bioconda |
 
+The HTSlib pin applies to the Conda-linked tools. Cramino embeds
+[HTSlib 1.19.1](https://github.com/rust-bio/hts-sys/tree/64f51cc9c649df98d4d85b49c3ce242efe4aa6e6/htslib)
+through its locked Rust dependencies; installing Conda HTSlib does not replace
+that embedded copy. [HTSlib 1.24](https://github.com/samtools/htslib/releases/tag/1.24)
+removes experimental CRAM 4 support.
+
 ## Installation
 
 Install Conda/Mamba and a native C/C++ compiler first. On macOS, use Xcode Command
@@ -67,5 +73,18 @@ uv run pytest -q -m integration
 ```
 
 The focused tests check full-length long reads through filtering and nanoq QC,
-known cramino read/histogram counts, and exact mosdepth coverage percentages.
+known cramino length/identity statistics and histogram weights, and exact
+mosdepth coverage percentages. Cramino JSON retains read counts and base totals;
+the tests also verify the TSV units selected by `--scaled`.
 CI also runs the full suite with Docker and Apptainer on both Linux architectures.
+
+The September 2026 upgrade audit compared prior and updated CLI behavior.
+Chopper's split-read identifiers changed as intended, and newer bcftools rejects
+malformed VCF input that previously produced successful partial statistics.
+Ordinary filtering and the checked cramino metrics agreed across versions.
+The long-read check protects output integrity but does not reliably reproduce
+the old partial-write defect when stdout is a regular file.
+
+See [the wrapper contract follow-up](https://github.com/aganezov/ont_qc_mcp/issues/50)
+for advertised-option and histogram-unit changes. Upstream cramino's phased,
+spliced, and uBAM modes are outside this MCP's tested interface.

@@ -79,10 +79,10 @@ def test_cramino_read_and_histogram_counts(mcp_server_params, tmp_path):
     require_executable_tools(["samtools", "cramino"])
     source = tmp_path / "reads.sam"
     source.write_text(
-        "@HD\tVN:1.6\tSO:coordinate\n@SQ\tSN:chr1\tLN:1000\n"
+        "@HD\tVN:1.6\tSO:coordinate\n@SQ\tSN:chr1\tLN:10000\n"
         + "".join(
-            f"r{i}\t0\tchr1\t1\t60\t{length}M\t*\t0\t0\t{'A' * length}\t{'I' * length}\tNM:i:0\n"
-            for i, length in enumerate([50, 100, 200])
+            f"r{i}\t0\tchr1\t1\t60\t{length}M\t*\t0\t0\t{'A' * length}\t{'I' * length}\tNM:i:{nm}\n"
+            for i, (length, nm) in enumerate([(50, 0), (2100, 21), (4300, 86)])
         )
     )
     bam = tmp_path / "reads.bam"
@@ -96,6 +96,32 @@ def test_cramino_read_and_histogram_counts(mcp_server_params, tmp_path):
                 assert not result.isError, result.content
                 stats = json.loads(cast(types.TextContent, result.content[0]).text)
                 assert stats["total_reads"] == 3
-                assert sum(bin_["count"] for bin_ in stats["length_histogram"]) == 3
+                assert stats["mean_length"] == 2150
+                assert stats["median_length"] == 2100
+                assert stats["n50"] == 4300
+                assert stats["mean_identity"] == pytest.approx(99)
+                assert stats["median_identity"] == pytest.approx(99)
+                assert [(b["start"], b["end"], b["count"]) for b in stats["length_histogram"] if b["count"]] == [
+                    (0, 2000, 1),
+                    (2000, 4000, 1),
+                    (4000, 6000, 1),
+                ]
 
     anyio.run(check)
+
+    # Upstream JSON retains both weights; --scaled changes the TSV's units.
+    for scaled in (False, True):
+        counts = tmp_path / "histogram.tsv"
+        command = [os.getenv("CRAMINO", "cramino"), "--format", "json", "--hist-count", str(counts)]
+        if scaled:
+            command.append("--scaled")
+        result = subprocess.run([*command, str(bam)], check=True, capture_output=True, text=True)
+        histograms = json.loads(result.stdout)["histograms"]
+        assert [
+            (b["start"], b["end"], b["count"], b["bases"]) for b in histograms["read_length"]["bins"] if b["count"]
+        ] == [(0, 2000, 1, 50), (2000, 4000, 1, 2100), (4000, 6000, 1, 4300)]
+        assert sum(b["count"] for b in histograms["q_score"]["bins"]) == 3
+        assert sum(b["bases"] for b in histograms["q_score"]["bins"]) == 6450
+        rows = [line.split("\t") for line in counts.read_text().splitlines() if line]
+        assert rows[0] == ["bin_start", "bin_end", "bases" if scaled else "count"]
+        assert [int(row[2]) for row in rows[1:] if int(row[2])] == ([50, 2100, 4300] if scaled else [1, 1, 1])
