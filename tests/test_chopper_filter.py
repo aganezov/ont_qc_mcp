@@ -68,6 +68,8 @@ def test_reject_input_output_alias_before_command(input_fastq, tmp_path, monkeyp
 def test_publish_complete_output(input_fastq, tmp_path, monkeypatch, legacy, contents, destination):
     output = tmp_path / "filtered.fastq.gz"
     target = output
+    if destination == "symlink":
+        target = tmp_path / "data.fastq"
     if destination in ("existing", "symlink"):
         target.write_text("previous output")
         target.chmod(0o640)
@@ -95,7 +97,7 @@ def test_publish_complete_output(input_fastq, tmp_path, monkeypatch, legacy, con
         if output is not None:
             assert staged != target
             assert staged.parent == target.parent
-            assert staged.name.endswith("".join(target.suffixes))
+            assert staged.name.endswith("".join(output.suffixes))
         staged.write_text(contents)
 
     monkeypatch.setattr("ont_qc_mcp.cli_wrappers.run_command_with_retry", fake_run)

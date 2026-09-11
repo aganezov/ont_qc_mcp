@@ -197,7 +197,7 @@ def chopper_filter(
     try:
         with tempfile.NamedTemporaryFile(
             dir=destination.parent if destination is not None else None,
-            suffix="".join(destination.suffixes) if destination is not None else ".fastq",
+            suffix="".join(output_fastq.suffixes) if output_fastq is not None else ".fastq",
             delete=False,
         ) as output_fp:
             staged_output = Path(output_fp.name)
