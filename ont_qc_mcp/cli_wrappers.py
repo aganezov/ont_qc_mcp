@@ -102,6 +102,13 @@ def build_cli_args(tool: str, flags: dict[str, Any] | None) -> list[str]:
 
         args.extend([_select_flag_name(flag), str(value)])
 
+    if (
+        tool == "chopper"
+        and any(flags.get(crop) for crop in ("headcrop", "tailcrop"))
+        and flags.get("trim_approach") != "fixed-crop"
+    ):
+        raise FlagValidationError("Chopper headcrop/tailcrop require trim_approach='fixed-crop'")
+
     return args
 
 

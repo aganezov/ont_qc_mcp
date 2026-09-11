@@ -118,8 +118,9 @@ by the wrapper. The `use_scaled` parameter, separate scaled histogram fields, MA
 histogram fields, and old Cramino recipes have been removed.
 
 Chopper 0.14.0 writes FASTQ to stdout. The wrapper stages this output and atomically
-publishes it on success. Cropping requires `trim_approach: "fixed-crop"`; the
-`aggressive_trim` recipe selects this mode and trims 50 bases from each end.
+publishes it on success. Nonzero crop flags require `trim_approach: "fixed-crop"`
+and are rejected without it. The `aggressive_trim` recipe selects this mode and
+trims 50 bases from each end.
 
 
 ### Variant QC (VCF/BCF)

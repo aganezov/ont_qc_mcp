@@ -36,6 +36,27 @@ def test_reject_directory_output_before_command(input_fastq, tmp_path, monkeypat
     assert set(tmp_path.iterdir()) == before
 
 
+@pytest.mark.parametrize("crop", ["headcrop", "tailcrop"])
+@pytest.mark.parametrize("mode", [None, "trim-by-quality"])
+def test_reject_ineffective_crop_before_command(input_fastq, tmp_path, monkeypatch, crop, mode):
+    output = tmp_path / "filtered.fastq"
+    output.write_text("previous output")
+    before = set(tmp_path.iterdir())
+    flags = {crop: 50}
+    if mode is not None:
+        flags["trim_approach"] = mode
+
+    def unexpected_command(*args, **kwargs):
+        pytest.fail("Ineffective crop settings must fail before Chopper starts")
+
+    monkeypatch.setattr("ont_qc_mcp.cli_wrappers.run_command_with_retry", unexpected_command)
+    with pytest.raises(ValueError, match="fixed-crop"):
+        chopper_filter(input_fastq, ToolPaths(), output, flags=flags)
+    assert input_fastq.read_text() == FASTQ
+    assert output.read_text() == "previous output"
+    assert set(tmp_path.iterdir()) == before
+
+
 @pytest.mark.parametrize("alias", ["same", "relative", "symlink", "hardlink"])
 def test_reject_input_output_alias_before_command(input_fastq, tmp_path, monkeypatch, alias):
     output = input_fastq
