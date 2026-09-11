@@ -158,7 +158,11 @@ def test_nanoq_real_recipes(known_reads, recipe, streaming):
 @pytest.mark.integration
 @pytest.mark.parametrize(
     "recipe,expected",
-    [("aggressive_trim", [2000, 4200]), ("qual_trim", [50, 2100, 4300]), ("inverse_short_reads", [50])],
+    [
+        ("aggressive_trim", {"r1": 2000, "r2": 4200}),
+        ("qual_trim", {"r0": 50, "r1": 2100, "r2": 4300}),
+        ("inverse_short_reads", {"r0": 50}),
+    ],
 )
 def test_chopper_real_recipes(known_reads, tmp_path, recipe, expected):
     from conftest import require_executable_tools
@@ -168,8 +172,10 @@ def test_chopper_real_recipes(known_reads, tmp_path, recipe, expected):
     output = tmp_path / "filtered.fastq"
     cli_wrappers.chopper_filter(fastq, ToolPaths(), output, flags=get_tool_recipes("chopper")[recipe])
     lines = output.read_text().splitlines()
-    assert [len(seq) for seq in lines[1::4]] == expected
-    assert [len(qual) for qual in lines[3::4]] == expected
+    # Parallel Chopper can emit complete records in a different order.
+    assert len(lines) == 4 * len(expected)
+    actual = {lines[i][1:]: (lines[i + 1], lines[i + 3]) for i in range(0, len(lines), 4)}
+    assert actual == {name: ("A" * length, "I" * length) for name, length in expected.items()}
 
 
 @pytest.mark.integration
