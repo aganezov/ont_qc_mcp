@@ -271,6 +271,24 @@ def test_parse_bed_qc_invalid(tmp_path):
     assert any("non-integer" in issue.issue.lower() or "non_integer" in issue.line_content for issue in result.issues)
 
 
+def test_parse_bed_qc_negative_starts(tmp_path):
+    """Exclude negative starts from valid counts and bases, preserving zero starts."""
+    bed_file = tmp_path / "negative_starts.bed"
+    bed_file.write_text("# BED coordinates are zero-based\nchr1\t0\t10\nchr1\t-10\t10\nchr2\t-20\t-10\nchr2\t20\t35\n")
+
+    result = parse_bed_qc(bed_file)
+
+    assert result.total_intervals == 4
+    assert result.valid_intervals == 2
+    assert result.total_bases == 25
+    assert result.is_valid is False
+    assert [(issue.line_number, issue.line_content) for issue in result.issues] == [
+        (3, "chr1\t-10\t10"),
+        (4, "chr2\t-20\t-10"),
+    ]
+    assert all("start" in issue.issue.lower() and "negative" in issue.issue.lower() for issue in result.issues)
+
+
 def test_parse_bed_qc_real_fixture():
     """Test parsing the real valid.bed fixture."""
     fixture_path = Path("tests/fixtures/synthetic/valid.bed")
