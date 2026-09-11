@@ -47,6 +47,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Convert GFF3 gene starts to zero-based BED coordinates for targeted coverage,
   preserving the first base and single-base features on either strand.
 - Reject negative BED start coordinates and exclude those intervals from valid interval and base totals.
+- Validate targeted coverage intervals against alignment contigs and lengths before running mosdepth; reject malformed, empty, or out-of-bounds targets.
 - Convert mosdepth threshold base counts to percentages using interval length, fixing values above 100% in targeted coverage reports.
 - Preserve FASTQ files during filtering: reject input/output aliases, publish completed output atomically, and clean temporary files on failure.
 - Run the CI formatting check in `scripts/ci-local.sh` and propagate failures.

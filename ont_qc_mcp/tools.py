@@ -807,7 +807,7 @@ def qc_bed(
     """
     Validate and QC a BED file.
 
-    Checks for valid coordinates (start < end, integer values) and reports
+    Checks for valid coordinates (0 <= start < end, integer values) and reports
     any issues found. Pure Python implementation, no CLI tools required.
 
     Args:
@@ -902,6 +902,39 @@ def qc_variants(
     return result
 
 
+def _validate_target_intervals(bed_file: Path, reference_lengths: dict[str, int | None]) -> None:
+    """Check BED coordinates against alignment references without rewriting caller data."""
+    interval_count = 0
+    with bed_file.open() as stream:
+        for line_number, raw_line in enumerate(stream, start=1):
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            # Match metadata keywords, not contig prefixes such as track1.
+            if line in {"track", "browser"} or line.startswith(("track ", "browser ")):
+                continue
+            fields = line.split("\t")
+            context = f"Target BED line {line_number}"
+            if len(fields) < 3:
+                raise ValueError(f"{context}: expected at least 3 columns (chrom, start, end)")
+            chrom = fields[0]
+            if not all(value.isascii() and value.isdecimal() for value in fields[1:3]):
+                raise ValueError(f"{context}: coordinates must be ASCII decimal integers with 0 <= start < end")
+            start, end = int(fields[1]), int(fields[2])
+            if start >= end:
+                raise ValueError(f"{context}: require 0 <= start < end; got {chrom}:{start}-{end}")
+            if chrom not in reference_lengths:
+                raise ValueError(f"{context}: contig '{chrom}' is absent from the alignment header")
+            length = reference_lengths[chrom]
+            if length is None or length <= 0:
+                raise ValueError(f"{context}: contig '{chrom}' has no usable reference length in the alignment header")
+            if end > length:
+                raise ValueError(f"{context}: end {end} exceeds reference length {length} for contig '{chrom}'")
+            interval_count += 1
+    if interval_count == 0:
+        raise ValueError("No target intervals found in BED file")
+
+
 def targeted_coverage(
     bam_path: str,
     gene_name: str | None = None,
@@ -927,7 +960,7 @@ def targeted_coverage(
     Args:
         bam_path: Path to BAM/CRAM file
         gene_name: Gene name to look up in annotation (requires annotation_path)
-        location: Location string in format "chr:start-end" (0-based or 1-based)
+        location: Location string in format "chr:start-end" (0-based, end-exclusive)
         annotation_path: Path to GFF3 annotation file (requires gene_name)
         bed_path: Path to BED file with target regions
         tools: ToolPaths instance
@@ -1003,6 +1036,10 @@ def targeted_coverage(
     coverage_thresholds = [1, 10, 20]
 
     try:
+        header_text = _read_alignment_header_text(bam_file, tools, None, cfg)
+        metadata = parse_alignment_header(header_text, file_path=str(bam_file), fmt=bam_file.suffix.lstrip("."))
+        _validate_target_intervals(bed_file, {reference.name: reference.length for reference in metadata.references})
+
         # Run mosdepth with --by for targeted coverage
         logger.debug("targeted_coverage: running mosdepth for %s x %s", bam_file, bed_file)
         regions_bed, thresholds_bed, mosdepth_output_dir = run_mosdepth_targeted(
