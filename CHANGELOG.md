@@ -44,6 +44,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Parser semantics clarified for missing vs empty histogram blocks
 
 ### Fixed
+- Convert GFF3 gene starts to zero-based BED coordinates for targeted coverage,
+  preserving the first base and single-base features on either strand.
 - Convert mosdepth threshold base counts to percentages using interval length, fixing values above 100% in targeted coverage reports.
 - Preserve FASTQ files during filtering: reject input/output aliases, publish completed output atomically, and clean temporary files on failure.
 - Run the CI formatting check in `scripts/ci-local.sh` and propagate failures.

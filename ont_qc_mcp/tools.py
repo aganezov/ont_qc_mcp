@@ -988,11 +988,11 @@ def targeted_coverage(
         if not coordinates:
             raise ValueError(f"Gene '{gene_name}' not found in annotation file {annotation_path}")
 
-        # Create temporary BED file with gene coordinates
+        # Convert GFF3's 1-based inclusive coordinates to 0-based half-open BED.
         with tempfile.NamedTemporaryFile(mode="w", suffix=".bed", delete=False) as tmp:
             for idx, (chrom, start, end) in enumerate(coordinates):
                 region_name = f"{gene_name}_{idx + 1}" if len(coordinates) > 1 else gene_name
-                tmp.write(f"{chrom}\t{start}\t{end}\t{region_name}\n")
+                tmp.write(f"{chrom}\t{start - 1}\t{end}\t{region_name}\n")
             bed_file = Path(tmp.name)
             created_temp_bed = True
 
