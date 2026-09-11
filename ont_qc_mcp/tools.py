@@ -24,6 +24,7 @@ from .cli_wrappers import (
 from .config import ExecutionConfig, ToolPaths
 from .threadpool import run_sync
 from .parsers import (
+    is_bed_metadata_line,
     parse_alignment_header,
     parse_error_profile,
     parse_vcf_header,
@@ -910,8 +911,7 @@ def _validate_target_intervals(bed_file: Path, reference_lengths: dict[str, int 
             line = raw_line.strip()
             if not line or line.startswith("#"):
                 continue
-            # Match metadata keywords, not contig prefixes such as track1.
-            if line in {"track", "browser"} or line.startswith(("track ", "browser ")):
+            if is_bed_metadata_line(line):
                 continue
             fields = line.split("\t")
             context = f"Target BED line {line_number}"
