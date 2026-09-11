@@ -1236,12 +1236,13 @@ def parse_mosdepth_thresholds_bed(
     """
     Parse mosdepth thresholds.bed.gz output.
 
-    Format when --by used with named BED:
-        chrom, start, end, name, pct_at_threshold1, pct_at_threshold2, ...
-    Format when --by used with 3-column BED:
-        chrom, start, end, pct_at_threshold1, pct_at_threshold2, ...
+    Format:
+        chrom, start, end, name, bases_at_threshold1, bases_at_threshold2, ...
+    Mosdepth uses "unknown" for unnamed BED regions. Rows without a name column
+    are also accepted.
 
-    The percentages are cumulative (% of bases >= threshold).
+    Values are counts of bases with depth >= each threshold, not fractions.
+    Convert each count to a percentage using the BED interval length (end - start).
     The threshold values are always the LAST N columns where N = len(thresholds).
 
     Returns dict mapping (chrom, start, end) to threshold percentages.
@@ -1270,12 +1271,15 @@ def parse_mosdepth_thresholds_bed(
                 # Not enough columns for all thresholds
                 continue
 
+            region_length = end - start
+            if region_length <= 0:
+                raise ValueError(f"Mosdepth threshold interval must have positive length: {chrom}:{start}-{end}")
+
             threshold_pcts: dict[str, float] = {}
             for i, threshold in enumerate(thresholds):
                 col_idx = threshold_start_idx + i
                 if col_idx < len(parts):
-                    # mosdepth outputs fraction (0-1), convert to percentage
-                    pct = float(parts[col_idx]) * 100.0
+                    pct = float(parts[col_idx]) * 100.0 / region_length
                     threshold_pcts[f"pct_coverage_{threshold}x"] = pct
 
             results[(chrom, start, end)] = threshold_pcts

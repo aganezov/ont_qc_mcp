@@ -184,7 +184,7 @@ jobs:
               - bioconda
             channel_priority: strict
           create-args: >-
-            python=3.11 chopper cramino mosdepth=0.3.12 samtools bcftools nanoq=0.10.0
+            python=3.11 chopper cramino mosdepth=0.3.14 samtools bcftools nanoq=0.10.0
           cache-environment: true
           cache-downloads: true
 
