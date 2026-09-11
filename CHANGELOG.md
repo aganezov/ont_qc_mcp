@@ -32,6 +32,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   (base pairs), including open-ended bins. Remove `use_scaled`, separate scaled
   histogram fields, mislabeled MAPQ histogram fields, obsolete Cramino recipes,
   and user-controlled Cramino output flags; retain `threads` and `include_hist`.
+- Preserve open-ended Cramino bins in histogram plots with explicit lower-bound labels.
 - **Breaking:** reject nanoq thread settings because nanoq 0.10.0 has no thread option.
 - Use Chopper 0.14.0 stdout output directly with atomic staging; remove the unsupported
   `filter --output --report-json` invocation. The aggressive trim recipe now selects

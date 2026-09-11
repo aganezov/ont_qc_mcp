@@ -1,6 +1,7 @@
+from collections.abc import Sequence
 from pathlib import Path
 
-from .schemas import HistogramBin
+from .schemas import CraminoHistogramBin, HistogramBin
 
 
 def _ensure_matplotlib():
@@ -15,7 +16,7 @@ def _ensure_matplotlib():
 
 
 def _plot_histogram(
-    bins: list[HistogramBin],
+    bins: Sequence[HistogramBin | CraminoHistogramBin],
     xlabel: str,
     ylabel: str,
     title: str,
@@ -29,12 +30,31 @@ def _plot_histogram(
     else:
         output_path = str(output_path)
 
-    centers = [(b.start + b.end) / 2.0 for b in bins]
-    widths = [b.end - b.start for b in bins]
+    finite_widths = [b.end - b.start for b in bins if b.end is not None]
+    # Overflow bars need a display width, not an inferred upper bound.
+    open_width = finite_widths[-1] if finite_widths else 1.0
+    widths = [b.end - b.start if b.end is not None else open_width for b in bins]
+    centers = [b.start + width / 2.0 for b, width in zip(bins, widths)]
     counts = [b.count for b in bins]
 
     plt.figure(figsize=(6, 4), dpi=150)
-    plt.bar(centers, counts, width=widths, align="center", edgecolor="black")
+    bars = plt.bar(centers, counts, width=widths, align="center", edgecolor="black")
+    for b, bar, center in zip(bins, bars, centers):
+        if b.end is None:
+            bar.set_hatch("//")
+            plt.annotate(
+                f"≥ {b.start:g}",
+                (center, b.count),
+                xytext=(0, 4),
+                textcoords="offset points",
+                ha="center",
+                va="bottom",
+                fontsize=8,
+            )
+    if len(finite_widths) < len(bins):
+        plt.margins(y=0.15)
+        if not finite_widths:
+            plt.xticks(centers, [f"≥ {b.start:g}" for b in bins])
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
     plt.title(title)
@@ -45,7 +65,7 @@ def _plot_histogram(
     return str(output_path)
 
 
-def plot_length_histogram(bins: list[HistogramBin], output_path: str | None = None) -> str:
+def plot_length_histogram(bins: Sequence[HistogramBin | CraminoHistogramBin], output_path: str | None = None) -> str:
     """Save a length histogram PNG and return its path."""
     return _plot_histogram(
         bins,
@@ -56,7 +76,7 @@ def plot_length_histogram(bins: list[HistogramBin], output_path: str | None = No
     )
 
 
-def plot_qscore_histogram(bins: list[HistogramBin], output_path: str | None = None) -> str:
+def plot_qscore_histogram(bins: Sequence[HistogramBin | CraminoHistogramBin], output_path: str | None = None) -> str:
     """Save a q-score histogram PNG and return its path."""
     return _plot_histogram(bins, xlabel="Q-score", ylabel="Count", title="qscore_histogram", output_path=output_path)
 

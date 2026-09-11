@@ -113,6 +113,8 @@ Cramino 1.4.1 histogram bins contain `start`, `end`, `count` (reads), and `bases
 and `qscore_histogram` return these values together; `qscore_histogram` represents
 Phred-scaled alignment identity, not MAPQ or FASTQ base quality. `include_hist: false`
 returns `null` for both histograms; an explicitly empty bin array remains `[]`.
+Plots retain open-bin counts in hatched bars labeled `≥ start`; the display width
+of those bars does not indicate an upper bound.
 Cramino flags accept only `threads`; output format and histogram switches are managed
 by the wrapper. The `use_scaled` parameter, separate scaled histogram fields, MAPQ
 histogram fields, and old Cramino recipes have been removed.
