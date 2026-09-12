@@ -78,8 +78,8 @@ def _should_use_mock() -> str:
         # Avoid implicit pulls from docker:// in test environments; require an explicit local SIF to run "real".
         sif_path = os.getenv("MCP_IGV_SIF_PATH")
         if sif_path and Path(sif_path).exists():
-            apptainer_cmd = cli.which(ToolPaths().apptainer) or ToolPaths().apptainer
-            if _apptainer_exec_works(apptainer_cmd, sif_path):
+            apptainer_cmd = cli._select_apptainer_executable(ToolPaths())
+            if apptainer_cmd and _apptainer_exec_works(apptainer_cmd, sif_path):
                 return "0"
         return "1"
 
@@ -175,6 +175,7 @@ def test_build_apptainer_command_with_sif(monkeypatch: pytest.MonkeyPatch, tmp_p
         return None
 
     monkeypatch.setattr(cli, "run_command", _fake_run_command)
+    monkeypatch.setattr(cli, "which", lambda cmd: "/selected/apptainer" if cmd == tools.apptainer else None)
 
     cfg = ExecutionConfig(igv_sif_path=str(sif_path))
     snapshots, runtime, cmd = cli.run_igv_snapshot(
