@@ -1,5 +1,6 @@
 import json
 import re
+from collections import deque
 from pathlib import Path
 from typing import Literal, Sequence, cast
 
@@ -1167,21 +1168,23 @@ def parse_mosdepth_regions_bed(
     bed_path: Path,
 ) -> list[dict[str, object]]:
     """
-    Parse mosdepth regions.bed.gz output with region names from original BED.
+    Parse mosdepth regions.bed.gz, using output names or original BED occurrences.
 
     mosdepth regions.bed.gz format when --by is used with named BED:
         chrom, start, end, name, mean_depth  (5 columns)
     mosdepth regions.bed.gz format with 3-column BED:
         chrom, start, end, mean_depth  (4 columns)
 
+    Named output is authoritative. Four-column output uses BED occurrence order
+    within each coordinate tuple; it cannot identify reordered identical intervals.
     The mean_depth is always the LAST column.
 
     Returns list of dicts with: chrom, start, end, region_name, mean_depth
     """
     import gzip
 
-    # Build map of (chrom, start, end) -> region_name from original BED
-    region_names: dict[tuple[str, int, int], str] = {}
+    # Four-column output lacks names. Retain each BED occurrence for that fallback.
+    region_names: dict[tuple[str, int, int], deque[str]] = {}
     with open(bed_path, "r") as f:
         for line in f:
             line = line.strip()
@@ -1195,7 +1198,7 @@ def parse_mosdepth_regions_bed(
                 start = int(parts[1])
                 end = int(parts[2])
                 name = parts[3] if len(parts) >= 4 else f"{chrom}:{start}-{end}"
-                region_names[(chrom, start, end)] = name
+                region_names.setdefault((chrom, start, end), deque()).append(name)
 
     # Parse mosdepth regions.bed.gz
     results: list[dict[str, object]] = []
@@ -1213,8 +1216,9 @@ def parse_mosdepth_regions_bed(
             # mean_depth is always the LAST column (column 3 for 4-col output, column 4 for 5-col output)
             mean_depth = float(parts[-1])
 
-            # Get region name from original BED or generate default
-            region_name = region_names.get((chrom, start, end), f"{chrom}:{start}-{end}")
+            names = region_names.get((chrom, start, end))
+            fallback_name = names.popleft() if names else f"{chrom}:{start}-{end}"
+            region_name = parts[3] if len(parts) >= 5 else fallback_name
 
             results.append(
                 {

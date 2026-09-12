@@ -44,6 +44,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Parser semantics clarified for missing vs empty histogram blocks
 
 ### Fixed
+- Targeted coverage preserves distinct names for repeated coordinates, taking names from each mosdepth output record and retaining occurrence order for unnamed-output fallbacks.
 - Reap streaming samtools/nanoq children and close their pipes on startup, timeout, and other failures; clean auxiliary files even when allocation fails. A descendant-held stderr pipe no longer blocks the caller during cleanup; its reader closes the pipe at EOF.
 - Require ASCII decimal coordinate fields in BED QC, matching targeted coverage validation while preserving negative-coordinate diagnostics.
 - Preserve BED intervals and target names on contigs beginning with `track` or `browser`, including exact keyword names.
