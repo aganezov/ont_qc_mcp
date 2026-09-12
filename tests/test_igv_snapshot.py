@@ -142,6 +142,7 @@ def test_build_docker_command(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -
         return None
 
     monkeypatch.setattr(cli, "run_command", _fake_run_command)
+    monkeypatch.setattr(cli, "which", lambda cmd: cmd if cmd == tools.docker else None)
 
     snapshots, runtime, cmd = cli.run_igv_snapshot(
         batch_file=batch_file,

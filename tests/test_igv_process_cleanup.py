@@ -23,6 +23,7 @@ def test_failed_docker_run_removes_only_its_container(tmp_path, monkeypatch, can
         return CommandResult(cmd, 0, "", "")
 
     monkeypatch.setattr(cli, "run_command", run)
+    monkeypatch.setattr(cli, "which", lambda cmd: cmd)
     expected = asyncio.CancelledError if cancelled else RuntimeError
     with pytest.raises(expected):
         cli.run_igv_snapshot(tmp_path / "batch", tmp_path, tools, force_runtime="docker")
@@ -40,6 +41,7 @@ def test_docker_cleanup_failure_preserves_cancellation_and_reports_uncertainty(t
         raise CommandError(CommandResult(cmd, 1, "", "daemon unreachable"))
 
     monkeypatch.setattr(cli, "run_command", run)
+    monkeypatch.setattr(cli, "which", lambda cmd: cmd)
     with pytest.raises(asyncio.CancelledError):
         cli.run_igv_snapshot(tmp_path / "batch", tmp_path, ToolPaths(), force_runtime="docker")
     assert "cleanup" in caplog.text and "daemon unreachable" in caplog.text
@@ -61,6 +63,7 @@ def test_docker_cleanup_runs_after_cancellation_event_is_set(tmp_path, monkeypat
         return CommandResult(cmd, 0, "", "")
 
     monkeypatch.setattr(cli, "run_command", run)
+    monkeypatch.setattr(cli, "which", lambda cmd: cmd)
     try:
         with pytest.raises(asyncio.CancelledError):
             cli.run_igv_snapshot(tmp_path / "batch", tmp_path, ToolPaths(), force_runtime="docker")

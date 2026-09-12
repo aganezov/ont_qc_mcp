@@ -600,8 +600,14 @@ def run_igv_snapshot(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     runtime = force_runtime or detect_container_runtime(tools)
-    if force_runtime and runtime != force_runtime:
-        raise RuntimeError(f"Requested runtime '{force_runtime}' not available (detected: {runtime})")
+    if force_runtime in {"docker", "local"}:
+        required = (tools.docker,) if force_runtime == "docker" else (tools.xvfb_run, tools.igv)
+        for configured_executable in required:
+            if which(configured_executable) is None:
+                raise RuntimeError(
+                    f"Requested '{force_runtime}' runtime requires configured executable '{configured_executable}', "
+                    "which was not found or is not executable"
+                )
     if runtime is None:
         raise RuntimeError("No container runtime available. Install Docker or Apptainer, or set MCP_IGV_SIF_PATH.")
 
