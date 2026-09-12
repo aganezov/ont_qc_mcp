@@ -324,17 +324,19 @@ def qc_alignment(
     tools: ToolPaths | None = None,
     include_hist: bool = True,
     flags: dict[str, Any] | None = None,
+    exec_cfg: ExecutionConfig | None = None,
 ) -> CraminoStats:
     tools = tools or ToolPaths()
+    cfg = exec_cfg or _EXEC_CFG
     aln_path = Path(path)
-    _validate_input_file(aln_path, _EXEC_CFG, allowed_exts=(".bam", ".cram", ".sam"))
+    _validate_input_file(aln_path, cfg, allowed_exts=(".bam", ".cram", ".sam"))
     report_progress(f"qc_alignment start: {aln_path}")
     result = cramino_stats(
         aln_path,
         tools,
         include_hist=include_hist,
         flags=flags,
-        exec_cfg=_EXEC_CFG,
+        exec_cfg=cfg,
     )
     report_progress(f"qc_alignment done: {aln_path}")
     return result
@@ -346,10 +348,12 @@ def coverage_stats(
     window: int | None = None,
     low_cov_threshold: float | None = None,
     flags: dict[str, Any] | None = None,
+    exec_cfg: ExecutionConfig | None = None,
 ) -> MosdepthStats:
     tools = tools or ToolPaths()
+    cfg = exec_cfg or _EXEC_CFG
     aln_path = Path(path)
-    _validate_input_file(aln_path, _EXEC_CFG, allowed_exts=(".bam", ".cram", ".sam"))
+    _validate_input_file(aln_path, cfg, allowed_exts=(".bam", ".cram", ".sam"))
     report_progress(f"coverage_stats start: {aln_path}")
     result = mosdepth_coverage(
         aln_path,
@@ -357,7 +361,7 @@ def coverage_stats(
         window=window,
         low_cov_threshold=low_cov_threshold,
         flags=flags,
-        exec_cfg=_EXEC_CFG,
+        exec_cfg=cfg,
     )
     report_progress(f"coverage_stats done: {aln_path}")
     return result
@@ -407,7 +411,7 @@ def alignment_summary(
     tools = tools or ToolPaths()
     cfg = exec_cfg or _EXEC_CFG
     report_progress(f"alignment_summary start: {path}")
-    aln_stats = qc_alignment(path, tools=tools, include_hist=include_hist, flags=cramino_flags)
+    aln_stats = qc_alignment(path, tools=tools, include_hist=include_hist, flags=cramino_flags, exec_cfg=cfg)
     coverage = (
         coverage_stats(
             path,
@@ -415,6 +419,7 @@ def alignment_summary(
             window=coverage_window,
             low_cov_threshold=coverage_low_cov_threshold,
             flags=coverage_flags,
+            exec_cfg=cfg,
         )
         if include_coverage
         else None
