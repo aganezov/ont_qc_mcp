@@ -50,6 +50,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Parser semantics clarified for missing vs empty histogram blocks
 
 ### Fixed
+- Stream nanoq length and quality auxiliary output through POSIX named pipes instead of per-read temporary files, preserving histograms and percentile limits across FASTQ and BAM QC.
 - Suppress unused mosdepth per-base BED files and indexes for whole, windowed, and targeted coverage reports.
 - Report missing configured executables before launching forced Docker or local IGV runtimes.
 - Reject Boolean values for numeric CLI flags before command execution, while preserving accepted numeric values and null/unset behavior.

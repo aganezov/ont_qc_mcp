@@ -154,10 +154,11 @@ trims 50 bases from each end.
 - Defaults are conservative and overridable via environment variables:
   - `MCP_THREADS_DEFAULT` / `MCP_THREADS_<TOOL>` (e.g., `MCP_THREADS_CRAMINO`)
   - `MCP_TIMEOUT_DEFAULT` / `MCP_TIMEOUT_<TOOL>` (seconds; e.g., `MCP_TIMEOUT_MOSDEPTH`)
-  - `MCP_NANOQ_AUX_STATS=1` (default) to compute FASTQ/BAM length/qscore histograms via nanoq `--read-lengths/--read-qualities` (may produce large temp files for huge inputs; set to `0` to disable)
+  - `MCP_NANOQ_AUX_STATS=1` (default) to compute FASTQ/BAM length/qscore histograms via nanoq `--read-lengths/--read-qualities`; set to `0` to disable
   - `MCP_STDIO_TRANSPORT=anyio|compat` (default `anyio`) to control how the stdio MCP server reads/writes JSON-RPC (use `compat` in restricted/sandboxed environments that hang with async file wrappers)
   - `MCP_BLOCKING_MODE=auto|executor|sync` (default `auto`) to control how blocking work is executed; `auto` uses a threadpool when thread wakeups are reliable and falls back to `sync` otherwise
 - Per-tool defaults are also reflected in the guidance resource and tool descriptions returned by `list_tools`. Threads are applied to all tools except nanoq. nanoq 0.10.0 has no thread option; explicit `threads` flags and `MCP_THREADS_NANOQ` settings are rejected.
+- Nanoq auxiliary statistics use POSIX named pipes, with bounded reader buffers and no per-read disk files. Temporary FIFO paths are removed after each attempt, including failure and cancellation. Platforms without named pipes must disable auxiliary statistics explicitly. Exact length percentiles retain up to `MCP_NANOQ_PERCENTILES_EXACT_MAX_READS` values (default 200,000); larger inputs still receive histograms. Nanoq itself retains per-read values in memory, so this transport change does not bound the tool's total memory use.
 - Most `MCP_*` environment variables are read at server startup; changing them requires restarting the MCP server. Per-call overrides are available via tool arguments/flags (e.g., `output_dir` for `igv_snapshot_tool`). If multiple clients need different defaults, run separate server instances.
 - Coverage low-depth marking is opt-in via `low_cov_threshold`; error-profile collection in summaries is opt-in via `include_error_profile`.
 
