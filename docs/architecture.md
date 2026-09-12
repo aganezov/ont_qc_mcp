@@ -21,3 +21,12 @@
 - `MCP_MAX_FILE_MB` enforces optional file-size limits.
 - `MCP_MAX_CONCURRENCY` limits concurrent MCP calls when set.
 
+In executor mode, cancellation prevents queued work from starting. If a worker
+has already started, the server-side handler keeps the concurrency slot until
+the worker finishes, then propagates cancellation even if the worker failed.
+The client can receive a cancellation response before that server-side cleanup
+finishes. Repeated cancellation does not release the slot early. Cancellation
+does not terminate the worker thread or its subprocesses; existing subprocess
+timeouts still apply. Direct/synchronous mode and the automatic synchronous
+fallback block the event loop, so server-side cancellation remains deferred
+until synchronous work returns.
