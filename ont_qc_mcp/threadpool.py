@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import select
 import threading
@@ -14,6 +15,8 @@ from anyio.lowlevel import checkpoint
 
 P = ParamSpec("P")
 T = TypeVar("T")
+
+logger = logging.getLogger(__name__)
 
 _EXECUTOR: ThreadPoolExecutor | None = None
 _LOCK = threading.Lock()
@@ -147,7 +150,9 @@ async def run_sync(func: Callable[P, T], /, *args: P.args, **kwargs: P.kwargs) -
                     except asyncio.CancelledError:
                         continue
                 if not future.cancelled():
-                    future.exception()  # Retrieve worker errors; cancellation wins.
+                    error = future.exception()  # Retrieve worker errors; cancellation wins.
+                    if error is not None:
+                        logger.warning("Worker failed after request cancellation: %r", error)
         raise
 
 

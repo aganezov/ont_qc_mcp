@@ -35,7 +35,11 @@ def pool(monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest) -> Ite
 @pytest.mark.parametrize("worker_error", [False, True], ids=["worker-returns", "worker-raises"])
 @pytest.mark.asyncio
 async def test_running_cancelled_dispatch_retains_capacity(
-    monkeypatch: pytest.MonkeyPatch, pool: ThreadPoolExecutor, cancel_kind: str, worker_error: bool
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    pool: ThreadPoolExecutor,
+    cancel_kind: str,
+    worker_error: bool,
 ) -> None:
     started = [threading.Event(), threading.Event()]
     finished = [threading.Event(), threading.Event()]
@@ -108,6 +112,10 @@ async def test_running_cancelled_dispatch_retains_capacity(
         assert not second.result().isError
         assert peak_active == 1
         assert semaphore.value == 1
+        worker_warnings = [record for record in caplog.records if record.name == "ont_qc_mcp.threadpool"]
+        assert len(worker_warnings) == int(worker_error)
+        if worker_error:
+            assert "Worker failed after cancellation" in worker_warnings[0].getMessage()
     finally:
         release.set()
         await asyncio.gather(*tasks, return_exceptions=True)
