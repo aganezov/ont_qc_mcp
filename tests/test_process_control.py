@@ -2,6 +2,7 @@
 
 import asyncio
 import contextvars
+import errno
 import os
 import signal
 import subprocess
@@ -330,6 +331,103 @@ def test_failed_term_still_attempts_kill_and_preserves_primary_error(
                 original_killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
+        finally:
+            process.wait(timeout=3)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Owned process groups require POSIX")
+def test_transient_group_permission_errors_clear_after_confirmed_exit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    import ont_qc_mcp.process_control as control
+
+    ready = tmp_path / "ready"
+    process = control.start_process(
+        [
+            sys.executable,
+            "-c",
+            "import pathlib,sys,time; pathlib.Path(sys.argv[1]).touch(); time.sleep(30)",
+            str(ready),
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    original_killpg = os.killpg
+    checks = 0
+
+    def transient_denial(pgid: int, sig: int) -> None:
+        nonlocal checks
+        if sig == signal.SIGTERM:
+            raise PermissionError(errno.EPERM, "injected transient TERM denial")
+        if sig == 0:
+            checks += 1
+            if checks <= 2:
+                raise PermissionError(errno.EPERM, "injected transient group-check denial")
+            # Simulate a privileged helper exiting. The following real group
+            # check must observe ESRCH after the direct child has been reaped.
+            original_killpg(pgid, signal.SIGKILL)
+            process.wait(timeout=3)
+        original_killpg(pgid, sig)
+
+    try:
+        wait_for_path_sync(ready)
+        with monkeypatch.context() as patch:
+            patch.setattr(os, "killpg", transient_denial)
+            control.cleanup_processes([process])
+        assert checks == 3
+        assert process.poll() is not None
+        assert process.stdout is not None and process.stdout.closed
+        assert process.stderr is not None and process.stderr.closed
+        assert "injected transient TERM denial" in caplog.text
+        assert "Process cleanup failed" not in caplog.text
+    finally:
+        try:
+            original_killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        finally:
+            process.wait(timeout=3)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Owned process groups require POSIX")
+@pytest.mark.parametrize("primary_error", [False, True], ids=["cleanup-error", "preserve-primary"])
+def test_persistent_group_permission_errors_remain_failures(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture, primary_error: bool
+) -> None:
+    import ont_qc_mcp.process_control as control
+
+    ready = tmp_path / "ready"
+    process = control.start_process(
+        [sys.executable, "-c", "import pathlib,sys,time; pathlib.Path(sys.argv[1]).touch(); time.sleep(30)", str(ready)]
+    )
+    original_killpg = os.killpg
+    signals: list[int] = []
+
+    def persistent_denial(pgid: int, sig: int) -> None:
+        signals.append(sig)
+        raise PermissionError(errno.EPERM, "injected persistent group denial")
+
+    try:
+        wait_for_path_sync(ready)
+        with monkeypatch.context() as patch:
+            patch.setattr(os, "killpg", persistent_denial)
+            if primary_error:
+                with pytest.raises(ValueError, match="primary command error"):
+                    try:
+                        raise ValueError("primary command error")
+                    finally:
+                        control.cleanup_processes([process])
+            else:
+                with pytest.raises(RuntimeError, match="Process cleanup failed"):
+                    control.cleanup_processes([process])
+        assert signal.SIGTERM in signals and signal.SIGKILL in signals
+        assert process.poll() is None
+        assert "injected persistent group denial" in caplog.text
+    finally:
+        try:
+            original_killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
         finally:
             process.wait(timeout=3)
 

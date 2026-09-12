@@ -33,7 +33,13 @@ TERM and then KILL if needed to its process group, reaps direct children, and
 closes pipes. Streaming stderr readers can stop without waiting for inherited
 pipes to reach EOF. Descendants that create a separate session escape this group.
 Cancellation does not forcibly terminate Python threads, so parsing or other
-code without checkpoints retains its slot until it returns.
+code without checkpoints retains its slot until it returns. Permission failures
+remain cleanup errors unless a later check confirms the process group is gone.
+
+For shared read-QC calculations, cancelling the owner completes waiting requests
+with an explicit retryable error. Cancelling a waiter stops only that wait; the
+owner and other waiters continue. Targeted mosdepth retains its temporary output
+directory only on a successful return, when cleanup ownership passes to its caller.
 
 Docker containers belong to the daemon rather than the CLI process group. Each
 IGV invocation uses a unique container name, and failed or cancelled invocations

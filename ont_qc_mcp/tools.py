@@ -1,3 +1,4 @@
+import asyncio
 import gzip
 import os
 import logging
@@ -5,6 +6,7 @@ import shutil
 import tempfile
 import threading
 from concurrent.futures import Future
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from contextlib import ExitStack
 from pathlib import Path
 from typing import Any, IO, Literal
@@ -147,10 +149,12 @@ def _validate_input_file(path: Path, cfg: ExecutionConfig, allowed_exts: tuple[s
 
 
 def _cached_nanoq_stats(path: Path, tools: ToolPaths, flags: dict[str, Any] | None, cfg: ExecutionConfig) -> NanoqStats:
+    check_cancelled()
     key = _nanoq_cache_key(path, flags, cfg)
     with _NANOQ_CACHE_LOCK:
         cached = _NANOQ_CACHE.get(key)
         if cached:
+            check_cancelled()
             _NANOQ_CACHE_STATS["hits"] += 1
             logger.debug("nanoq cache hit for %s (hits=%d)", path, _NANOQ_CACHE_STATS["hits"])
             return cached
@@ -166,7 +170,17 @@ def _cached_nanoq_stats(path: Path, tools: ToolPaths, flags: dict[str, Any] | No
     if not is_owner:
         # Another thread is computing this key; wait for it and re-use the result/exception.
         logger.debug("nanoq cache inflight wait for %s", path)
-        return future.result()
+        while True:
+            check_cancelled()
+            try:
+                result = future.result(timeout=0.1)
+            except FutureTimeoutError:
+                if not future.done():
+                    continue
+                # Propagate an owner's TimeoutError instead of treating it as a poll timeout.
+                result = future.result()
+            check_cancelled()
+            return result
 
     try:
         logger.debug("nanoq cache miss, computing for %s", path)
@@ -178,6 +192,7 @@ def _cached_nanoq_stats(path: Path, tools: ToolPaths, flags: dict[str, Any] | No
 
         # Simple bounded cache to avoid unbounded growth.
         with _NANOQ_CACHE_LOCK:
+            check_cancelled()
             if len(_NANOQ_CACHE) >= _NANOQ_CACHE_MAX:
                 evicted_key = next(iter(_NANOQ_CACHE))
                 _NANOQ_CACHE.pop(evicted_key)
@@ -187,7 +202,10 @@ def _cached_nanoq_stats(path: Path, tools: ToolPaths, flags: dict[str, Any] | No
 
         future.set_result(stats)
         return stats
-    except Exception as exc:
+    except asyncio.CancelledError:
+        future.set_exception(RuntimeError("Shared FASTQ QC computation was cancelled; retry the request"))
+        raise
+    except BaseException as exc:
         future.set_exception(exc)
         raise
     finally:

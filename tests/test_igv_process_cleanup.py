@@ -13,6 +13,7 @@ from ont_qc_mcp.utils import CommandError, CommandResult
 @pytest.mark.parametrize("cancelled", [False, True])
 def test_failed_docker_run_removes_only_its_container(tmp_path, monkeypatch, cancelled):
     calls = []
+    tools = ToolPaths(docker="fixture-docker")
     failure = asyncio.CancelledError() if cancelled else CommandError(CommandResult(["docker"], 124, "", "timeout"))
 
     def run(cmd, **kwargs):
@@ -24,11 +25,12 @@ def test_failed_docker_run_removes_only_its_container(tmp_path, monkeypatch, can
     monkeypatch.setattr(cli, "run_command", run)
     expected = asyncio.CancelledError if cancelled else RuntimeError
     with pytest.raises(expected):
-        cli.run_igv_snapshot(tmp_path / "batch", tmp_path, ToolPaths(), force_runtime="docker")
+        cli.run_igv_snapshot(tmp_path / "batch", tmp_path, tools, force_runtime="docker")
     assert len(calls) == 2
     name = calls[0][calls[0].index("--name") + 1]
     assert name.startswith("ont-qc-igv-")
-    assert calls[1] == ["docker", "rm", "--force", name]
+    assert calls[0][0] == tools.docker
+    assert calls[1] == [tools.docker, "rm", "--force", name]
 
 
 def test_docker_cleanup_failure_preserves_cancellation_and_reports_uncertainty(tmp_path, monkeypatch, caplog):

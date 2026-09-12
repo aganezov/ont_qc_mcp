@@ -22,6 +22,7 @@ _TERM_GRACE_SECONDS = 0.5
 
 
 def check_cancelled() -> None:
+    """Let cancellation bypass ordinary Exception handlers in synchronous wrappers."""
     event = CANCEL_EVENT.get()
     if event is not None and event.is_set():
         raise asyncio.CancelledError("Blocking operation cancelled")
@@ -96,6 +97,28 @@ def cleanup_processes(processes: Sequence[subprocess.Popen[Any] | None]) -> None
     """
     owned = [process for process in processes if process is not None]
     failures: list[str] = []
+    group_errors: dict[int, list[str]] = {}
+
+    def group_removed(process: subprocess.Popen[Any]) -> None:
+        diagnostics = group_errors.pop(process.pid, [])
+        if diagnostics:
+            logger.warning(
+                "Process group %s is gone after cleanup diagnostics: %s", process.pid, "; ".join(diagnostics)
+            )
+
+    def group_exists(process: subprocess.Popen[Any]) -> bool:
+        try:
+            if os.name == "posix":
+                os.killpg(process.pid, 0)
+            elif process.returncode is not None:
+                group_removed(process)
+                return False
+        except ProcessLookupError:
+            group_removed(process)
+            return False
+        except OSError as error:
+            group_errors.setdefault(process.pid, []).append(f"checking process group {process.pid}: {error}")
+        return True
 
     def send(process: subprocess.Popen[Any], sig: int) -> bool:
         try:
@@ -107,9 +130,10 @@ def cleanup_processes(processes: Sequence[subprocess.Popen[Any] | None]) -> None
                 process.kill()
             return True
         except ProcessLookupError:
+            group_removed(process)
             return False
         except OSError as error:
-            failures.append(f"signal {sig} to process group {process.pid}: {error}")
+            group_errors.setdefault(process.pid, []).append(f"signal {sig} to process group {process.pid}: {error}")
             return True  # A failed TERM must still reach the KILL fallback.
 
     pending = [process for process in owned if send(process, signal.SIGTERM)]
@@ -118,16 +142,8 @@ def cleanup_processes(processes: Sequence[subprocess.Popen[Any] | None]) -> None
         remaining = []
         for process in pending:
             process.poll()  # Reap a finished direct child before checking its group.
-            try:
-                if os.name == "posix":
-                    os.killpg(process.pid, 0)
-                elif process.returncode is not None:
-                    continue
-            except ProcessLookupError:
-                continue
-            except OSError as error:
-                failures.append(f"checking process group {process.pid}: {error}")
-            remaining.append(process)
+            if group_exists(process):
+                remaining.append(process)
         pending = remaining
         if pending:
             time.sleep(0.02)
@@ -144,6 +160,10 @@ def cleanup_processes(processes: Sequence[subprocess.Popen[Any] | None]) -> None
                     pipe.close()
                 except OSError as error:
                     failures.append(f"closing pipe for process {process.pid}: {error}")
+        if process.pid in group_errors:
+            group_exists(process)  # Reaping may confirm removal after an earlier permission error.
+    for errors in group_errors.values():
+        failures.extend(errors)
     if failures:
         message = "Process cleanup failed: " + "; ".join(failures)
         logger.error(message)

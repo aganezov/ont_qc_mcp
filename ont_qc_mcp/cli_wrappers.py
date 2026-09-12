@@ -6,8 +6,9 @@ import subprocess  # nosec B404
 import tempfile
 import time
 from collections import deque
+from contextlib import ExitStack
 from pathlib import Path
-from shutil import copyfileobj, which
+from shutil import copyfileobj, rmtree, which
 from threading import Event, Lock, Thread
 from typing import Any, Literal
 from uuid import uuid4
@@ -772,42 +773,40 @@ def run_mosdepth_targeted(
 
     # Create temp directory for mosdepth output
     output_dir = Path(tempfile.mkdtemp(prefix="mosdepth_targeted_"))
-    prefix = output_dir / "coverage"
+    with ExitStack() as cleanup:
+        cleanup.callback(rmtree, output_dir, ignore_errors=True)
+        prefix = output_dir / "coverage"
 
-    cmd: list[str] = [tools.mosdepth]
-    cmd += flag_args
-    cmd += ["--by", safe_path_arg(bed_path)]
+        cmd: list[str] = [tools.mosdepth]
+        cmd += flag_args
+        cmd += ["--by", safe_path_arg(bed_path)]
 
-    if thresholds:
-        threshold_str = ",".join(str(t) for t in thresholds)
-        cmd += ["--thresholds", threshold_str]
+        if thresholds:
+            threshold_str = ",".join(str(t) for t in thresholds)
+            cmd += ["--thresholds", threshold_str]
 
-    cmd += [str(prefix), safe_path_arg(bam_path)]
+        cmd += [str(prefix), safe_path_arg(bam_path)]
 
-    report_progress(f"mosdepth targeted start: {bam_path} x {bed_path}")
-    logger.debug("Executing mosdepth targeted: %s", format_cmd(cmd))
-    try:
-        run_command(cmd, timeout=timeout)
-    except CommandError as exc:
-        # Clean up on failure
-        import shutil
+        report_progress(f"mosdepth targeted start: {bam_path} x {bed_path}")
+        logger.debug("Executing mosdepth targeted: %s", format_cmd(cmd))
+        try:
+            run_command(cmd, timeout=timeout)
+        except CommandError as exc:
+            raise RuntimeError(
+                f"mosdepth targeted failed: {format_cmd(exc.result.cmd)}\n{_truncate_stderr(exc.result.stderr)}"
+            ) from exc
 
-        shutil.rmtree(output_dir, ignore_errors=True)
-        raise RuntimeError(
-            f"mosdepth targeted failed: {format_cmd(exc.result.cmd)}\n{_truncate_stderr(exc.result.stderr)}"
-        ) from exc
+        regions_bed = prefix.with_suffix(".regions.bed.gz")
+        thresholds_bed = prefix.with_suffix(".thresholds.bed.gz")
 
-    regions_bed = prefix.with_suffix(".regions.bed.gz")
-    thresholds_bed = prefix.with_suffix(".thresholds.bed.gz")
+        if not regions_bed.exists():
+            raise RuntimeError(f"mosdepth did not produce expected output: {regions_bed}")
 
-    if not regions_bed.exists():
-        import shutil
-
-        shutil.rmtree(output_dir, ignore_errors=True)
-        raise RuntimeError(f"mosdepth did not produce expected output: {regions_bed}")
-
-    report_progress(f"mosdepth targeted done: {bam_path} x {bed_path}")
-    return regions_bed, thresholds_bed if thresholds_bed.exists() else None, output_dir
+        report_progress(f"mosdepth targeted done: {bam_path} x {bed_path}")
+        result = regions_bed, thresholds_bed if thresholds_bed.exists() else None, output_dir
+        check_cancelled()
+        cleanup.pop_all()
+        return result
 
 
 __all__ = [
