@@ -554,6 +554,11 @@ def mosdepth_coverage(
     )
 
 
+def _select_apptainer_executable(tools: ToolPaths) -> str | None:
+    """Resolve configured Apptainer first, then its Singularity fallback."""
+    return which(tools.apptainer) or which(tools.singularity)
+
+
 def detect_container_runtime(tools: ToolPaths) -> Literal["docker", "apptainer", None]:
     """
     Detect available container runtime in priority order.
@@ -567,9 +572,8 @@ def detect_container_runtime(tools: ToolPaths) -> Literal["docker", "apptainer",
         except CommandError:
             pass
 
-    for cmd in (tools.apptainer, tools.singularity):
-        if which(cmd):
-            return "apptainer"
+    if _select_apptainer_executable(tools):
+        return "apptainer"
 
     return None
 
@@ -628,8 +632,11 @@ def run_igv_snapshot(
             str(batch_file),
         ]
     elif runtime == "apptainer":
+        executable = _select_apptainer_executable(tools)
+        if executable is None:
+            raise RuntimeError("No configured Apptainer or Singularity executable is available")
         image_ref = cfg.igv_sif_path or f"docker://{image}"
-        cmd = [tools.apptainer, "exec"]
+        cmd = [executable, "exec"]
         for mount in sorted(read_mounts):
             cmd += ["--bind", f"{mount}:{mount}:ro"]
         for mount in sorted(write_mounts):

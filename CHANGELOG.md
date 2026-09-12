@@ -49,6 +49,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Fixed
 - Reject non-Boolean values for Boolean CLI flags instead of silently enabling or disabling them through Python truthiness; null still leaves a flag unset.
 - Cooperatively stop owned subprocess groups on request cancellation, interrupt retry waits and streaming stderr readers, attempt removal of the invocation's Docker container, clean generated IGV and targeted mosdepth artifacts on failure, and release waiters when a shared read-QC owner is cancelled.
+- Launch the configured Singularity executable when Apptainer is unavailable, while retaining the `apptainer` runtime category.
 - Keep MCP concurrency capacity reserved until a cancelled running worker finishes, and prevent cancelled queued work from starting.
 - Honor the caller's execution configuration for every `alignment_summary` component, including alignment and coverage input limits, thread counts, and timeouts.
 - Validate mosdepth summary footers against the executed mode and cross-check aggregate length/base counts before returning QC results.
