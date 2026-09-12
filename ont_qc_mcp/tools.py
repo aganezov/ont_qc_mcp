@@ -5,6 +5,7 @@ import shutil
 import tempfile
 import threading
 from concurrent.futures import Future
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any, IO, Literal
 from pydantic import BaseModel
@@ -23,6 +24,7 @@ from .cli_wrappers import (
 )
 from .config import ExecutionConfig, ToolPaths
 from .threadpool import run_sync
+from .process_control import check_cancelled
 from .parsers import (
     is_bed_coordinate_field,
     is_bed_metadata_line,
@@ -714,96 +716,118 @@ def generate_igv_snapshots(
     tools = tools or ToolPaths()
     cfg = exec_cfg or _EXEC_CFG
 
-    if batch_file:
-        batch_path = Path(batch_file).resolve()
-        _validate_input_file(batch_path, cfg)
-        output_root = Path(output_dir) if output_dir else Path(tempfile.mkdtemp(prefix="igv_snapshots_"))
-        output_root.mkdir(parents=True, exist_ok=True)
-        region_objs: list[IgvRegion] = []
-        track_paths: list[Path] = []
-        bed_path: Path | None = None
-        genome_path: Path | None = None
-    else:
-        if not genome or not tracks or not regions:
-            raise ValueError("genome, tracks, and regions are required when batch_file is not provided")
+    check_cancelled()
+    with ExitStack() as cleanup:
+        if batch_file:
+            batch_path = Path(batch_file).resolve()
+            _validate_input_file(batch_path, cfg)
+            check_cancelled()
+            if output_dir:
+                output_root = Path(output_dir)
+            else:
+                output_root = Path(tempfile.mkdtemp(prefix="igv_snapshots_"))
+                cleanup.callback(shutil.rmtree, output_root, ignore_errors=True)
+            output_root.mkdir(parents=True, exist_ok=True)
+            region_objs: list[IgvRegion] = []
+            track_paths: list[Path] = []
+            bed_path: Path | None = None
+            genome_path: Path | None = None
+        else:
+            if not genome or not tracks or not regions:
+                raise ValueError("genome, tracks, and regions are required when batch_file is not provided")
 
-        output_root = Path(output_dir) if output_dir else Path(tempfile.mkdtemp(prefix="igv_snapshots_"))
-        output_root.mkdir(parents=True, exist_ok=True)
+            check_cancelled()
+            if output_dir:
+                output_root = Path(output_dir)
+            else:
+                output_root = Path(tempfile.mkdtemp(prefix="igv_snapshots_"))
+                cleanup.callback(shutil.rmtree, output_root, ignore_errors=True)
+            output_root.mkdir(parents=True, exist_ok=True)
 
-        batch_dir = Path(tempfile.mkdtemp(prefix="igv_batch_"))
-        batch_path = batch_dir / "igv.batch"
+            check_cancelled()
+            batch_dir = Path(tempfile.mkdtemp(prefix="igv_batch_"))
+            cleanup.callback(shutil.rmtree, batch_dir, ignore_errors=True)
+            batch_path = batch_dir / "igv.batch"
 
-        region_objs = _coerce_regions(regions, snapshot_format=snapshot_format, min_snapshot_width=min_snapshot_width)
-        bed_path = Path(regions) if isinstance(regions, str) else None
+            region_objs = _coerce_regions(
+                regions, snapshot_format=snapshot_format, min_snapshot_width=min_snapshot_width
+            )
+            bed_path = Path(regions) if isinstance(regions, str) else None
 
-        track_paths = []
-        for track in tracks:
-            track_path = Path(track)
-            _validate_input_file(track_path, cfg)
-            track_paths.append(track_path.resolve())
+            track_paths = []
+            for track in tracks:
+                track_path = Path(track)
+                _validate_input_file(track_path, cfg)
+                track_paths.append(track_path.resolve())
 
-        genome_path = Path(genome)
-        genome_arg = genome
-        if genome_path.exists():
-            _validate_input_file(genome_path, cfg)
-            genome_arg = str(genome_path.resolve())
-            genome_path = genome_path.resolve()
+            genome_path = Path(genome)
+            genome_arg = genome
+            if genome_path.exists():
+                _validate_input_file(genome_path, cfg)
+                genome_arg = str(genome_path.resolve())
+                genome_path = genome_path.resolve()
 
-        generate_igv_batch(
-            genome=genome_arg,
-            tracks=[str(t) for t in track_paths],
-            regions=region_objs,
-            output_path=batch_path,
-            compact=compact,
-            color_by=color_by,
-            group_by=group_by,
-            snapshot_dir=output_root,
+            generate_igv_batch(
+                genome=genome_arg,
+                tracks=[str(t) for t in track_paths],
+                regions=region_objs,
+                output_path=batch_path,
+                compact=compact,
+                color_by=color_by,
+                group_by=group_by,
+                snapshot_dir=output_root,
+                snapshot_format=snapshot_format,
+                min_snapshot_width=min_snapshot_width,
+                small_indels_show=small_indels_show,
+                small_indels_threshold=small_indels_threshold,
+                allele_threshold=allele_threshold,
+                extra_commands=extra_commands,
+                extra_preferences=extra_preferences,
+            )
+
+        mount_paths = set()
+        if not batch_file:
+            for track_path in track_paths:
+                mount_paths.add(track_path.parent)
+            if genome_path and genome_path.exists():
+                mount_paths.add(genome_path.parent)
+            if bed_path and bed_path.exists():
+                mount_paths.add(bed_path.parent)
+        mount_paths.add(batch_path.parent)
+
+        if os.getenv("MCP_IGV_MOCK") == "1":
+            mock_runtime = os.getenv("MCP_IGV_MOCK_RUNTIME", "docker")
+            snapshots = _mock_snapshot_files(batch_path, output_root, snapshot_format)
+            result = IgvSnapshotResult(
+                snapshot_files=[str(p) for p in snapshots],
+                batch_file=str(batch_path),
+                output_directory=str(output_root),
+                execution_mode=mock_runtime,  # type: ignore[arg-type]
+                command=["mock_igv_snapshot"],
+            )
+            check_cancelled()
+            cleanup.pop_all()
+            return result
+
+        snapshots, runtime, cmd = run_igv_snapshot(
+            batch_file=batch_path,
+            output_dir=output_root,
+            tools=tools,
+            exec_cfg=cfg,
             snapshot_format=snapshot_format,
-            min_snapshot_width=min_snapshot_width,
-            small_indels_show=small_indels_show,
-            small_indels_threshold=small_indels_threshold,
-            allele_threshold=allele_threshold,
-            extra_commands=extra_commands,
-            extra_preferences=extra_preferences,
+            mount_paths=list(mount_paths),
         )
 
-    mount_paths = set()
-    if not batch_file:
-        for track_path in track_paths:
-            mount_paths.add(track_path.parent)
-        if genome_path and genome_path.exists():
-            mount_paths.add(genome_path.parent)
-        if bed_path and bed_path.exists():
-            mount_paths.add(bed_path.parent)
-    mount_paths.add(batch_path.parent)
-
-    if os.getenv("MCP_IGV_MOCK") == "1":
-        mock_runtime = os.getenv("MCP_IGV_MOCK_RUNTIME", "docker")
-        snapshots = _mock_snapshot_files(batch_path, output_root, snapshot_format)
-        return IgvSnapshotResult(
+        result = IgvSnapshotResult(
             snapshot_files=[str(p) for p in snapshots],
             batch_file=str(batch_path),
             output_directory=str(output_root),
-            execution_mode=mock_runtime,  # type: ignore[arg-type]
-            command=["mock_igv_snapshot"],
+            execution_mode=runtime,
+            command=cmd,
         )
-
-    snapshots, runtime, cmd = run_igv_snapshot(
-        batch_file=batch_path,
-        output_dir=output_root,
-        tools=tools,
-        exec_cfg=cfg,
-        snapshot_format=snapshot_format,
-        mount_paths=list(mount_paths),
-    )
-
-    return IgvSnapshotResult(
-        snapshot_files=[str(p) for p in snapshots],
-        batch_file=str(batch_path),
-        output_directory=str(output_root),
-        execution_mode=runtime,
-        command=cmd,
-    )
+        check_cancelled()
+        cleanup.pop_all()
+        return result
 
 
 def qc_bed(

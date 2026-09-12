@@ -25,8 +25,24 @@ In executor mode, cancellation prevents queued work from starting. If a worker
 has already started, the server-side handler keeps the concurrency slot until
 the worker finishes, then propagates cancellation even if the worker failed.
 The client can receive a cancellation response before that server-side cleanup
-finishes. Repeated cancellation does not release the slot early. Cancellation
-does not terminate the worker thread or its subprocesses; existing subprocess
-timeouts still apply. Direct/synchronous mode and the automatic synchronous
-fallback block the event loop, so server-side cancellation remains deferred
-until synchronous work returns.
+finishes. Repeated cancellation does not release the slot early.
+
+A cancelled worker observes an operation-specific event at subprocess and retry
+checkpoints. On POSIX systems, each command starts a new session; cleanup sends
+TERM and then KILL if needed to its process group, reaps direct children, and
+closes pipes. Streaming stderr readers can stop without waiting for inherited
+pipes to reach EOF. Descendants that create a separate session escape this group.
+Cancellation does not forcibly terminate Python threads, so parsing or other
+code without checkpoints retains its slot until it returns.
+
+Docker containers belong to the daemon rather than the CLI process group. Each
+IGV invocation uses a unique container name, and failed or cancelled invocations
+attempt a bounded `docker rm --force` for that name. Cleanup errors are logged;
+removal cannot be guaranteed if the daemon is unreachable or creation completes
+after the cleanup request. Automatic IGV output and batch directories are removed
+on failure or cancellation. Successful returned paths and caller-supplied files
+and output directories are preserved. Arbitrary IGV batch commands are not rolled
+back. Chopper checks cancellation before publishing its staged output.
+
+Direct/synchronous mode and the automatic synchronous fallback block the event
+loop, so server-side cancellation remains deferred until synchronous work returns.

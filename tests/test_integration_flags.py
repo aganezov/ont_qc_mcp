@@ -1,8 +1,7 @@
 import asyncio
-import io
 import json
 import os
-import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -14,7 +13,7 @@ from ont_qc_mcp.cli_wrappers import (
     cramino_stats,
     nanoq_from_bam_streaming,
 )
-from ont_qc_mcp.config import ToolPaths
+from ont_qc_mcp.config import ExecutionConfig, ToolPaths
 from ont_qc_mcp.utils import CommandError, CommandResult
 
 
@@ -65,56 +64,24 @@ def test_chopper_failure_surfaces_stderr(monkeypatch, tmp_path):
     assert "disk full" in str(exc_info.value)
 
 
-def test_streaming_timeout_identifies_hung_stage(monkeypatch, tmp_path):
-    bam_path = tmp_path / "dummy.bam"
-    bam_path.write_text("bam")
-
-    class FakeProc:
-        def __init__(self, name: str, timeout_on_communicate: bool = False, running: bool = True, stderr: str = ""):
-            self.name = name
-            self._timeout_on_communicate = timeout_on_communicate
-            self._running = running
-            self.stdin = None
-            self.stdout = io.BytesIO(b"")
-            self.stderr = io.BytesIO(stderr.encode("utf-8")) if stderr else io.BytesIO(b"")
-            self.returncode = 0
-
-        def poll(self):
-            return None if self._running else self.returncode
-
-        def communicate(self, timeout=None):
-            if self._timeout_on_communicate:
-                raise subprocess.TimeoutExpired(cmd=[self.name], timeout=timeout or 0)
-            return b"", b""
-
-        def terminate(self):
-            self._running = False
-
-        def kill(self):
-            self._running = False
-
-        def wait(self, timeout=None):
-            self._running = False
-            return self.returncode
-
-    procs = [
-        FakeProc("samtools", timeout_on_communicate=False, running=False, stderr="sam err line 1\nsam err line 2"),
-        FakeProc("nanoq", timeout_on_communicate=True, running=True),
-    ]
-
-    def fake_popen(cmd, stdout=None, stderr=None, stdin=None):
-        assert procs, "No more fake processes available"
-        return procs.pop(0)
-
-    monkeypatch.setattr(subprocess, "Popen", fake_popen)
-
+def test_streaming_timeout_identifies_hung_stage(tmp_path):
+    paths = {}
+    for name, body in (
+        ("samtools", "print('sam err line 1', file=sys.stderr)"),
+        ("nanoq", "signal.pause()"),
+    ):
+        path = tmp_path / name
+        path.write_text(f"#!{sys.executable}\nimport sys, signal\n{body}\n")
+        path.chmod(0o755)
+        paths[name] = str(path)
+    cfg = ExecutionConfig(per_tool_timeouts={"samtools": 1, "nanoq": 1})
     with pytest.raises(RuntimeError) as exc_info:
-        nanoq_from_bam_streaming(bam_path, ToolPaths())
-
+        nanoq_from_bam_streaming(tmp_path / "dummy.bam", ToolPaths(**paths), exec_cfg=cfg)
     msg = str(exc_info.value)
     assert "Timeout" in msg
     assert "hung at nanoq" in msg
     assert "samtools stderr tail" in msg
+    assert "sam err line 1" in msg
 
 
 def test_resources_exposed():

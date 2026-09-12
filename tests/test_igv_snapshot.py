@@ -99,7 +99,7 @@ def _preserve_snapshot(snapshot_path: Path, test_name: str) -> None:
 def test_detect_runtime_docker_available(monkeypatch: pytest.MonkeyPatch) -> None:
     tools = ToolPaths(docker="docker", apptainer="apptainer", singularity="singularity")
     monkeypatch.setattr(cli, "which", lambda cmd: f"/usr/bin/{cmd}" if cmd == "docker" else None)
-    monkeypatch.setattr(cli.subprocess, "run", lambda *args, **kwargs: subprocess.CompletedProcess(args, 0))
+    monkeypatch.setattr(cli, "run_command", lambda *args, **kwargs: None)
 
     assert cli.detect_container_runtime(tools) == "docker"
 
@@ -113,9 +113,9 @@ def test_detect_runtime_docker_daemon_not_running(monkeypatch: pytest.MonkeyPatc
     )
 
     def _raise(*_args, **_kwargs):
-        raise subprocess.CalledProcessError(1, ["docker"])
+        raise cli.CommandError(cli.CommandResult(["docker"], 1, "", "daemon unavailable"))
 
-    monkeypatch.setattr(cli.subprocess, "run", _raise)
+    monkeypatch.setattr(cli, "run_command", _raise)
 
     assert cli.detect_container_runtime(tools) == "apptainer"
 
@@ -123,7 +123,7 @@ def test_detect_runtime_docker_daemon_not_running(monkeypatch: pytest.MonkeyPatc
 def test_detect_runtime_none_available(monkeypatch: pytest.MonkeyPatch) -> None:
     tools = ToolPaths(docker="docker", apptainer="apptainer", singularity="singularity")
     monkeypatch.setattr(cli, "which", lambda cmd: None)
-    monkeypatch.setattr(cli.subprocess, "run", lambda *args, **kwargs: subprocess.CompletedProcess(args, 0))
+    monkeypatch.setattr(cli, "run_command", lambda *args, **kwargs: None)
 
     assert cli.detect_container_runtime(tools) is None
 
