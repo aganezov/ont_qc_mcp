@@ -114,6 +114,7 @@ schemas, resource contents, and numerical result payloads are preserved.
 - `alignment_summary_tool`: aggregates cramino + mosdepth (+ error profile).
 - `read_length_distribution_bam_tool`: streaming samtools fastq -> nanoq length stats.
 - `qscore_distribution_bam_tool`: streaming samtools fastq -> nanoq qscore histogram.
+- `regional_alignment_stats_tool`: indexed interval batches with alignment-record counts, MAPQ and base qualities for aligned bases inside each interval. Requires existing indexes; CRAM also requires an explicit indexed uncompressed FASTA. See [measurement definitions and examples](docs/regional-alignment.md).
 - `targeted_coverage_tool`: compute targeted coverage for genomic regions using mosdepth (supports gene names via GFF3, 0-based, end-exclusive location strings like `chr1:1000-2000`, or BED files; provides mean depth and coverage threshold percentages at 1x/10x/20x). Requires samtools to validate target contigs and coordinate bounds against the alignment header before running mosdepth.
 
 Cramino 1.4.1 histogram bins contain `start`, `end`, `count` (reads), and `bases`

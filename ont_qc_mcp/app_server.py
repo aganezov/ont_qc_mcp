@@ -40,6 +40,8 @@ from .tools import (
     sequencing_summary,
     targeted_coverage,
 )
+from .regional import MAX_REGIONS, regional_alignment_stats
+from .regional_metrics import RegionalInterval
 from .stdio_compat import stdio_server_compat
 from .threadpool import get_executor, run_sync
 
@@ -362,6 +364,27 @@ async def targeted_coverage_tool(
     # Serialize list of reports directly (no wrapper object)
     payload = [serialize_model(report) for report in reports]
     return _json_content(payload, tool_name="mosdepth")
+
+
+async def regional_alignment_stats_tool(
+    path: str,
+    regions: list[dict],
+    reference_path: str | None = None,
+    exclude_flags: int = 1796,
+    min_mapq: int = 0,
+) -> list[types.TextContent]:
+    """Collect alignment counts, MAPQ and in-interval base qualities in one indexed pass."""
+    result = await run_sync(
+        regional_alignment_stats,
+        path,
+        regions,
+        reference_path=reference_path,
+        exclude_flags=exclude_flags,
+        min_mapq=min_mapq,
+        tools=_tool_paths(),
+        exec_cfg=EXEC_CFG,
+    )
+    return _json_content(result, tool_name="samtools")
 
 
 @dataclass(frozen=True)
@@ -880,6 +903,54 @@ _TOOL_SPECS = [
                 "2) location string (e.g., 'chr1:1000-2000'), "
                 "3) bed_path (uses BED file directly)."
             ),
+        },
+    ),
+    ToolSpec(
+        name="regional_alignment_stats_tool",
+        description=(
+            "Indexed BAM/CRAM evidence for one or more 0-based, half-open intervals: retained alignment counts, "
+            "MAPQ, and stored base qualities for M, = or X query bases inside each interval. Means are arithmetic "
+            "Phred averages with explicit missing-value denominators, not observed accuracy. Counts are alignment "
+            "records, not unique reads. Duplicate/overlapping requests remain separate; "
+            "do not sum them as unique totals. "
+            "Default mask 1796 excludes unmapped, secondary, QC-failed and duplicate records; supplementary records "
+            "remain included. Mapped-only eligibility always applies. "
+            "MAPQ255 is unavailable, retained only at min_mapq=0. "
+            "Requires an existing alignment index; CRAM also requires an explicit uncompressed local FASTA and .fai. "
+            "Creates only a small temporary BED. A failed or incomplete scan returns an error, never partial metrics. "
+            "Contigs beginning with # are unsupported by BED selection. An aligned one-base record with SAM QUAL * "
+            "is rejected because SAM cannot distinguish Q9 from missing quality in that case."
+        ),
+        handler=regional_alignment_stats_tool,
+        schema={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "path": {**_PATH_PROP, "description": "Local indexed BAM/CRAM path"},
+                "regions": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": MAX_REGIONS,
+                    "description": "Ordered intervals, preserving duplicate coordinates and optional names",
+                    "items": RegionalInterval.model_json_schema(),
+                },
+                "reference_path": {
+                    "type": "string",
+                    "description": "Uncompressed local .fa/.fasta/.fna with existing .fai; required for CRAM",
+                },
+                "exclude_flags": {"type": "integer", "minimum": 0, "maximum": 65535, "default": 1796},
+                "min_mapq": {"type": "integer", "minimum": 0, "maximum": 254, "default": 0},
+            },
+            "required": ["path", "regions"],
+        },
+        metadata={
+            "runtime_hint": "depends on selected indexed blocks, region count and local depth",
+            "io_hint": (
+                "Reads headers and indexed regional records; one temporary BED, "
+                "no alignment copies or automatic indexes"
+            ),
+            "default_threads": EXEC_CFG.threads_for("samtools"),
+            "timeout_seconds": EXEC_CFG.timeout_for("samtools"),
         },
     ),
 ]
