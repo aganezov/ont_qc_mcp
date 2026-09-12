@@ -312,9 +312,15 @@ def test_igv_snapshot_tool_mcp_protocol(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    expected_runtime = os.getenv("MCP_EXPECTED_IGV_RUNTIME") or cli.detect_container_runtime(ToolPaths())
-    assert expected_runtime in {"docker", "apptainer"}
     mock_flag = _should_use_mock()
+    expected_runtime = os.getenv("MCP_EXPECTED_IGV_RUNTIME")
+    if expected_runtime:
+        assert mock_flag == "0", "CI runtime coverage requires real IGV execution"
+    elif mock_flag == "1":
+        expected_runtime = os.getenv("MCP_IGV_MOCK_RUNTIME", "docker")
+    else:
+        expected_runtime = cli.detect_container_runtime(ToolPaths())
+    assert expected_runtime in {"docker", "apptainer"}
     monkeypatch.setenv("MCP_IGV_MOCK", mock_flag)
     server_params = mcp_server_params.model_copy()
     # Pass relevant IGV env vars to the subprocess server
@@ -322,6 +328,7 @@ def test_igv_snapshot_tool_mcp_protocol(
     base_env.update(
         {
             "MCP_IGV_MOCK": mock_flag,
+            "MCP_IGV_MOCK_RUNTIME": os.getenv("MCP_IGV_MOCK_RUNTIME", "docker"),
             "MCP_IGV_CONTAINER_IMAGE": os.getenv("MCP_IGV_CONTAINER_IMAGE", "aganezov/igv_snapper:0.2"),
         }
     )
@@ -347,6 +354,27 @@ def test_igv_snapshot_tool_mcp_protocol(
                 assert payload["snapshot_files"]
                 assert payload["execution_mode"] == expected_runtime
                 for snap_file in payload["snapshot_files"]:
-                    _preserve_snapshot(Path(snap_file), "mcp_protocol")
+                    snapshot_path = Path(snap_file)
+                    assert snapshot_path.is_file()
+                    assert snapshot_path.stat().st_size > 0
+                    _preserve_snapshot(snapshot_path, "mcp_protocol")
 
     anyio.run(_test)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("mock_runtime", [None, "docker", "apptainer"])
+def test_igv_mcp_mock_without_container(
+    monkeypatch, request, sample_bam_highdepth, sample_reference, tmp_path, mock_runtime
+):
+    monkeypatch.setenv("MCP_IGV_MOCK", "1")
+    monkeypatch.delenv("MCP_EXPECTED_IGV_RUNTIME", raising=False)
+    monkeypatch.delenv("MCP_IGV_MOCK_RUNTIME", raising=False)
+    if mock_runtime is not None:
+        monkeypatch.setenv("MCP_IGV_MOCK_RUNTIME", mock_runtime)
+    for key in ("DOCKER", "APPTAINER", "SINGULARITY"):
+        monkeypatch.setenv(key, "__disabled_runtime__")
+    assert cli.detect_container_runtime(ToolPaths()) is None
+    test_igv_snapshot_tool_mcp_protocol(
+        request.getfixturevalue("mcp_server_params"), sample_bam_highdepth, sample_reference, tmp_path, monkeypatch
+    )
