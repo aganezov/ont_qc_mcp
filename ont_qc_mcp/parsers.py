@@ -1,4 +1,5 @@
 import json
+import math
 import re
 from pathlib import Path
 from typing import Literal, Sequence, cast
@@ -9,6 +10,8 @@ from .schemas import (
     CraminoStats,
     CraminoHistogramBin,
     ErrorProfile,
+    CoverageBin,
+    CycleMismatchCounts,
     HeaderMetadata,
     HistogramBin,
     IndelStats,
@@ -262,21 +265,42 @@ def parse_error_profile(text: str, file_path: str) -> ErrorProfile:
     Falls back gracefully when metrics are absent.
     """
     metrics: dict[str, str] = {}
-    coverage_hist: list[HistogramBin] = []
+    coverage_hist: list[CoverageBin] = []
     gc_cov: list[HistogramBin] = []
-    mismatch_by_cycle: dict[int, float] = {}
+    mismatch_counts_by_cycle: dict[int, CycleMismatchCounts] = {}
     insert_hist: list[HistogramBin] = []
-    pattern = re.compile(r"^SN\t(.+?):\t(.+)")
+    count: float
+    pattern = re.compile(r"^SN\t(.+?):\t([^\t]*)")
+
+    def count_value(raw: str) -> int:
+        if not re.fullmatch(r"[0-9]+", raw):
+            raise ValueError("Expected a nonnegative integer count")
+        return int(raw)
+
     for line in text.splitlines():
         if line.startswith("COV\t"):
-            parts = line.strip().split("\t")
-            if len(parts) >= 3 and parts[1].isdigit():
-                depth = int(parts[1])
-                try:
-                    count = float(parts[2])
-                except ValueError:
+            parts = line.split("\t")
+            if len(parts) != 4:
+                continue
+            bounds = re.fullmatch(r"\[(?:([0-9]+)-([0-9]+)|<([0-9]+)|([0-9]+)<)\]", parts[1])
+            if bounds is None:
+                continue
+            try:
+                boundary, coverage_count = count_value(parts[2]), count_value(parts[3])
+                if bounds[1] is not None:
+                    start, end = int(bounds[1]), int(bounds[2])
+                    expected_boundary = end
+                elif bounds[3] is not None:
+                    start, end = 0, int(bounds[3]) - 1
+                    expected_boundary = end
+                else:
+                    expected_boundary = int(bounds[4])
+                    start, end = expected_boundary + 1, None
+                if boundary != expected_boundary or (end is not None and end < start):
                     continue
-                coverage_hist.append(HistogramBin(start=depth, end=depth, count=int(count)))
+                coverage_hist.append(CoverageBin(start=start, end=end, count=coverage_count))
+            except ValueError:
+                continue
             continue
         if line.startswith("GCD\t"):
             parts = line.strip().split("\t")
@@ -289,12 +313,17 @@ def parse_error_profile(text: str, file_path: str) -> ErrorProfile:
                 gc_cov.append(HistogramBin(start=gc_pct, end=gc_pct, count=count))
             continue
         if line.startswith("MPC\t"):
-            parts = line.strip().split("\t")
-            if len(parts) >= 3:
+            parts = line.split("\t")
+            if len(parts) >= 4:
                 try:
-                    cycle = int(parts[1])
-                    rate = float(parts[2])
-                    mismatch_by_cycle[cycle] = rate
+                    cycle = count_value(parts[1])
+                    if cycle == 0:
+                        continue
+                    n_count = count_value(parts[2])
+                    quality_counts = [count_value(value) for value in parts[3:]]
+                    mismatch_counts_by_cycle[cycle] = CycleMismatchCounts(
+                        cycle=cycle, n_count=n_count, mismatches_by_quality=quality_counts
+                    )
                 except ValueError:
                     pass
             continue
@@ -319,7 +348,8 @@ def parse_error_profile(text: str, file_path: str) -> ErrorProfile:
         if not raw:
             return None
         try:
-            return float(raw)
+            value = float(raw)
+            return value if math.isfinite(value) and value >= 0 else None
         except ValueError:
             return None
 
@@ -332,7 +362,7 @@ def parse_error_profile(text: str, file_path: str) -> ErrorProfile:
     if mismatch_rate is None and error_rate is not None:
         mismatch_rate = error_rate
 
-    mismatch_by_cycle_list = [rate for _, rate in sorted(mismatch_by_cycle.items())] if mismatch_by_cycle else None
+    cycle_counts = [counts for _, counts in sorted(mismatch_counts_by_cycle.items())]
 
     return ErrorProfile(
         file=file_path,
@@ -342,7 +372,8 @@ def parse_error_profile(text: str, file_path: str) -> ErrorProfile:
         error_by_position=None,
         coverage_histogram=coverage_hist or None,
         gc_coverage=gc_cov or None,
-        mismatch_by_cycle=mismatch_by_cycle_list,
+        mismatch_by_cycle=None,
+        mismatch_counts_by_cycle=cycle_counts or None,
         insert_size_histogram=insert_hist or None,
     )
 

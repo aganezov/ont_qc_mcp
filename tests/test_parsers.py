@@ -162,9 +162,9 @@ def test_parse_error_profile():
             "SN\tmismatches per base:\t0.01",
             "SN\tinsertions per base:\t0.002",
             "SN\tdeletions per base:\t0.003",
-            "COV\t10\t1000",
-            "MPC\t1\t0.01",
-            "MPC\t2\t0.02",
+            "COV\t[10-10]\t10\t1000",
+            "MPC\t1\t3\t0\t2",
+            "MPC\t2\t0\t4\t0",
             "IS\t100\t5",
         ]
     )
@@ -173,7 +173,12 @@ def test_parse_error_profile():
     assert parsed.insertion_rate == 0.002
     assert parsed.deletion_rate == 0.003
     assert parsed.coverage_histogram and parsed.coverage_histogram[0].count == 1000
-    assert parsed.mismatch_by_cycle == [0.01, 0.02]
+    assert parsed.mismatch_by_cycle is None
+    assert parsed.mismatch_counts_by_cycle is not None
+    assert [(row.cycle, row.n_count, row.mismatches_by_quality) for row in parsed.mismatch_counts_by_cycle] == [
+        (1, 3, [0, 2]),
+        (2, 0, [4, 0]),
+    ]
     assert parsed.insert_size_histogram and parsed.insert_size_histogram[0].start == 100
 
 

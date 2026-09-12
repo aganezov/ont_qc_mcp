@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ## [Unreleased]
 
 ### Added
+- Add `mismatch_counts_by_cycle` records with explicit cycle numbers, N-base counts, and per-quality mismatch counts when parsing samtools MPC output.
 - Four new MCP tools for enhanced QC workflows:
   - `qc_bed_tool`: Validate and QC BED files (format validation, coordinate checks, issue reporting)
   - `sequencing_summary_tool`: Parse ONT sequencing summary files (yield, N50, Q-scores, yield per hour windows)
@@ -26,6 +27,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Test expansion for plotting, utils, edge cases, concurrency, and protocol smoke checks
 
 ### Changed
+- Deprecate `ErrorProfile.mismatch_by_cycle`; the parser now leaves this unsupported rate field null. Use `mismatch_counts_by_cycle` for counts. Coverage bins retain inclusive integer bounds and use `end=null` for overflow.
 - Use a shared pinned toolchain for CI and local setup, updating chopper to 0.14.0 and cramino to 1.4.1.
 - **Breaking:** use the Cramino 1.4.1 JSON contract directly. Read-length and
   alignment-accuracy Phred histograms now retain both `count` (reads) and `bases`
@@ -44,6 +46,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Parser semantics clarified for missing vs empty histogram blocks
 
 ### Fixed
+- Parse samtools SN numeric values separately from trailing comments and retain COV ranges and base counts, including underflow and overflow bins. Stop interpreting MPC N-base counts as mismatch rates.
 - Write valid gzip for filtered output paths ending in `.gz`, including empty results, while preserving atomic replacement and cleaning raw/compressed staging files on failure. Reject recognized unsupported compressed-output suffixes before filtering.
 - Targeted coverage preserves distinct names for repeated coordinates, taking names from each mosdepth output record and retaining occurrence order for unnamed-output fallbacks.
 - Normalize validated target BED rows before mosdepth, preventing blank lines and surrounding whitespace from dropping targets or causing coverage errors. Preserve the original BED file and remove temporary targets after each run.

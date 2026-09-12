@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, NonNegativeInt
 
 
 class EnvStatus(BaseModel):
@@ -115,20 +115,41 @@ class MosdepthStats(BaseModel):
     low_coverage_regions: list[LowCoverageRegion] = Field(default_factory=list)
 
 
+class CoverageBin(BaseModel):
+    """Inclusive samtools depth interval; end=None means no upper bound."""
+
+    start: int = Field(ge=0)
+    end: int | None = Field(default=None, ge=0)
+    count: int = Field(ge=0, description="Number of reference positions counted by samtools in this depth interval")
+
+
+class CycleMismatchCounts(BaseModel):
+    cycle: int = Field(ge=1, description="One-based read cycle reported by samtools")
+    n_count: int = Field(ge=0, description="N observations at this cycle, separate from quality-stratified mismatches")
+    mismatches_by_quality: list[NonNegativeInt] = Field(description="Mismatch counts; list index 0 is Phred Q0")
+
+
 class ErrorProfile(BaseModel):
     file: str
-    mismatch_rate: float | None = None
+    mismatch_rate: float | None = Field(
+        default=None,
+        description="Specific mismatch rate when present; otherwise samtools' NM-derived error rate, including indels",
+    )
     insertion_rate: float | None = None
     deletion_rate: float | None = None
     error_by_position: list[float] | None = Field(default=None, description="Error rate per position (sampled)")
-    coverage_histogram: list[HistogramBin] | None = Field(
-        default=None, description="Coverage distribution from samtools stats (depth -> bases)"
+    coverage_histogram: list[CoverageBin] | None = Field(
+        default=None,
+        description="Inclusive depth bins from samtools COV; counts do not enumerate uncovered reference positions",
     )
     gc_coverage: list[HistogramBin] | None = Field(
         default=None, description="GC coverage distribution (GC% -> depth/bases)"
     )
     mismatch_by_cycle: list[float] | None = Field(
-        default=None, description="Mismatch rate per cycle from samtools stats"
+        default=None, description="Deprecated; no per-cycle rate is derived. Use mismatch_counts_by_cycle for counts."
+    )
+    mismatch_counts_by_cycle: list[CycleMismatchCounts] | None = Field(
+        default=None, description="Per-cycle N counts and quality-stratified mismatch counts from samtools MPC"
     )
     insert_size_histogram: list[HistogramBin] | None = Field(
         default=None, description="Insert size distribution when available"
@@ -302,6 +323,8 @@ class BedQCReport(BaseModel):
 __all__ = [
     "ChopperReport",
     "CoverageByContig",
+    "CoverageBin",
+    "CycleMismatchCounts",
     "CraminoStats",
     "CraminoHistogramBin",
     "EnvStatus",
