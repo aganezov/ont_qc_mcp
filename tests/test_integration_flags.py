@@ -74,6 +74,7 @@ def test_streaming_timeout_identifies_hung_stage(monkeypatch, tmp_path):
             self.name = name
             self._timeout_on_communicate = timeout_on_communicate
             self._running = running
+            self.stdin = None
             self.stdout = io.BytesIO(b"")
             self.stderr = io.BytesIO(stderr.encode("utf-8")) if stderr else io.BytesIO(b"")
             self.returncode = 0
@@ -112,7 +113,7 @@ def test_streaming_timeout_identifies_hung_stage(monkeypatch, tmp_path):
 
     msg = str(exc_info.value)
     assert "Timeout" in msg
-    assert "hung at nanoq" in msg or "hung at both" in msg or "hung at nanoq" in msg
+    assert "hung at nanoq" in msg
     assert "samtools stderr tail" in msg
 
 

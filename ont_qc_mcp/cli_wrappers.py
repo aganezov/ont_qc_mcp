@@ -280,19 +280,18 @@ def nanoq_from_bam_streaming(
     nano_cmd: list[str] = [tools.nanoq, "--stats", "--json"]
     read_lengths_path: Path | None = None
     read_qualities_path: Path | None = None
-    if cfg.nanoq_aux_stats:
-        with tempfile.NamedTemporaryFile(suffix=".nanoq.lengths.txt", delete=False) as tmp:
-            read_lengths_path = Path(tmp.name)
-        with tempfile.NamedTemporaryFile(suffix=".nanoq.quals.txt", delete=False) as tmp:
-            read_qualities_path = Path(tmp.name)
-        nano_cmd += ["--read-lengths", str(read_lengths_path), "--read-qualities", str(read_qualities_path)]
-    nano_cmd += nanoq_args
-
-    # Run samtools fastq -> nanoq via async to avoid deadlocks on pipes.
-    import subprocess  # nosec B404: required to orchestrate child processes
-
-    logger.debug("Starting samtools|nanoq streaming pipeline: %s | %s", format_cmd(sam_cmd), format_cmd(nano_cmd))
+    sam_proc: subprocess.Popen | None = None
+    nano_proc: subprocess.Popen | None = None
+    stderr_thread: Thread | None = None
     try:
+        if cfg.nanoq_aux_stats:
+            with tempfile.NamedTemporaryFile(suffix=".nanoq.lengths.txt", delete=False) as tmp:
+                read_lengths_path = Path(tmp.name)
+            with tempfile.NamedTemporaryFile(suffix=".nanoq.quals.txt", delete=False) as tmp:
+                read_qualities_path = Path(tmp.name)
+            nano_cmd += ["--read-lengths", str(read_lengths_path), "--read-qualities", str(read_qualities_path)]
+        nano_cmd += nanoq_args
+        logger.debug("Starting samtools|nanoq streaming pipeline: %s | %s", format_cmd(sam_cmd), format_cmd(nano_cmd))
         sam_proc = subprocess.Popen(  # nosec B603: trusted command construction, shell=False
             sam_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
@@ -309,39 +308,27 @@ def nanoq_from_bam_streaming(
         start_time = time.monotonic()
 
         stderr_tail: deque[str] = deque(maxlen=200)
-        stderr_thread: Thread | None = None
+        sam_stderr = sam_proc.stderr
 
         def _drain_sam_stderr():
-            if not sam_proc.stderr:
+            if not sam_stderr:
                 return
-            for line in sam_proc.stderr:
+            try:
+                for line in sam_stderr:
+                    try:
+                        decoded = line.decode("utf-8", errors="replace")
+                    except Exception:
+                        decoded = str(line)
+                    stderr_tail.append(decoded.rstrip("\n"))
+            finally:
                 try:
-                    decoded = line.decode("utf-8", errors="replace")
-                except Exception:
-                    decoded = str(line)
-                stderr_tail.append(decoded.rstrip("\n"))
+                    sam_stderr.close()
+                except Exception as exc:
+                    logger.debug("Ignore stderr reader close error: %s", exc)
 
         if sam_proc.stderr:
             stderr_thread = Thread(target=_drain_sam_stderr, daemon=True)
             stderr_thread.start()
-
-        def _terminate_pipeline(reason: str) -> RuntimeError:
-            for proc in (nano_proc, sam_proc):
-                try:
-                    proc.terminate()
-                except Exception as exc:
-                    logger.debug("Ignore terminate error for %s: %s", proc, exc)
-            for proc in (nano_proc, sam_proc):
-                try:
-                    proc.kill()
-                except Exception as exc:
-                    logger.debug("Ignore kill error for %s: %s", proc, exc)
-            for proc in (nano_proc, sam_proc):
-                try:
-                    proc.wait(timeout=1)
-                except Exception as exc:
-                    logger.debug("Ignore wait error for %s: %s", proc, exc)
-            return RuntimeError(reason)
 
         try:
             nano_out, nano_err = nano_proc.communicate(timeout=overall_timeout)
@@ -356,7 +343,7 @@ def nanoq_from_bam_streaming(
                 else "both"
             )
             stderr_context = "\n".join(list(stderr_tail)[-10:]) if stderr_tail else "(no stderr captured)"
-            raise _terminate_pipeline(
+            raise RuntimeError(
                 f"Timeout while running samtools|nanoq pipeline (>{overall_timeout}s); "
                 f"likely hung at {hung_stage}. "
                 f"samtools cmd: {format_cmd(sam_cmd)}; nanoq cmd: {format_cmd(nano_cmd)}; "
@@ -365,22 +352,16 @@ def nanoq_from_bam_streaming(
 
         remaining = max(0.0, overall_timeout - (time.monotonic() - start_time))
         try:
-            _, sam_err = sam_proc.communicate(timeout=remaining or 0.1)
+            sam_proc.wait(timeout=remaining or 0.1)
         except subprocess.TimeoutExpired:
-            raise _terminate_pipeline(
+            raise RuntimeError(
                 f"Timeout waiting for samtools fastq to exit (>{overall_timeout}s). cmd: {format_cmd(sam_cmd)}"
             )
-        finally:
-            if stderr_thread:
-                stderr_thread.join(timeout=0.2)
+        if stderr_thread:
+            stderr_thread.join(timeout=0.2)
 
         sam_rc = sam_proc.returncode
-        sam_err_text = (
-            sam_err.decode("utf-8", errors="replace") if isinstance(sam_err, (bytes, bytearray)) else (sam_err or "")
-        )
-        if stderr_tail:
-            tail_text = "\n".join(stderr_tail)
-            sam_err_text = tail_text if sam_err_text == "" else sam_err_text or tail_text
+        sam_err_text = "\n".join(stderr_tail)
         nano_out_text = (
             nano_out.decode("utf-8", errors="replace") if isinstance(nano_out, (bytes, bytearray)) else nano_out
         )
@@ -425,10 +406,52 @@ def nanoq_from_bam_streaming(
         report_progress(f"nanoq streaming done: {path}")
         return stats
     finally:
-        if read_lengths_path:
-            read_lengths_path.unlink(missing_ok=True)
-        if read_qualities_path:
-            read_qualities_path.unlink(missing_ok=True)
+        # Own every acquired child from startup through parsing. On success both
+        # have exited, so only reap/close; on failure stop any remaining children.
+        for proc in (nano_proc, sam_proc):
+            if proc is not None:
+                try:
+                    if proc.poll() is None:
+                        proc.terminate()
+                except Exception as exc:
+                    logger.debug("Ignore terminate error for %s: %s", proc, exc)
+        for proc in (nano_proc, sam_proc):
+            if proc is not None:
+                try:
+                    proc.wait(timeout=1)
+                except Exception as exc:
+                    logger.debug("Wait failed for %s; trying kill: %s", proc, exc)
+                    try:
+                        proc.kill()
+                    except Exception as kill_exc:
+                        logger.debug("Ignore kill error for %s: %s", proc, kill_exc)
+                    try:
+                        proc.wait(timeout=1)
+                    except Exception as wait_exc:
+                        logger.debug("Ignore wait error for %s: %s", proc, wait_exc)
+        if stderr_thread:
+            try:
+                stderr_thread.join(timeout=1)
+            except Exception as exc:
+                logger.debug("Ignore stderr thread join error: %s", exc)
+        for proc in (nano_proc, sam_proc):
+            if proc is not None:
+                for stream in (proc.stdin, proc.stdout, proc.stderr):
+                    if stream is not None:
+                        # A descendant may still hold stderr open after our direct
+                        # child exits. Its reader owns close; do not block on its lock.
+                        if proc is sam_proc and stream is proc.stderr and stderr_thread and stderr_thread.is_alive():
+                            continue
+                        try:
+                            stream.close()
+                        except Exception as exc:
+                            logger.debug("Ignore pipe close error: %s", exc)
+        for aux_path in (read_lengths_path, read_qualities_path):
+            if aux_path is not None:
+                try:
+                    aux_path.unlink(missing_ok=True)
+                except OSError as exc:
+                    logger.debug("Ignore auxiliary file cleanup error for %s: %s", aux_path, exc)
 
 
 def mosdepth_coverage(
