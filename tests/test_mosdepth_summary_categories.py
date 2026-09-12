@@ -95,5 +95,6 @@ def test_legacy_four_column_summary_without_footer() -> None:
 )
 def test_malformed_region_pairs_raise(rows: str) -> None:
     footer = "total\t100\t1000\t10\ntotal_region\t100\t1000\t10\n"
-    with pytest.raises(ValueError, match="mosdepth.*region"):
+    with pytest.raises(ValueError, match="mosdepth.*region") as error:
         parse_mosdepth_summary(HEADER + rows + footer, "reads.bam")
+    assert "reads.bam" in str(error.value)

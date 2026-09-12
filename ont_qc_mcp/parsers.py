@@ -228,11 +228,11 @@ def parse_mosdepth_summary(text: str, file_path: str, threshold: float | int | N
     if region_mode:
         rows = rows[:-2]
         if len(rows) % 2:
-            raise ValueError("Malformed mosdepth summary: missing region row")
+            raise ValueError(f"Malformed mosdepth summary for {file_path}: missing region row")
         for index in range(0, len(rows), 2):
             contig_row, region_row = rows[index], rows[index + 1]
             if len(contig_row) < 4 or len(region_row) < 4 or region_row[0] != f"{contig_row[0]}_region":
-                raise ValueError("Malformed mosdepth summary: expected contig/region row pair")
+                raise ValueError(f"Malformed mosdepth summary for {file_path}: expected contig/region row pair")
         rows = rows[::2]
     elif rows and rows[-1][0] == "total":
         rows = rows[:-1]
