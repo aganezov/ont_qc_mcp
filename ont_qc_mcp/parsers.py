@@ -266,7 +266,6 @@ def parse_error_profile(text: str, file_path: str) -> ErrorProfile:
     """
     metrics: dict[str, str] = {}
     coverage_hist: list[CoverageBin] = []
-    gc_cov: list[HistogramBin] = []
     mismatch_counts_by_cycle: dict[int, CycleMismatchCounts] = {}
     insert_hist: list[HistogramBin] = []
     count: float
@@ -301,16 +300,6 @@ def parse_error_profile(text: str, file_path: str) -> ErrorProfile:
                 coverage_hist.append(CoverageBin(start=start, end=end, count=coverage_count))
             except ValueError:
                 continue
-            continue
-        if line.startswith("GCD\t"):
-            parts = line.strip().split("\t")
-            if len(parts) >= 4 and parts[3].isdigit():
-                try:
-                    gc_pct = float(parts[1])
-                    count = int(parts[3])
-                except ValueError:
-                    continue
-                gc_cov.append(HistogramBin(start=gc_pct, end=gc_pct, count=count))
             continue
         if line.startswith("MPC\t"):
             parts = line.split("\t")
@@ -371,7 +360,7 @@ def parse_error_profile(text: str, file_path: str) -> ErrorProfile:
         deletion_rate=deletion_rate,
         error_by_position=None,
         coverage_histogram=coverage_hist or None,
-        gc_coverage=gc_cov or None,
+        gc_coverage=None,
         mismatch_by_cycle=None,
         mismatch_counts_by_cycle=cycle_counts or None,
         insert_size_histogram=insert_hist or None,

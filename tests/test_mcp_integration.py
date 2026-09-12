@@ -424,6 +424,8 @@ def test_alignment_error_profile_tool_real_bam(mcp_server_params, sample_bam):
                 assert not result.isError
                 payload = json.loads(_text_content(result.content[0]).text)
                 assert "mismatch_rate" in payload
+                assert "gc_coverage" in payload
+                assert payload["gc_coverage"] is None
 
     anyio.run(_test)
 
