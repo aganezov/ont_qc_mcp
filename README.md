@@ -105,7 +105,7 @@ uv run ont-qc-mcp     # launches the MCP stdio server
 
 ### Alignment QC (BAM/CRAM)
 - `qc_alignment_tool`: cramino alignment QC (identity, read-length and alignment-accuracy Phred histograms).
-- `coverage_stats_tool`: mosdepth coverage summary.
+- `coverage_stats_tool`: mosdepth coverage summary over reported contigs; see [field definitions and examples](docs/mosdepth-summary.md).
 - `alignment_error_profile_tool`: NM-derived error rate and coverage distribution from `samtools stats`; see [field definitions and examples](docs/samtools-statistics.md).
 - `alignment_summary_tool`: aggregates cramino + mosdepth (+ error profile).
 - `read_length_distribution_bam_tool`: streaming samtools fastq -> nanoq length stats.

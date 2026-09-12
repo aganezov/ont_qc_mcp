@@ -218,10 +218,26 @@ def parse_mosdepth_summary(text: str, file_path: str, threshold: float | int | N
     """
     coverage_by_contig: list[CoverageByContig] = []
     coverage_distribution: list[HistogramBin] = []
-    for line in text.splitlines():
-        if not line.strip() or line.startswith("chrom"):
-            continue
-        parts = line.strip().split("\t")
+    rows = [line.strip().split("\t") for line in text.splitlines() if line.strip()]
+    rows = [parts for parts in rows if parts[:4] != ["chrom", "length", "bases", "mean"]]
+
+    # mosdepth ends whole-contig summaries with total, or summaries using --by
+    # with total followed by total_region. Names alone cannot identify earlier
+    # categories: real contigs may be named total, total_region, or *_region.
+    region_mode = len(rows) >= 2 and rows[-2][0] == "total" and rows[-1][0] == "total_region"
+    if region_mode:
+        rows = rows[:-2]
+        if len(rows) % 2:
+            raise ValueError(f"Malformed mosdepth summary for {file_path}: missing region row")
+        for index in range(0, len(rows), 2):
+            contig_row, region_row = rows[index], rows[index + 1]
+            if len(contig_row) < 4 or len(region_row) < 4 or region_row[0] != f"{contig_row[0]}_region":
+                raise ValueError(f"Malformed mosdepth summary for {file_path}: expected contig/region row pair")
+        rows = rows[::2]
+    elif rows and rows[-1][0] == "total":
+        rows = rows[:-1]
+
+    for parts in rows:
         if len(parts) < 4:
             continue
         contig, length, _, mean = parts[0], int(parts[1]), float(parts[2]), float(parts[3])

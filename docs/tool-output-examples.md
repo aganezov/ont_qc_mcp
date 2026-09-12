@@ -4,7 +4,9 @@ These JSON files are legacy snapshots from 2025-12-11, not the current API contr
 In particular, Cramino histogram and Chopper command fields predate the pinned CLI
 wrapper corrections. Samtools SN/COV/MPC fields also predate parser corrections;
 see [current field definitions](samtools-statistics.md). See README.md for other
-current fields and regenerate before reuse.
+current fields and regenerate before reuse. Mosdepth snapshots also predate the
+summary-category correction: aggregate `total` rows are no longer contigs or
+low-coverage locations. See [current coverage definitions](mosdepth-summary.md).
 
 - Generated on 2025-12-11 with `scripts/with-env.sh python` (see regeneration snippet below) against the real fixtures in `tests/fixtures/real/` plus a tiny synthetic high-depth BAM.
 - Full raw outputs live in `docs/tool_output_examples.json`; a trimmed digest lives in `docs/tool_output_examples_summary.json`.
