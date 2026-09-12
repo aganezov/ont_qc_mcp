@@ -88,10 +88,7 @@ def test_metadata_keyword_contigs_through_mcp(mcp_server_params, tmp_path):
     subprocess.run(["samtools", "view", "-b", "-o", str(bam), str(sam)], check=True, capture_output=True)
     subprocess.run(["samtools", "index", str(bam)], check=True, capture_output=True)
     bed = tmp_path / "targets.bed"
-    # Blank-line handling by mosdepth is tracked separately in #60.
-    bed.write_text(
-        METADATA.replace("\n\n", "\n") + "".join(f"{chrom}\t0\t10\tTarget_{idx}\n" for idx, chrom in enumerate(CONTIGS))
-    )
+    bed.write_text(METADATA + "".join(f"{chrom}\t0\t10\tTarget_{idx}\n" for idx, chrom in enumerate(CONTIGS)))
 
     async def check_reports():
         async with stdio_client(mcp_server_params) as (read, write):

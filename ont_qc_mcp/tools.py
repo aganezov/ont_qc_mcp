@@ -6,7 +6,7 @@ import tempfile
 import threading
 from concurrent.futures import Future
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, IO, Literal
 from pydantic import BaseModel
 
 from .cli_wrappers import (
@@ -904,8 +904,10 @@ def qc_variants(
     return result
 
 
-def _validate_target_intervals(bed_file: Path, reference_lengths: dict[str, int | None]) -> None:
-    """Check BED coordinates against alignment references without rewriting caller data."""
+def _validate_target_intervals(
+    bed_file: Path, reference_lengths: dict[str, int | None], output: IO[str] | None = None
+) -> None:
+    """Validate targets and optionally write accepted rows without changing caller data."""
     interval_count = 0
     with bed_file.open() as stream:
         for line_number, raw_line in enumerate(stream, start=1):
@@ -931,6 +933,8 @@ def _validate_target_intervals(bed_file: Path, reference_lengths: dict[str, int 
                 raise ValueError(f"{context}: contig '{chrom}' has no usable reference length in the alignment header")
             if end > length:
                 raise ValueError(f"{context}: end {end} exceeds reference length {length} for contig '{chrom}'")
+            if output is not None:
+                output.write(line + "\n")
             interval_count += 1
     if interval_count == 0:
         raise ValueError("No target intervals found in BED file")
@@ -951,7 +955,7 @@ def targeted_coverage(
     Supports three input modes:
     1. gene_name + annotation_path: Find gene coordinates from GFF3, compute coverage
     2. location: Parse location string (e.g., "chr1:1000-2000"), compute coverage
-    3. bed_path: Use BED file directly, compute coverage
+    3. bed_path: Validate and normalize BED targets, compute coverage
 
     Uses mosdepth with --by for efficient coverage calculation and --thresholds
     to compute percentage of bases at 1x, 10x, and 20x coverage.
@@ -1033,26 +1037,31 @@ def targeted_coverage(
     if bed_file is None:
         raise RuntimeError("Failed to determine BED file")
 
+    normalized_bed: Path | None = None
     mosdepth_output_dir: Path | None = None
     coverage_thresholds = [1, 10, 20]
 
     try:
         header_text = _read_alignment_header_text(bam_file, tools, None, cfg)
         metadata = parse_alignment_header(header_text, file_path=str(bam_file), fmt=bam_file.suffix.lstrip("."))
-        _validate_target_intervals(bed_file, {reference.name: reference.length for reference in metadata.references})
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".bed", delete=False) as tmp:
+            normalized_bed = Path(tmp.name)
+            _validate_target_intervals(
+                bed_file, {reference.name: reference.length for reference in metadata.references}, output=tmp.file
+            )
 
         # Run mosdepth with --by for targeted coverage
-        logger.debug("targeted_coverage: running mosdepth for %s x %s", bam_file, bed_file)
+        logger.debug("targeted_coverage: running mosdepth for %s x %s", bam_file, normalized_bed)
         regions_bed, thresholds_bed, mosdepth_output_dir = run_mosdepth_targeted(
             bam_path=bam_file,
-            bed_path=bed_file,
+            bed_path=normalized_bed,
             tools=tools,
             thresholds=coverage_thresholds,
             exec_cfg=cfg,
         )
 
         # Parse mosdepth regions output (chrom, start, end, mean_depth)
-        regions_data = parse_mosdepth_regions_bed(regions_bed, bed_file)
+        regions_data = parse_mosdepth_regions_bed(regions_bed, normalized_bed)
 
         # Parse thresholds output if available
         threshold_data: dict[tuple[str, int, int], dict[str, float]] = {}
@@ -1094,6 +1103,8 @@ def targeted_coverage(
         report_progress(f"targeted_coverage done: {bam_file}")
         return reports
     finally:
+        if normalized_bed:
+            normalized_bed.unlink(missing_ok=True)
         if created_temp_bed and bed_file and bed_file.exists():
             bed_file.unlink(missing_ok=True)
         if mosdepth_output_dir and mosdepth_output_dir.exists():
