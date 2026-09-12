@@ -820,7 +820,7 @@ def parse_sequencing_summary(file_path: Path) -> SequencingSummaryStats:
         times = [t for _, t in timed]
         min_time = min(times)
         max_time = max(times)
-        if max_time > min_time:
+        if max_time > min_time or (max_time == min_time and math.isfinite(min_time)):
             # Create 1-hour windows
             window_size = 1.0  # hours
             num_windows = int((max_time - min_time) / window_size) + 1
