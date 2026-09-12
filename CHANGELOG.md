@@ -27,6 +27,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Test expansion for plotting, utils, edge cases, concurrency, and protocol smoke checks
 
 ### Changed
+- Retire samtools GC-depth output for ONT QC. The legacy `ErrorProfile.gc_coverage` field remains present but is always null when parsed; it no longer exposes mislabeled histogram counts.
 - Deprecate `ErrorProfile.mismatch_by_cycle`; the parser now leaves this unsupported rate field null. Use `mismatch_counts_by_cycle` for counts. Coverage bins retain inclusive integer bounds and use `end=null` for overflow.
 - Use a shared pinned toolchain for CI and local setup, updating chopper to 0.14.0 and cramino to 1.4.1.
 - **Breaking:** use the Cramino 1.4.1 JSON contract directly. Read-length and

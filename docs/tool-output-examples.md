@@ -227,7 +227,7 @@ Values come from `docs/tool_output_examples_summary.json` unless noted; see the 
   - Output excerpt: `mean_depth=0.0`, `coverage_distribution=[]`, first contigs show `mean_depth=0.0` (the tiny BAM over chromosome-length references rounds to ~0 depth).
 
 - **alignment_error_profile_tool** — call with the BAM path.
-  - Legacy output excerpt: mismatch/indel rates `null`; `gc_coverage` has three bins (0.0, 22.1, 48.0); coverage histogram empty. The old parser discarded commented SN values and valid COV rows, so missing results do not establish limited input signal. GC-depth interpretation remains tracked in [#76](https://github.com/aganezov/ont_qc_mcp/issues/76). See the [current samtools example](samtools-statistics.md).
+  - Legacy output excerpt: mismatch/indel rates `null`; `gc_coverage` has three bins (0.0, 22.1, 48.0); coverage histogram empty. The old parser discarded commented SN values and valid COV rows, so missing results do not establish limited input signal. GC-depth output is now retired under [#76](https://github.com/aganezov/ont_qc_mcp/issues/76); the historical `gc_coverage` values are not valid histogram counts. See the [current samtools example](samtools-statistics.md).
 
 - **alignment_summary_tool** — call with the BAM path.
   - Output excerpt: combines the above; `alignment_mapped=null`, `coverage_mean_depth=0.0`, errors `null`.

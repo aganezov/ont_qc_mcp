@@ -143,7 +143,7 @@ class ErrorProfile(BaseModel):
         description="Inclusive depth bins from samtools COV; counts do not enumerate uncovered reference positions",
     )
     gc_coverage: list[HistogramBin] | None = Field(
-        default=None, description="GC coverage distribution (GC% -> depth/bases)"
+        default=None, description="Deprecated; always null. samtools GCD is not exposed as a GC-depth metric."
     )
     mismatch_by_cycle: list[float] | None = Field(
         default=None, description="Deprecated; no per-cycle rate is derived. Use mismatch_counts_by_cycle for counts."
