@@ -675,7 +675,7 @@ _TOOL_SPECS = [
     ),
     ToolSpec(
         name="alignment_error_profile_tool",
-        description="Parse error profile from samtools stats (BAM/CRAM)",
+        description="Parse NM-derived error rate and coverage distribution from samtools stats (BAM/CRAM)",
         handler=alignment_error_profile_tool,
         schema={
             "type": "object",
@@ -691,7 +691,7 @@ _TOOL_SPECS = [
             "default_threads": EXEC_CFG.threads_for("samtools"),
             "timeout_seconds": EXEC_CFG.timeout_for("samtools"),
             "when_to_use": (
-                "Base error profile and indel/substitution rates from samtools stats; opt-in to avoid extra cost."
+                "NM-derived error rate and coverage distribution from samtools stats; opt-in to avoid extra cost."
             ),
         },
     ),

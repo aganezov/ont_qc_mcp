@@ -2,7 +2,9 @@
 
 These JSON files are legacy snapshots from 2025-12-11, not the current API contract.
 In particular, Cramino histogram and Chopper command fields predate the pinned CLI
-wrapper corrections. See README.md for current fields and regenerate before reuse.
+wrapper corrections. Samtools SN/COV/MPC fields also predate parser corrections;
+see [current field definitions](samtools-statistics.md). See README.md for other
+current fields and regenerate before reuse.
 
 - Generated on 2025-12-11 with `scripts/with-env.sh python` (see regeneration snippet below) against the real fixtures in `tests/fixtures/real/` plus a tiny synthetic high-depth BAM.
 - Full raw outputs live in `docs/tool_output_examples.json`; a trimmed digest lives in `docs/tool_output_examples_summary.json`.
@@ -225,7 +227,7 @@ Values come from `docs/tool_output_examples_summary.json` unless noted; see the 
   - Output excerpt: `mean_depth=0.0`, `coverage_distribution=[]`, first contigs show `mean_depth=0.0` (the tiny BAM over chromosome-length references rounds to ~0 depth).
 
 - **alignment_error_profile_tool** — call with the BAM path.
-  - Output excerpt: mismatch/indel rates `null`; `gc_coverage` has three bins (0.0, 22.1, 48.0); coverage histogram empty. This reflects the limited `samtools stats` signal on the tiny BAM.
+  - Legacy output excerpt: mismatch/indel rates `null`; `gc_coverage` has three bins (0.0, 22.1, 48.0); coverage histogram empty. The old parser discarded commented SN values and valid COV rows, so missing results do not establish limited input signal. GC-depth interpretation remains tracked in [#76](https://github.com/aganezov/ont_qc_mcp/issues/76). See the [current samtools example](samtools-statistics.md).
 
 - **alignment_summary_tool** — call with the BAM path.
   - Output excerpt: combines the above; `alignment_mapped=null`, `coverage_mean_depth=0.0`, errors `null`.

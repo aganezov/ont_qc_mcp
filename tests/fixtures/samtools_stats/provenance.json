@@ -1,0 +1,53 @@
+{
+  "version": "samtools 1.24",
+  "upstream_commit": "dc71c7274044d1050ccb64901731373ec7e915b6",
+  "retained_sections": [
+    "SN",
+    "COV",
+    "MPC"
+  ],
+  "commands": {
+    "default": [
+      "samtools",
+      "stats",
+      "reads.sam"
+    ],
+    "reference": [
+      "samtools",
+      "stats",
+      "-r",
+      "reference.fa",
+      "reads.sam"
+    ],
+    "binned": [
+      "samtools",
+      "stats",
+      "-c",
+      "5,15,5",
+      "reads.sam"
+    ],
+    "multiwidth": [
+      "samtools",
+      "stats",
+      "-c",
+      "15,25,5",
+      "reads.sam"
+    ],
+    "underflow": [
+      "samtools",
+      "stats",
+      "-c",
+      "25,35,5",
+      "reads.sam"
+    ]
+  },
+  "sha256": {
+    "reads.sam": "cf8494e69b90ae559a16771c000f907112e791e19091b2b2849984db68fab819",
+    "reference.fa": "40d53f8f5ba8ef031a24edaa98e02d57c347e483e57631e458389bcacacf973f",
+    "default.stats": "45f91d9613e6c369e4b18f6237212a364dde6547a0929a25b0f8d88b8b501e0d",
+    "reference.stats": "220745f84cf2307a8266f641b1fc299bc69ec3ac33acf0f67c311afec81a407b",
+    "binned.stats": "5bc1ba59905113fa3dd81c101617a221df97c80e9777443e7c0e61032e70e636",
+    "multiwidth.stats": "375e252ce1253216d1e68afaad6d2bc97013a4955b79e703a2aeade95a4e66f3",
+    "underflow.stats": "d0322c0571524c83886ea436c93415cdbc7020ec4701772e45abb8382e4fa96a"
+  }
+}
