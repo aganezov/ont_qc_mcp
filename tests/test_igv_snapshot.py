@@ -312,6 +312,8 @@ def test_igv_snapshot_tool_mcp_protocol(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    expected_runtime = os.getenv("MCP_EXPECTED_IGV_RUNTIME") or cli.detect_container_runtime(ToolPaths())
+    assert expected_runtime in {"docker", "apptainer"}
     mock_flag = _should_use_mock()
     monkeypatch.setenv("MCP_IGV_MOCK", mock_flag)
     server_params = mcp_server_params.model_copy()
@@ -343,7 +345,7 @@ def test_igv_snapshot_tool_mcp_protocol(
                 assert not result.isError
                 payload = json.loads(_text_content(result.content[0]).text)
                 assert payload["snapshot_files"]
-                assert payload["execution_mode"] in {"docker", "apptainer"}
+                assert payload["execution_mode"] == expected_runtime
                 for snap_file in payload["snapshot_files"]:
                     _preserve_snapshot(Path(snap_file), "mcp_protocol")
 
