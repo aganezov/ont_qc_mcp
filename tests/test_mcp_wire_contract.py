@@ -280,13 +280,21 @@ def _tool_payload(reply: dict, *, error: bool = False):
 def test_wire_catalog_results_and_resources(wire_server, tmp_path):
     client, events = wire_server
     tools = client.call("tools/list")["result"]["tools"]
-    assert {tool["name"]: tool["inputSchema"] for tool in tools} == _CONTRACT["tools"]
+    schemas = {tool["name"]: tool["inputSchema"] for tool in tools}
+    # The v1 fixture remains frozen. The new regional primitive is an explicit
+    # additive surface with its own discovery and numerical contract tests.
+    assert set(schemas) == set(_CONTRACT["tools"]) | {"regional_alignment_stats_tool"}
+    assert {name: schemas[name] for name in _CONTRACT["tools"]} == _CONTRACT["tools"]
     assert all("input_schema" not in tool for tool in tools)
     for method, field, expected in [
         ("resources/list", "resources", _CONTRACT["resources"]),
         ("resources/templates/list", "resourceTemplates", _CONTRACT["templates"]),
     ]:
         actual = client.call(method)["result"][field]
+        if field == "resources":
+            added = [item for item in actual if item["uri"] == "tool://guidance/regional_alignment_stats_tool"]
+            assert len(added) == 1
+            actual = [item for item in actual if item not in added]
         assert [{key: item[key] for key in expected[0]} for item in actual] == expected
     resource = client.call("resources/read", {"uri": "tool://flags/nanoq"})["result"]["contents"][0]
     assert resource["uri"] == "tool://flags/nanoq" and resource["mimeType"] == "application/json"

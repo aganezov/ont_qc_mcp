@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Migrate the local stdio adapter to MCP SDK 2.2, preserving existing tool schemas, input validation, resource contents, and numerical result payloads.
 
 ### Added
+- Add `regional_alignment_stats_tool` for indexed BAM/CRAM interval batches, with explicit alignment-record counts, MAPQ missingness, and base-quality means for aligned bases inside each interval. Preserve repeated intervals, require existing indexes, and stream without alignment copies.
 - Add `mismatch_counts_by_cycle` records with explicit cycle numbers, N-base counts, and per-quality mismatch counts when parsing samtools MPC output.
 - Four new MCP tools for enhanced QC workflows:
   - `qc_bed_tool`: Validate and QC BED files (format validation, coordinate checks, issue reporting)
