@@ -3,6 +3,7 @@ import logging
 import os
 import select
 import subprocess  # nosec B404
+import sys
 import tempfile
 import time
 from collections import deque
@@ -22,6 +23,7 @@ from .process_control import (
     communicate_process,
     start_process,
     wait_process,
+    wait_or_cancel,
 )
 from .parsers import parse_cramino_json, parse_mosdepth_summary, parse_nanoq_json
 from .schemas import (
@@ -30,7 +32,7 @@ from .schemas import (
     MosdepthStats,
     NanoqStats,
 )
-from .nanoq_aux import length_histogram_and_percentiles, qscore_histogram
+from .nanoq_aux_pipes import NanoqAuxPipes
 from .utils import (
     CommandError,
     CommandResult,
@@ -138,51 +140,31 @@ def nanoq_stats(
     cfg = exec_cfg or ExecutionConfig()
     merged_flags, timeout = _prepare_execution("nanoq", flags, cfg)
     flag_args = build_cli_args("nanoq", merged_flags)
-    read_lengths_path: Path | None = None
-    read_qualities_path: Path | None = None
-
-    cmd: list[str] = [tools.nanoq, "--stats", "--json", "--input", safe_path_arg(path)]
-    if cfg.nanoq_aux_stats:
-        with tempfile.NamedTemporaryFile(suffix=".nanoq.lengths.txt", delete=False) as tmp:
-            read_lengths_path = Path(tmp.name)
-        with tempfile.NamedTemporaryFile(suffix=".nanoq.quals.txt", delete=False) as tmp:
-            read_qualities_path = Path(tmp.name)
-        cmd += ["--read-lengths", str(read_lengths_path), "--read-qualities", str(read_qualities_path)]
-    cmd += [*flag_args]
-
     report_progress(f"nanoq stats start: {path}")
-    logger.debug("Executing nanoq stats: %s", format_cmd(cmd))
-    try:
-        result = run_command_with_retry(cmd, timeout=timeout, max_attempts=2, backoff_seconds=0.5)
-        report_progress(f"nanoq stats done: {path}")
-        stats = parse_nanoq_json(result.stdout)
-
-        if cfg.nanoq_aux_stats:
-            if (stats.length_histogram is None or stats.length_percentiles is None) and read_lengths_path:
-                if read_lengths_path.exists() and read_lengths_path.stat().st_size > 0:
-                    hist, percentiles = length_histogram_and_percentiles(
-                        read_lengths_path,
-                        bin_width=cfg.nanoq_length_bin_width,
-                        percentiles_exact_max_reads=cfg.nanoq_percentiles_exact_max_reads,
-                    )
-                    if stats.length_histogram is None:
-                        stats.length_histogram = hist
-                    if stats.length_percentiles is None and percentiles is not None:
-                        stats.length_percentiles = percentiles
-
-            if stats.qscore_histogram is None and read_qualities_path:
-                if read_qualities_path.exists() and read_qualities_path.stat().st_size > 0:
-                    stats.qscore_histogram = qscore_histogram(
-                        read_qualities_path,
-                        bin_width=cfg.nanoq_qscore_bin_width,
-                    )
-
-        return stats
-    finally:
-        if read_lengths_path:
-            read_lengths_path.unlink(missing_ok=True)
-        if read_qualities_path:
-            read_qualities_path.unlink(missing_ok=True)
+    for attempt in range(2):
+        check_cancelled()
+        try:
+            # Each attempt owns fresh FIFOs and accumulators, including retries
+            # after a command that wrote only part of either auxiliary stream.
+            with ExitStack() as cleanup:
+                aux = cleanup.enter_context(NanoqAuxPipes(cfg)) if cfg.nanoq_aux_stats else None
+                cmd = [tools.nanoq, "--stats", "--json", "--input", safe_path_arg(path)]
+                if aux is not None:
+                    cmd += aux.args
+                cmd += flag_args
+                logger.debug("Executing nanoq stats: %s", format_cmd(cmd))
+                result = run_command_with_retry(cmd, timeout=timeout, max_attempts=1)
+                stats = parse_nanoq_json(result.stdout)
+                if aux is not None:
+                    aux.augment(stats)
+                report_progress(f"nanoq stats done: {path}")
+                return stats
+        except CommandError:
+            if attempt == 1:
+                raise
+            logger.warning("Retrying nanoq command (attempt 2/2): %s", path)
+            wait_or_cancel(0.5)
+    raise RuntimeError("Nanoq retry exhausted")  # Unreachable: the second failure is raised above.
 
 
 def chopper_filter(
@@ -339,8 +321,8 @@ def nanoq_from_bam_streaming(
     sam_cmd += [safe_path_arg(path)]
 
     nano_cmd: list[str] = [tools.nanoq, "--stats", "--json"]
-    read_lengths_path: Path | None = None
-    read_qualities_path: Path | None = None
+    aux_cleanup = ExitStack()
+    aux: NanoqAuxPipes | None = None
     sam_proc: subprocess.Popen | None = None
     nano_proc: subprocess.Popen | None = None
     stderr_thread: Thread | None = None
@@ -348,11 +330,8 @@ def nanoq_from_bam_streaming(
     stderr_lock = Lock()
     try:
         if cfg.nanoq_aux_stats:
-            with tempfile.NamedTemporaryFile(suffix=".nanoq.lengths.txt", delete=False) as tmp:
-                read_lengths_path = Path(tmp.name)
-            with tempfile.NamedTemporaryFile(suffix=".nanoq.quals.txt", delete=False) as tmp:
-                read_qualities_path = Path(tmp.name)
-            nano_cmd += ["--read-lengths", str(read_lengths_path), "--read-qualities", str(read_qualities_path)]
+            aux = aux_cleanup.enter_context(NanoqAuxPipes(cfg))
+            nano_cmd += aux.args
         nano_cmd += nanoq_args
         logger.debug("Starting samtools|nanoq streaming pipeline: %s | %s", format_cmd(sam_cmd), format_cmd(nano_cmd))
         sam_proc = start_process(sam_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -470,24 +449,8 @@ def nanoq_from_bam_streaming(
         stats = parse_nanoq_json(nano_out_text)
         if not stats.file or stats.file == "unknown":
             stats.file = str(path)
-        if cfg.nanoq_aux_stats:
-            if (stats.length_histogram is None or stats.length_percentiles is None) and read_lengths_path:
-                if read_lengths_path.exists() and read_lengths_path.stat().st_size > 0:
-                    hist, percentiles = length_histogram_and_percentiles(
-                        read_lengths_path,
-                        bin_width=cfg.nanoq_length_bin_width,
-                        percentiles_exact_max_reads=cfg.nanoq_percentiles_exact_max_reads,
-                    )
-                    if stats.length_histogram is None:
-                        stats.length_histogram = hist
-                    if stats.length_percentiles is None and percentiles is not None:
-                        stats.length_percentiles = percentiles
-            if stats.qscore_histogram is None and read_qualities_path:
-                if read_qualities_path.exists() and read_qualities_path.stat().st_size > 0:
-                    stats.qscore_histogram = qscore_histogram(
-                        read_qualities_path,
-                        bin_width=cfg.nanoq_qscore_bin_width,
-                    )
+        if aux is not None:
+            aux.augment(stats)
         logger.debug("Completed streaming nanoq for %s", path)
         report_progress(f"nanoq streaming done: {path}")
         return stats
@@ -499,12 +462,7 @@ def nanoq_from_bam_streaming(
         try:
             cleanup_processes([nano_proc, sam_proc])
         finally:
-            for aux_path in (read_lengths_path, read_qualities_path):
-                if aux_path is not None:
-                    try:
-                        aux_path.unlink(missing_ok=True)
-                    except OSError as exc:
-                        logger.debug("Ignore auxiliary file cleanup error for %s: %s", aux_path, exc)
+            aux_cleanup.__exit__(*sys.exc_info())
 
 
 def mosdepth_coverage(

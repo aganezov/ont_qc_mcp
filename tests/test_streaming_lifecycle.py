@@ -88,7 +88,7 @@ def assert_released(processes, tmp_path):
         assert proc.returncode is not None
         for stream in (proc.stdin, proc.stdout, proc.stderr):
             assert stream is None or stream.closed
-    assert not list(tmp_path.glob("*.nanoq.*.txt"))
+    assert not list(tmp_path.glob("nanoq_aux_*"))
 
 
 def test_second_child_start_failure_reaps_first_and_preserves_error(pipeline_probe, tmp_path):
@@ -155,20 +155,19 @@ def test_cleanup_failure_does_not_replace_start_error(pipeline_probe, tmp_path, 
     assert_released(children, tmp_path)
 
 
-def test_second_aux_file_failure_removes_first(tmp_path, monkeypatch):
+def test_second_aux_fifo_failure_removes_first(tmp_path, monkeypatch):
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
-    original = tempfile.NamedTemporaryFile
+    original = os.mkfifo
     created: list[Path] = []
 
-    def create_once(*args, **kwargs):
+    def create_once(path, mode):
         if created:
-            raise OSError("cannot create qualities file")
-        result = original(*args, **kwargs)
-        created.append(Path(result.name))
-        return result
+            raise OSError("cannot create qualities FIFO")
+        original(path, mode)
+        created.append(path)
 
-    monkeypatch.setattr(tempfile, "NamedTemporaryFile", create_once)
-    with pytest.raises(OSError, match="cannot create qualities file"):
+    monkeypatch.setattr(os, "mkfifo", create_once)
+    with pytest.raises(OSError, match="cannot create qualities FIFO"):
         nanoq_from_bam_streaming(tmp_path / "unused.bam", ToolPaths(), exec_cfg=config())
     assert len(created) == 1
     assert not created[0].exists()
@@ -241,7 +240,11 @@ def test_stderr_thread_start_failure_reaps_both_children(pipeline_probe, tmp_pat
     make_tools, children, _ = pipeline_probe
     tools = make_tools()
 
+    original_start = cli_wrappers.Thread.start
+
     def failed_start(thread):
+        if thread.name.startswith("nanoq-aux-"):
+            return original_start(thread)
         raise RuntimeError("stderr thread startup failed")
 
     monkeypatch.setattr(cli_wrappers.Thread, "start", failed_start)
@@ -309,7 +312,7 @@ def test_descendant_held_stderr_does_not_extend_wrapper_timeout(pipeline_probe, 
         assert all(not thread.is_alive() for thread in threads)
         assert children[0].stdout.closed
         assert children[1].stdout.closed and children[1].stderr.closed
-        assert not list(tmp_path.glob("*.nanoq.*.txt"))
+        assert not list(tmp_path.glob("nanoq_aux_*"))
     finally:
         # The descendant is outside wrapper ownership; release it independently.
         if marker.exists():

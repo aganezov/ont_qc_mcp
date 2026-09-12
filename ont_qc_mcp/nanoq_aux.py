@@ -43,6 +43,43 @@ def _build_histogram(
     return bins
 
 
+class _HistogramAccumulator:
+    def __init__(
+        self, bin_width: float, cast: type[int] | type[float], exact_max: int | None = None, start: float = 0.0
+    ):
+        if bin_width <= 0:
+            raise ValueError(f"bin_width must be > 0, got {bin_width}")
+        self.bin_width = bin_width
+        self.cast = cast
+        self.start = start
+        self.exact_max = exact_max
+        self.counts: dict[int, int] = defaultdict(int)
+        self.max_index = -1
+        self.total = 0
+        self.values: list[float] | None = [] if exact_max and exact_max > 0 else None
+
+    def add_line(self, line: str) -> None:
+        raw = line.strip()
+        if not raw:
+            return
+        try:
+            val = self.cast(raw)
+        except ValueError:
+            return
+        self.total += 1
+        fval = float(val)
+        idx = int((fval - self.start) // self.bin_width) if fval >= self.start else 0
+        self.counts[idx] += 1
+        self.max_index = max(self.max_index, idx)
+        if self.values is not None:
+            self.values.append(fval)
+            if self.exact_max and len(self.values) > self.exact_max:
+                self.values = None
+
+    def histogram(self) -> list[HistogramBin]:
+        return _build_histogram(self.counts, self.bin_width, self.max_index, self.start)
+
+
 def _histogram_and_values_from_file(
     path: Path,
     *,
@@ -51,37 +88,26 @@ def _histogram_and_values_from_file(
     start: float = 0.0,
     exact_max: int | None = None,
 ) -> tuple[list[HistogramBin], list[float] | None, int]:
-    if bin_width <= 0:
-        raise ValueError(f"bin_width must be > 0, got {bin_width}")
-
-    counts: dict[int, int] = defaultdict(int)
-    max_index = -1
-    total = 0
-    values: list[float] | None = [] if exact_max and exact_max > 0 else None
-
+    accumulator = _HistogramAccumulator(bin_width, cast, exact_max, start)
     with open(path, "r", encoding="utf-8") as fh:
         for line in fh:
-            raw = line.strip()
-            if not raw:
-                continue
-            try:
-                val = cast(raw)
-            except ValueError:
-                continue
+            accumulator.add_line(line)
+    return accumulator.histogram(), accumulator.values, accumulator.total
 
-            total += 1
-            fval = float(val)
-            idx = int((fval - start) // bin_width) if fval >= start else 0
-            counts[idx] += 1
-            if idx > max_index:
-                max_index = idx
 
-            if values is not None:
-                values.append(fval)
-                if exact_max and len(values) > exact_max:
-                    values = None
-
-    return _build_histogram(counts, bin_width=bin_width, max_index=max_index, start=start), values, total
+def _length_percentiles(values: list[float] | None) -> LengthPercentiles | None:
+    if not values:
+        return None
+    values.sort()
+    return LengthPercentiles(
+        p1=_quantile_sorted(values, 0.01),
+        p5=_quantile_sorted(values, 0.05),
+        p25=_quantile_sorted(values, 0.25),
+        p50=_quantile_sorted(values, 0.50),
+        p75=_quantile_sorted(values, 0.75),
+        p95=_quantile_sorted(values, 0.95),
+        p99=_quantile_sorted(values, 0.99),
+    )
 
 
 def length_histogram_and_percentiles(
@@ -90,31 +116,14 @@ def length_histogram_and_percentiles(
     bin_width: int = 2000,
     percentiles_exact_max_reads: int = 200_000,
 ) -> tuple[list[HistogramBin], LengthPercentiles | None]:
-    histogram, values, total = _histogram_and_values_from_file(
+    histogram, values, _total = _histogram_and_values_from_file(
         lengths_path,
         bin_width=float(bin_width),
         cast=int,
         start=0.0,
         exact_max=percentiles_exact_max_reads,
     )
-    if values is None or not values:
-        return histogram, None
-    if total > percentiles_exact_max_reads:
-        return histogram, None
-
-    values.sort()
-    return (
-        histogram,
-        LengthPercentiles(
-            p1=_quantile_sorted(values, 0.01),
-            p5=_quantile_sorted(values, 0.05),
-            p25=_quantile_sorted(values, 0.25),
-            p50=_quantile_sorted(values, 0.50),
-            p75=_quantile_sorted(values, 0.75),
-            p95=_quantile_sorted(values, 0.95),
-            p99=_quantile_sorted(values, 0.99),
-        ),
-    )
+    return histogram, _length_percentiles(values)
 
 
 def qscore_histogram(
