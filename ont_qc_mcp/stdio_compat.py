@@ -9,8 +9,11 @@ import anyio
 import anyio.lowlevel
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 
-import mcp.types as types
+import mcp_types as types
 from mcp.shared.message import SessionMessage
+from pydantic import TypeAdapter
+
+_JSONRPC_MESSAGE: TypeAdapter[types.JSONRPCMessage] = TypeAdapter(types.JSONRPCMessage)
 
 
 @asynccontextmanager
@@ -54,7 +57,7 @@ async def stdio_server_compat(
                         break
                     try:
                         line = line_bytes.decode(encoding, errors=errors)
-                        message = types.JSONRPCMessage.model_validate_json(line)
+                        message = _JSONRPC_MESSAGE.validate_json(line)
                     except Exception as exc:  # pragma: no cover
                         await read_stream_writer.send(exc)
                         continue

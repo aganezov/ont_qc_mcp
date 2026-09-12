@@ -10,7 +10,7 @@ from typing import cast
 
 import anyio
 import pytest
-from mcp import types
+import mcp_types as types
 from mcp.client.session import ClientSession
 from mcp.client.stdio import stdio_client
 
@@ -215,7 +215,7 @@ def test_run_igv_snapshot_no_runtime(monkeypatch: pytest.MonkeyPatch, tmp_path: 
         )
 
 
-def _text_content(content: types.Content) -> types.TextContent:
+def _text_content(content: types.ContentBlock) -> types.TextContent:
     return cast(types.TextContent, content)
 
 
@@ -351,7 +351,7 @@ def test_igv_snapshot_tool_mcp_protocol(
                         "output_dir": str(tmp_path),
                     },
                 )
-                assert not result.isError
+                assert not result.is_error
                 payload = json.loads(_text_content(result.content[0]).text)
                 assert payload["snapshot_files"]
                 assert payload["execution_mode"] == expected_runtime

@@ -6,7 +6,7 @@ from typing import cast
 
 import anyio
 import pytest
-from mcp import types
+import mcp_types as types
 from mcp.client.session import ClientSession
 from mcp.client.stdio import stdio_client
 
@@ -60,7 +60,7 @@ def test_hourly_bins_through_mcp(mcp_server_params, summary_case):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.call_tool("sequencing_summary_tool", {"path": str(summary)})
-                assert not result.isError, result.content
+                assert not result.is_error, result.content
                 report = json.loads(cast(types.TextContent, result.content[0]).text)
                 assert {key: report[key] for key in expected} == expected
 

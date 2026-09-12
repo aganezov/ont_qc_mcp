@@ -84,7 +84,7 @@ async def _call_tools(server_params: StdioServerParameters, calls: list[ToolCall
             await session.initialize()
             for call in calls:
                 res = await session.call_tool(call.name, call.arguments)
-                if getattr(res, "isError", False):
+                if getattr(res, "is_error", False):
                     outputs[call.name] = _tool_error_payload(res)
                     continue
 

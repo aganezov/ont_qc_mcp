@@ -5,7 +5,7 @@ from typing import cast
 
 import anyio
 import pytest
-from mcp import types
+import mcp_types as types
 from mcp.client.session import ClientSession
 from mcp.client.stdio import stdio_client
 
@@ -80,7 +80,7 @@ def test_bed_coordinate_syntax_through_mcp(mcp_server_params, tmp_path):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.call_tool("qc_bed_tool", {"path": str(bed)})
-                assert not result.isError, result.content
+                assert not result.is_error, result.content
                 report = json.loads(cast(types.TextContent, result.content[0]).text)
                 assert not report["is_valid"]
                 assert report["total_intervals"] == 5

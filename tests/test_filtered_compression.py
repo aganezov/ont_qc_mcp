@@ -9,7 +9,7 @@ import anyio
 import pytest
 from mcp.client.session import ClientSession
 from mcp.client.stdio import stdio_client
-from mcp.types import TextContent
+from mcp_types import TextContent
 
 from ont_qc_mcp.cli_wrappers import chopper_filter
 from ont_qc_mcp.config import ToolPaths
@@ -86,7 +86,7 @@ def test_mcp_filter_encoding_roundtrip(mcp_server_params, tmp_path, input_compre
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.call_tool("filter_reads_fastq_tool", arguments)
-                assert not result.isError, result.content
+                assert not result.is_error, result.content
                 content = result.content[0]
                 assert isinstance(content, TextContent)
                 report = json.loads(content.text)
@@ -100,7 +100,7 @@ def test_mcp_filter_encoding_roundtrip(mcp_server_params, tmp_path, input_compre
                         assert encoded.decode() == expected
                     if expected:
                         qc = await session.call_tool("qc_reads_fastq_tool", {"path": str(output)})
-                        assert not qc.isError, qc.content
+                        assert not qc.is_error, qc.content
                         qc_content = qc.content[0]
                         assert isinstance(qc_content, TextContent)
                         stats = json.loads(qc_content.text)

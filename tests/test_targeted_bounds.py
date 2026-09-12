@@ -7,7 +7,7 @@ from unittest.mock import Mock
 
 import anyio
 import pytest
-from mcp import types
+import mcp_types as types
 from mcp.client.session import ClientSession
 from mcp.client.stdio import stdio_client
 
@@ -191,13 +191,13 @@ def test_target_bounds_through_mcp(mcp_server_params, tmp_path):
                 invalid = await session.call_tool(
                     "targeted_coverage_tool", {"bam_path": str(bam), "location": "chr1:9-11"}
                 )
-                assert invalid.isError, invalid.content
+                assert invalid.is_error, invalid.content
                 assert "exceeds" in cast(types.TextContent, invalid.content[0]).text
                 for start, end, depth, percent in [(0, 1, 1.0, 100.0), (9, 10, 1.0, 100.0), (0, 10, 0.2, 20.0)]:
                     valid = await session.call_tool(
                         "targeted_coverage_tool", {"bam_path": str(bam), "location": f"chr1:{start}-{end}"}
                     )
-                    assert not valid.isError, valid.content
+                    assert not valid.is_error, valid.content
                     reports = json.loads(cast(types.TextContent, valid.content[0]).text)
                     assert len(reports) == 1
                     assert (reports[0]["start"], reports[0]["end"]) == (start, end)

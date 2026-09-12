@@ -7,14 +7,14 @@ import time
 import uuid
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Callable, cast
+from typing import Callable
 
 import anyio
 from importlib import metadata
-from mcp import types
-from mcp.server import Server
-from mcp.server.lowlevel.helper_types import ReadResourceContents
-from pydantic import AnyUrl
+import mcp_types as types
+from mcp.server.lowlevel import Server
+from mcp.server.context import ServerRequestContext
+import jsonschema
 
 from .cli_wrappers import FlagValidationError
 from .config import ExecutionConfig, ToolPaths
@@ -43,7 +43,6 @@ from .tools import (
 from .stdio_compat import stdio_server_compat
 from .threadpool import get_executor, run_sync
 
-server = Server("ont-qc-mcp")
 EXEC_CFG = ExecutionConfig()
 logger = logging.getLogger(__name__)
 _USE_JSON_LOG = os.getenv("MCP_LOG_FORMAT", "0").lower() in {"1", "true", "json", "structured"}
@@ -922,24 +921,22 @@ def _error_result(
         payload["request_id"] = request_id
     return types.CallToolResult(
         content=[types.TextContent(type="text", text=json.dumps(payload, ensure_ascii=False, indent=2))],
-        isError=True,
+        is_error=True,
     )
 
 
-@server.list_tools()
 async def list_tools() -> list[types.Tool]:
     return [
         types.Tool(
             name=spec.name,
             description=_tool_description(spec),
-            inputSchema=spec.schema,
+            input_schema=spec.schema,
             _meta=_tool_meta(spec),
         )
         for spec in _TOOL_SPECS
     ]
 
 
-@server.call_tool(validate_input=True)
 async def dispatch_tool(name: str, arguments: dict | None) -> types.CallToolResult:
     spec = TOOL_SPECS.get(name)
     if spec is None:
@@ -989,97 +986,94 @@ async def dispatch_tool(name: str, arguments: dict | None) -> types.CallToolResu
     if isinstance(result, types.CallToolResult):
         return result
 
-    return types.CallToolResult(content=result, isError=False)
+    return types.CallToolResult(content=result, is_error=False)
 
 
-@server.list_resource_templates()
 async def list_resource_templates() -> list[types.ResourceTemplate]:
     templates = [
         types.ResourceTemplate(
             name="tool-flags",
-            uriTemplate="tool://flags/{tool}",
+            uri_template="tool://flags/{tool}",
             description="Flag schemas for supported CLI tools",
-            mimeType="application/json",
+            mime_type="application/json",
         ),
         types.ResourceTemplate(
             name="tool-recipes",
-            uriTemplate="tool://recipes/{tool}",
+            uri_template="tool://recipes/{tool}",
             description="Flag recipes/presets for supported CLI tools",
-            mimeType="application/json",
+            mime_type="application/json",
         ),
         types.ResourceTemplate(
             name="tool-guidance",
-            uriTemplate="tool://guidance/{tool}",
+            uri_template="tool://guidance/{tool}",
             description="Runtime guidance and defaults for supported tools",
-            mimeType="application/json",
+            mime_type="application/json",
         ),
     ]
     if _ENABLE_CACHE_STATS:
         templates.append(
             types.ResourceTemplate(
                 name="cache-stats",
-                uriTemplate="tool://stats/cache",
+                uri_template="tool://stats/cache",
                 description="Cache hit/miss/eviction counters for streaming nanoq",
-                mimeType="application/json",
+                mime_type="application/json",
             )
         )
     return templates
 
 
-@server.list_resources()
 async def list_resources() -> list[types.Resource]:
     resources: list[types.Resource] = []
     for tool in TOOL_FLAGS.keys():
         resources.append(
             types.Resource(
                 name=f"{tool} flags",
-                uri=cast(AnyUrl, f"tool://flags/{tool}"),
+                uri=f"tool://flags/{tool}",
                 description=f"{tool} flag schema",
-                mimeType="application/json",
+                mime_type="application/json",
             )
         )
         if get_tool_recipes(tool):
             resources.append(
                 types.Resource(
                     name=f"{tool} recipes",
-                    uri=cast(AnyUrl, f"tool://recipes/{tool}"),
+                    uri=f"tool://recipes/{tool}",
                     description=f"{tool} flag recipes",
-                    mimeType="application/json",
+                    mime_type="application/json",
                 )
             )
     for tool_name in TOOL_SPECS.keys():
         resources.append(
             types.Resource(
                 name=f"{tool_name} guidance",
-                uri=cast(AnyUrl, f"tool://guidance/{tool_name}"),
+                uri=f"tool://guidance/{tool_name}",
                 description="Runtime guidance and defaults for tool selection",
-                mimeType="application/json",
+                mime_type="application/json",
             )
         )
     if _ENABLE_CACHE_STATS:
         resources.append(
             types.Resource(
                 name="nanoq cache stats",
-                uri=cast(AnyUrl, "tool://stats/cache"),
+                uri="tool://stats/cache",
                 description="Cache hit/miss/eviction counters for nanoq",
-                mimeType="application/json",
+                mime_type="application/json",
             )
         )
     return resources
 
 
-@server.read_resource()
-async def read_resource(uri: str):
+async def read_resource(uri: str) -> list[types.TextResourceContents]:
     uri_str = str(uri)
     if uri_str.startswith("tool://flags/"):
         tool = uri_str.split("tool://flags/", 1)[1]
         payload = json.dumps({"tool": tool, "flags": [flag.model_dump() for flag in get_tool_flags(tool)]}, indent=2)
-        return [ReadResourceContents(content=payload, mime_type="application/json")]
+        return [types.TextResourceContents(uri=uri_str, text=payload, mime_type="application/json")]
 
     if uri_str.startswith("tool://recipes/"):
         tool = uri_str.split("tool://recipes/", 1)[1]
         payload = json.dumps({"tool": tool, "recipes": get_tool_recipes(tool)}, indent=2)
-        return [ReadResourceContents(content=payload, mime_type="application/json")]
+        return [types.TextResourceContents(uri=uri_str, text=payload, mime_type="application/json")]
 
     if uri_str.startswith("tool://guidance/"):
         tool = uri_str.split("tool://guidance/", 1)[1]
@@ -1104,16 +1098,65 @@ async def read_resource(uri: str):
             },
             indent=2,
         )
-        return [ReadResourceContents(content=payload, mime_type="application/json")]
+        return [types.TextResourceContents(uri=uri_str, text=payload, mime_type="application/json")]
 
     if uri_str == "tool://stats/cache":
         if not _ENABLE_CACHE_STATS:
             raise FileNotFoundError(f"Unknown resource URI: {uri_str}")
         stats = get_nanoq_cache_stats()
         payload = json.dumps({"nanoq_cache": stats}, indent=2)
-        return [ReadResourceContents(content=payload, mime_type="application/json")]
+        return [types.TextResourceContents(uri=uri_str, text=payload, mime_type="application/json")]
 
     raise FileNotFoundError(f"Unknown resource URI: {uri_str}")
+
+
+async def _on_list_tools(
+    ctx: ServerRequestContext, params: types.PaginatedRequestParams | None
+) -> types.ListToolsResult:
+    return types.ListToolsResult(tools=await list_tools())
+
+
+async def _on_call_tool(ctx: ServerRequestContext, params: types.CallToolRequestParams) -> types.CallToolResult:
+    # SDK 2's low-level server does not validate advertised input schemas.
+    # Preserve SDK 1's validation and error presentation before dispatch.
+    spec = TOOL_SPECS.get(params.name)
+    if spec is not None:
+        try:
+            jsonschema.validate(instance=params.arguments or {}, schema=spec.schema)
+        except jsonschema.ValidationError as exc:
+            return types.CallToolResult(
+                content=[types.TextContent(type="text", text=f"Input validation error: {exc.message}")],
+                is_error=True,
+            )
+    return await dispatch_tool(params.name, params.arguments)
+
+
+async def _on_list_resources(
+    ctx: ServerRequestContext, params: types.PaginatedRequestParams | None
+) -> types.ListResourcesResult:
+    return types.ListResourcesResult(resources=await list_resources())
+
+
+async def _on_list_resource_templates(
+    ctx: ServerRequestContext, params: types.PaginatedRequestParams | None
+) -> types.ListResourceTemplatesResult:
+    return types.ListResourceTemplatesResult(resource_templates=await list_resource_templates())
+
+
+async def _on_read_resource(
+    ctx: ServerRequestContext, params: types.ReadResourceRequestParams
+) -> types.ReadResourceResult:
+    return types.ReadResourceResult(contents=[*await read_resource(params.uri)])
+
+
+server = Server(
+    "ont-qc-mcp",
+    on_list_tools=_on_list_tools,
+    on_call_tool=_on_call_tool,
+    on_list_resources=_on_list_resources,
+    on_list_resource_templates=_on_list_resource_templates,
+    on_read_resource=_on_read_resource,
+)
 
 
 async def _async_main():

@@ -6,7 +6,7 @@ from typing import cast
 
 import anyio
 import pytest
-from mcp import types
+import mcp_types as types
 from mcp.client.session import ClientSession
 from mcp.client.stdio import stdio_client
 
@@ -73,11 +73,11 @@ def test_boolean_validation_through_mcp(tmp_path, mcp_server_params):
                     content = cast(types.TextContent, result.content[0]).text
                     payload = json.loads(content)
                     if value is None or isinstance(value, bool):
-                        assert not result.isError, content
+                        assert not result.is_error, content
                         assert ("--fast-mode" in json.loads(receipt.read_text())) == (value is True)
                         assert payload["coverage_by_contig"][0]["mean_depth"] == 2
                     else:
-                        assert result.isError, content
+                        assert result.is_error, content
                         assert payload["kind"] == "validation"
                         assert "Flag fast_mode expects bool" in payload["message"]
                         assert not receipt.exists()

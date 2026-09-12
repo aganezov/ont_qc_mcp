@@ -5,7 +5,7 @@ from typing import cast
 
 import anyio
 import pytest
-from mcp import types
+import mcp_types as types
 from mcp.client.session import ClientSession
 from mcp.client.stdio import stdio_client
 
@@ -86,7 +86,7 @@ def test_targeted_coverage_known_depth_through_mcp(mcp_server_params, tmp_path, 
                 response = await session.call_tool(
                     "targeted_coverage_tool", {"bam_path": str(bam), "bed_path": str(bed)}
                 )
-                assert not response.isError, response.content
+                assert not response.is_error, response.content
                 payload = json.loads(cast(types.TextContent, response.content[0]).text)
                 reports = {(report["start"], report["end"]): report for report in payload}
                 assert len(reports) == len(rows)

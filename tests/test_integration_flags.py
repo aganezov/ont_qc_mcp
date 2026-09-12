@@ -97,11 +97,11 @@ def test_read_resource_flags_and_recipes():
     from ont_qc_mcp import app_server as srv
 
     flag_contents = asyncio.run(srv.read_resource("tool://flags/nanoq"))
-    flag_payload = json.loads(flag_contents[0].content)
+    flag_payload = json.loads(flag_contents[0].text)
     assert flag_payload["tool"] == "nanoq"
     assert flag_payload["flags"]
 
     recipe_contents = asyncio.run(srv.read_resource("tool://recipes/nanoq"))
-    recipe_payload = json.loads(recipe_contents[0].content)
+    recipe_payload = json.loads(recipe_contents[0].text)
     assert recipe_payload["tool"] == "nanoq"
     assert "strict_qc" in recipe_payload["recipes"]

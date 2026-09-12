@@ -6,7 +6,7 @@ from typing import cast
 
 import anyio
 import pytest
-from mcp import types
+import mcp_types as types
 from mcp.client.session import ClientSession
 from mcp.client.stdio import stdio_client
 
@@ -60,7 +60,7 @@ def test_mosdepth_categories_through_mcp(mcp_server_params, coverage_category_ba
                         "coverage_low_cov_threshold": 5,
                     }
                 result = await session.call_tool(tool_name, arguments)
-                assert not result.isError, result.content
+                assert not result.is_error, result.content
                 payload = json.loads(cast(types.TextContent, result.content[0]).text)
                 if mode == "summary":
                     payload = payload["coverage"]

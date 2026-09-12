@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+- Migrate the local stdio adapter to MCP SDK 2.2, preserving existing tool schemas, input validation, resource contents, and numerical result payloads.
+
 ### Added
 - Add `mismatch_counts_by_cycle` records with explicit cycle numbers, N-base counts, and per-quality mismatch counts when parsing samtools MPC output.
 - Four new MCP tools for enhanced QC workflows:

@@ -7,7 +7,7 @@ from unittest.mock import Mock
 
 import anyio
 import pytest
-from mcp import types
+import mcp_types as types
 from mcp.client.session import ClientSession
 from mcp.client.stdio import stdio_client
 
@@ -47,7 +47,7 @@ def test_normalized_targets_through_mcp(mcp_server_params, tmp_path, content):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.call_tool("targeted_coverage_tool", {"bam_path": str(bam), "bed_path": str(bed)})
-                assert not result.isError, result.content
+                assert not result.is_error, result.content
                 reports = json.loads(cast(types.TextContent, result.content[0]).text)
                 assert [(r["chrom"], r["start"], r["end"]) for r in reports] == [("chr1", 0, 1), ("chr1", 9, 10)]
                 assert all(r["mean_depth"] == 1.0 and r["pct_coverage_1x"] == 100.0 for r in reports)

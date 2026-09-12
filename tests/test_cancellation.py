@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import anyio
 import pytest
-from mcp import types
+import mcp_types as types
 
 from ont_qc_mcp import app_server, threadpool
 
@@ -109,7 +109,7 @@ async def test_running_cancelled_dispatch_retains_capacity(
         assert cancellation_seen.is_set(), "Worker results must not replace cancellation"
         assert first.cancelled() if cancel_kind != "anyio" else scopes[0].cancelled_caught
         assert finished[0].is_set() and finished[1].is_set()
-        assert not second.result().isError
+        assert not second.result().is_error
         assert peak_active == 1
         assert semaphore.value == 1
         worker_warnings = [record for record in caplog.records if record.name == "ont_qc_mcp.threadpool"]

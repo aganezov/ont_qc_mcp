@@ -1,0 +1,657 @@
+{
+  "tools": {
+    "env_status": {
+      "type": "object",
+      "properties": {}
+    },
+    "qc_alignment_tool": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path to BAM/CRAM alignment file"
+        },
+        "include_hist": {
+          "type": "boolean",
+          "description": "Include read-length and alignment-accuracy bins with read counts and base totals",
+          "default": true
+        },
+        "flags": {
+          "type": "object",
+          "description": "Optional CLI flags to pass to the underlying tool"
+        }
+      },
+      "required": [
+        "path"
+      ]
+    },
+    "qc_reads_fastq_tool": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path to FASTQ file"
+        },
+        "flags": {
+          "type": "object",
+          "description": "Optional CLI flags to pass to the underlying tool"
+        }
+      },
+      "required": [
+        "path"
+      ]
+    },
+    "filter_reads_fastq_tool": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path to input FASTQ file"
+        },
+        "output_fastq": {
+          "type": "string",
+          "description": "Filtered FASTQ path; names ending .gz (case-insensitive) write gzip. BGZF and other recognized compression suffixes are unsupported. Omit for temporary plain FASTQ output."
+        },
+        "flags": {
+          "type": "object",
+          "description": "Optional CLI flags to pass to the underlying tool"
+        }
+      },
+      "required": [
+        "path"
+      ]
+    },
+    "read_length_distribution_fastq_tool": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path to FASTQ file"
+        },
+        "flags": {
+          "type": "object",
+          "description": "Optional CLI flags to pass to the underlying tool"
+        }
+      },
+      "required": [
+        "path"
+      ]
+    },
+    "read_length_distribution_bam_tool": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path to BAM/CRAM alignment file"
+        },
+        "flags": {
+          "type": "object",
+          "description": "Optional CLI flags to pass to the underlying tool"
+        }
+      },
+      "required": [
+        "path"
+      ]
+    },
+    "qscore_distribution_fastq_tool": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path to FASTQ file"
+        },
+        "flags": {
+          "type": "object",
+          "description": "Optional CLI flags to pass to the underlying tool"
+        }
+      },
+      "required": [
+        "path"
+      ]
+    },
+    "qscore_distribution_bam_tool": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path to BAM/CRAM alignment file"
+        },
+        "flags": {
+          "type": "object",
+          "description": "Optional CLI flags to pass to the underlying tool"
+        }
+      },
+      "required": [
+        "path"
+      ]
+    },
+    "coverage_stats_tool": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path to BAM/CRAM alignment file"
+        },
+        "window": {
+          "type": "integer",
+          "description": "Window size for coverage calculation"
+        },
+        "low_cov_threshold": {
+          "type": "number",
+          "description": "Mark contigs with mean depth below this threshold"
+        },
+        "flags": {
+          "type": "object",
+          "description": "Optional CLI flags to pass to the underlying tool"
+        }
+      },
+      "required": [
+        "path"
+      ]
+    },
+    "igv_snapshot_tool": {
+      "type": "object",
+      "properties": {
+        "batch_file": {
+          "type": "string",
+          "description": "Path to pre-made IGV batch file (bypasses all other options)"
+        },
+        "genome": {
+          "type": "string",
+          "description": "Reference genome (hg38, hg19, or path to .fa)"
+        },
+        "tracks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Paths to track files"
+        },
+        "regions": {
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "Path to BED file"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "chrom": {
+                    "type": "string"
+                  },
+                  "start": {
+                    "type": "integer"
+                  },
+                  "end": {
+                    "type": "integer"
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "Snapshot filename (without extension)"
+                  },
+                  "extra_commands": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "IGV commands to run before this snapshot (e.g., 'sort BASE', 'viewaspairs')"
+                  }
+                },
+                "required": [
+                  "chrom",
+                  "start",
+                  "end"
+                ]
+              }
+            }
+          ]
+        },
+        "compact": {
+          "type": "string",
+          "enum": [
+            "expand",
+            "collapse",
+            "squish"
+          ],
+          "default": "squish"
+        },
+        "color_by": {
+          "type": "string",
+          "description": "IGV colorBy option (e.g., 'BASE_MODIFICATION_C', 'READ_STRAND')"
+        },
+        "group_by": {
+          "type": "string",
+          "description": "IGV group option (e.g., 'TAG HP', 'STRAND')"
+        },
+        "snapshot_format": {
+          "type": "string",
+          "enum": [
+            "png",
+            "svg"
+          ],
+          "default": "png"
+        },
+        "output_dir": {
+          "type": "string",
+          "description": "Output directory for snapshots"
+        },
+        "min_snapshot_width": {
+          "type": "integer",
+          "default": 0,
+          "description": "Minimum region width in bp"
+        },
+        "small_indels_show": {
+          "type": "boolean",
+          "default": false
+        },
+        "small_indels_threshold": {
+          "type": "integer",
+          "default": 100
+        },
+        "allele_threshold": {
+          "type": "number",
+          "default": 0.2
+        },
+        "extra_commands": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Global IGV commands added after track loading (e.g., 'maxPanelHeight 500', 'sort STRAND')"
+        },
+        "extra_preferences": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Raw IGV preferences as key-value pairs (e.g., {'SAM.SHOW_SOFT_CLIPPED': 'TRUE', 'SAM.FILTER_DUPLICATES': 'TRUE'})"
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "batch_file"
+          ]
+        },
+        {
+          "required": [
+            "genome",
+            "tracks",
+            "regions"
+          ]
+        }
+      ]
+    },
+    "alignment_error_profile_tool": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path to BAM/CRAM alignment file"
+        },
+        "flags": {
+          "type": "object",
+          "description": "Optional CLI flags to pass to the underlying tool"
+        }
+      },
+      "required": [
+        "path"
+      ]
+    },
+    "alignment_summary_tool": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path to BAM/CRAM alignment file"
+        },
+        "include_coverage": {
+          "type": "boolean",
+          "description": "Include coverage stats",
+          "default": true
+        },
+        "include_hist": {
+          "type": "boolean",
+          "description": "Include read-length and alignment-accuracy bins with read counts and base totals",
+          "default": true
+        },
+        "include_error_profile": {
+          "type": "boolean",
+          "description": "Include samtools stats error profile",
+          "default": false
+        },
+        "coverage_window": {
+          "type": "integer",
+          "description": "Window size for coverage calculation"
+        },
+        "coverage_low_cov_threshold": {
+          "type": "number",
+          "description": "Mark contigs with mean depth below this threshold"
+        },
+        "coverage_flags": {
+          "type": "object",
+          "description": "Flags for mosdepth coverage tool"
+        },
+        "cramino_flags": {
+          "type": "object",
+          "description": "Flags for cramino alignment tool"
+        },
+        "error_profile_flags": {
+          "type": "object",
+          "description": "Flags for samtools stats error profile"
+        }
+      },
+      "required": [
+        "path"
+      ]
+    },
+    "header_metadata_tool": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path to BAM/CRAM/VCF file"
+        },
+        "file_type": {
+          "type": "string",
+          "enum": [
+            "bam",
+            "cram",
+            "sam",
+            "vcf"
+          ],
+          "description": "Override detected file type"
+        },
+        "flags": {
+          "type": "object",
+          "description": "Optional flags for samtools when reading BAM/CRAM headers"
+        },
+        "max_lines": {
+          "type": "integer",
+          "description": "Maximum number of VCF header lines to read (guards huge headers)",
+          "minimum": 1,
+          "default": 2000
+        }
+      },
+      "required": [
+        "path"
+      ]
+    },
+    "qc_bed_tool": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path to BED file"
+        }
+      },
+      "required": [
+        "path"
+      ]
+    },
+    "sequencing_summary_tool": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path to ONT sequencing summary TSV file"
+        }
+      },
+      "required": [
+        "path"
+      ]
+    },
+    "qc_variants_tool": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path to VCF/BCF file"
+        },
+        "include_snps": {
+          "type": "boolean",
+          "description": "Include SNP statistics (count, TS/TV ratio)",
+          "default": true
+        },
+        "include_indels": {
+          "type": "boolean",
+          "description": "Include indel statistics (count)",
+          "default": true
+        },
+        "flags": {
+          "type": "object",
+          "description": "Optional CLI flags to pass to the underlying tool"
+        }
+      },
+      "required": [
+        "path"
+      ]
+    },
+    "targeted_coverage_tool": {
+      "type": "object",
+      "properties": {
+        "bam_path": {
+          "type": "string",
+          "description": "Path to BAM/CRAM alignment file"
+        },
+        "gene_name": {
+          "type": "string",
+          "description": "Gene name to look up in annotation (requires annotation_path)"
+        },
+        "location": {
+          "type": "string",
+          "description": "0-based, end-exclusive location 'chr:start-end' (e.g., 'chr1:1000-2000')"
+        },
+        "annotation_path": {
+          "type": "string",
+          "description": "Path to GFF3 annotation file (required when gene_name is provided)"
+        },
+        "bed_path": {
+          "type": "string",
+          "description": "Path to BED file with target regions"
+        }
+      },
+      "required": [
+        "bam_path"
+      ],
+      "oneOf": [
+        {
+          "required": [
+            "gene_name",
+            "annotation_path"
+          ]
+        },
+        {
+          "required": [
+            "location"
+          ]
+        },
+        {
+          "required": [
+            "bed_path"
+          ]
+        }
+      ]
+    }
+  },
+  "resources": [
+    {
+      "name": "nanoq flags",
+      "uri": "tool://flags/nanoq",
+      "description": "nanoq flag schema",
+      "mimeType": "application/json"
+    },
+    {
+      "name": "nanoq recipes",
+      "uri": "tool://recipes/nanoq",
+      "description": "nanoq flag recipes",
+      "mimeType": "application/json"
+    },
+    {
+      "name": "chopper flags",
+      "uri": "tool://flags/chopper",
+      "description": "chopper flag schema",
+      "mimeType": "application/json"
+    },
+    {
+      "name": "chopper recipes",
+      "uri": "tool://recipes/chopper",
+      "description": "chopper flag recipes",
+      "mimeType": "application/json"
+    },
+    {
+      "name": "cramino flags",
+      "uri": "tool://flags/cramino",
+      "description": "cramino flag schema",
+      "mimeType": "application/json"
+    },
+    {
+      "name": "mosdepth flags",
+      "uri": "tool://flags/mosdepth",
+      "description": "mosdepth flag schema",
+      "mimeType": "application/json"
+    },
+    {
+      "name": "mosdepth recipes",
+      "uri": "tool://recipes/mosdepth",
+      "description": "mosdepth flag recipes",
+      "mimeType": "application/json"
+    },
+    {
+      "name": "samtools flags",
+      "uri": "tool://flags/samtools",
+      "description": "samtools flag schema",
+      "mimeType": "application/json"
+    },
+    {
+      "name": "bcftools flags",
+      "uri": "tool://flags/bcftools",
+      "description": "bcftools flag schema",
+      "mimeType": "application/json"
+    },
+    {
+      "name": "env_status guidance",
+      "uri": "tool://guidance/env_status",
+      "description": "Runtime guidance and defaults for tool selection",
+      "mimeType": "application/json"
+    },
+    {
+      "name": "qc_alignment_tool guidance",
+      "uri": "tool://guidance/qc_alignment_tool",
+      "description": "Runtime guidance and defaults for tool selection",
+      "mimeType": "application/json"
+    },
+    {
+      "name": "qc_reads_fastq_tool guidance",
+      "uri": "tool://guidance/qc_reads_fastq_tool",
+      "description": "Runtime guidance and defaults for tool selection",
+      "mimeType": "application/json"
+    },
+    {
+      "name": "filter_reads_fastq_tool guidance",
+      "uri": "tool://guidance/filter_reads_fastq_tool",
+      "description": "Runtime guidance and defaults for tool selection",
+      "mimeType": "application/json"
+    },
+    {
+      "name": "read_length_distribution_fastq_tool guidance",
+      "uri": "tool://guidance/read_length_distribution_fastq_tool",
+      "description": "Runtime guidance and defaults for tool selection",
+      "mimeType": "application/json"
+    },
+    {
+      "name": "read_length_distribution_bam_tool guidance",
+      "uri": "tool://guidance/read_length_distribution_bam_tool",
+      "description": "Runtime guidance and defaults for tool selection",
+      "mimeType": "application/json"
+    },
+    {
+      "name": "qscore_distribution_fastq_tool guidance",
+      "uri": "tool://guidance/qscore_distribution_fastq_tool",
+      "description": "Runtime guidance and defaults for tool selection",
+      "mimeType": "application/json"
+    },
+    {
+      "name": "qscore_distribution_bam_tool guidance",
+      "uri": "tool://guidance/qscore_distribution_bam_tool",
+      "description": "Runtime guidance and defaults for tool selection",
+      "mimeType": "application/json"
+    },
+    {
+      "name": "coverage_stats_tool guidance",
+      "uri": "tool://guidance/coverage_stats_tool",
+      "description": "Runtime guidance and defaults for tool selection",
+      "mimeType": "application/json"
+    },
+    {
+      "name": "igv_snapshot_tool guidance",
+      "uri": "tool://guidance/igv_snapshot_tool",
+      "description": "Runtime guidance and defaults for tool selection",
+      "mimeType": "application/json"
+    },
+    {
+      "name": "alignment_error_profile_tool guidance",
+      "uri": "tool://guidance/alignment_error_profile_tool",
+      "description": "Runtime guidance and defaults for tool selection",
+      "mimeType": "application/json"
+    },
+    {
+      "name": "alignment_summary_tool guidance",
+      "uri": "tool://guidance/alignment_summary_tool",
+      "description": "Runtime guidance and defaults for tool selection",
+      "mimeType": "application/json"
+    },
+    {
+      "name": "header_metadata_tool guidance",
+      "uri": "tool://guidance/header_metadata_tool",
+      "description": "Runtime guidance and defaults for tool selection",
+      "mimeType": "application/json"
+    },
+    {
+      "name": "qc_bed_tool guidance",
+      "uri": "tool://guidance/qc_bed_tool",
+      "description": "Runtime guidance and defaults for tool selection",
+      "mimeType": "application/json"
+    },
+    {
+      "name": "sequencing_summary_tool guidance",
+      "uri": "tool://guidance/sequencing_summary_tool",
+      "description": "Runtime guidance and defaults for tool selection",
+      "mimeType": "application/json"
+    },
+    {
+      "name": "qc_variants_tool guidance",
+      "uri": "tool://guidance/qc_variants_tool",
+      "description": "Runtime guidance and defaults for tool selection",
+      "mimeType": "application/json"
+    },
+    {
+      "name": "targeted_coverage_tool guidance",
+      "uri": "tool://guidance/targeted_coverage_tool",
+      "description": "Runtime guidance and defaults for tool selection",
+      "mimeType": "application/json"
+    }
+  ],
+  "templates": [
+    {
+      "name": "tool-flags",
+      "uriTemplate": "tool://flags/{tool}",
+      "description": "Flag schemas for supported CLI tools",
+      "mimeType": "application/json"
+    },
+    {
+      "name": "tool-recipes",
+      "uriTemplate": "tool://recipes/{tool}",
+      "description": "Flag recipes/presets for supported CLI tools",
+      "mimeType": "application/json"
+    },
+    {
+      "name": "tool-guidance",
+      "uriTemplate": "tool://guidance/{tool}",
+      "description": "Runtime guidance and defaults for supported tools",
+      "mimeType": "application/json"
+    }
+  ]
+}
