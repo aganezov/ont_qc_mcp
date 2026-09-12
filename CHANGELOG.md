@@ -47,6 +47,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Parser semantics clarified for missing vs empty histogram blocks
 
 ### Fixed
+- Suppress unused mosdepth per-base BED files and indexes for whole, windowed, and targeted coverage reports.
 - Report missing configured executables before launching forced Docker or local IGV runtimes.
 - Reject Boolean values for numeric CLI flags before command execution, while preserving accepted numeric values and null/unset behavior.
 - Reject non-Boolean values for Boolean CLI flags instead of silently enabling or disabling them through Python truthiness; null still leaves a flag unset.

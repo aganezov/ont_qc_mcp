@@ -531,6 +531,7 @@ def mosdepth_coverage(
 
         cmd: list[str] = [
             tools.mosdepth,
+            "--no-per-base",  # Only summary metrics are returned.
         ]
         cmd += flag_args
         cmd += [str(prefix), safe_path_arg(path)]
@@ -792,7 +793,7 @@ def run_mosdepth_targeted(
         cleanup.callback(rmtree, output_dir, ignore_errors=True)
         prefix = output_dir / "coverage"
 
-        cmd: list[str] = [tools.mosdepth]
+        cmd: list[str] = [tools.mosdepth, "--no-per-base"]  # Only region and threshold tables are consumed.
         cmd += flag_args
         cmd += ["--by", safe_path_arg(bed_path)]
 
