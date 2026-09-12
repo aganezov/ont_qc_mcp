@@ -95,6 +95,8 @@ def build_cli_args(tool: str, flags: dict[str, Any] | None) -> list[str]:
 
         match flag.type:
             case "bool":
+                if not isinstance(value, bool):
+                    raise FlagValidationError(f"Flag {key} expects bool, got {type(value).__name__}")
                 if value:
                     args.append(_select_flag_name(flag))
                 continue
