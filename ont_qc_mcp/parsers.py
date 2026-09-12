@@ -1,6 +1,5 @@
 import json
 import re
-from collections import deque
 from pathlib import Path
 from typing import Literal, Sequence, cast
 
@@ -1184,7 +1183,7 @@ def parse_mosdepth_regions_bed(
     import gzip
 
     # Four-column output lacks names. Retain each BED occurrence for that fallback.
-    region_names: dict[tuple[str, int, int], deque[str]] = {}
+    region_names: dict[tuple[str, int, int], list[str]] = {}
     with open(bed_path, "r") as f:
         for line in f:
             line = line.strip()
@@ -1198,7 +1197,11 @@ def parse_mosdepth_regions_bed(
                 start = int(parts[1])
                 end = int(parts[2])
                 name = parts[3] if len(parts) >= 4 else f"{chrom}:{start}-{end}"
-                region_names.setdefault((chrom, start, end), deque()).append(name)
+                region_names.setdefault((chrom, start, end), []).append(name)
+
+    # Pop in input order without shifting the remaining names for every duplicate.
+    for occurrences in region_names.values():
+        occurrences.reverse()
 
     # Parse mosdepth regions.bed.gz
     results: list[dict[str, object]] = []
@@ -1217,7 +1220,7 @@ def parse_mosdepth_regions_bed(
             mean_depth = float(parts[-1])
 
             names = region_names.get((chrom, start, end))
-            fallback_name = names.popleft() if names else f"{chrom}:{start}-{end}"
+            fallback_name = names.pop() if names else f"{chrom}:{start}-{end}"
             region_name = parts[3] if len(parts) >= 5 else fallback_name
 
             results.append(
