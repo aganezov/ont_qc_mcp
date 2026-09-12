@@ -26,6 +26,18 @@ so real contigs named `total`, `total_region`, or ending in `_region` remain
 valid. It also distinguishes the actual header from contigs such as `chrom`
 and `chromosome1`. See the [mosdepth 0.3.14 implementation](https://github.com/brentp/mosdepth/blob/v0.3.14/mosdepth.nim).
 
+The wrapper requires the footer appropriate to the command it executed. The
+parser checks each aggregate's integer length and base counts against its own
+constituent rows. Region totals are checked separately because partial or
+overlapping targets can differ from whole-contig totals. Inconsistent reports
+raise an error identifying the input file; the parser does not attempt repairs.
+
+Direct Python callers can supply `expected_region_mode=True` for region/window
+output or `False` for whole-contig output. The default `None` retains support for
+historical snippets without a footer, while validating any aggregates present.
+These checks validate layout and count consistency. They cannot distinguish a
+truncated report that happens to form another internally consistent report.
+
 The parser does not add contigs absent from the summary. For explicit BED,
 location, or gene intervals and coverage threshold percentages, use
 `targeted_coverage_tool`, which reads separate region and threshold files.
