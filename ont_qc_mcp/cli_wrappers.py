@@ -1,17 +1,28 @@
 import gzip
 import logging
 import os
+import select
 import subprocess  # nosec B404
 import tempfile
 import time
 from collections import deque
+from contextlib import ExitStack
 from pathlib import Path
-from shutil import copyfileobj, which
-from threading import Thread
+from shutil import copyfileobj, rmtree, which
+from threading import Event, Lock, Thread
 from typing import Any, Literal
+from uuid import uuid4
 
 from .config import ExecutionConfig, ToolPaths
 from .flag_schemas import FlagDef, get_tool_flags
+from .process_control import (
+    cancellation_disabled,
+    check_cancelled,
+    cleanup_processes,
+    communicate_process,
+    start_process,
+    wait_process,
+)
 from .parsers import parse_cramino_json, parse_mosdepth_summary, parse_nanoq_json
 from .schemas import (
     ChopperReport,
@@ -263,6 +274,7 @@ def chopper_filter(
             # before publication so a cleanup failure leaves the destination intact.
             staged_output.unlink()
             publish_stage = compressed_output
+        check_cancelled()
         if destination is not None:
             if destination.exists():
                 publish_stage.chmod(destination.stat().st_mode & 0o777)
@@ -330,6 +342,8 @@ def nanoq_from_bam_streaming(
     sam_proc: subprocess.Popen | None = None
     nano_proc: subprocess.Popen | None = None
     stderr_thread: Thread | None = None
+    stop_reader = Event()
+    stderr_lock = Lock()
     try:
         if cfg.nanoq_aux_stats:
             with tempfile.NamedTemporaryFile(suffix=".nanoq.lengths.txt", delete=False) as tmp:
@@ -339,10 +353,8 @@ def nanoq_from_bam_streaming(
             nano_cmd += ["--read-lengths", str(read_lengths_path), "--read-qualities", str(read_qualities_path)]
         nano_cmd += nanoq_args
         logger.debug("Starting samtools|nanoq streaming pipeline: %s | %s", format_cmd(sam_cmd), format_cmd(nano_cmd))
-        sam_proc = subprocess.Popen(  # nosec B603: trusted command construction, shell=False
-            sam_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-        )
-        nano_proc = subprocess.Popen(  # nosec B603: trusted command construction, shell=False
+        sam_proc = start_process(sam_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        nano_proc = start_process(
             nano_cmd,
             stdin=sam_proc.stdout,
             stdout=subprocess.PIPE,
@@ -358,31 +370,47 @@ def nanoq_from_bam_streaming(
         stderr_head: list[str] = []
         sam_stderr = sam_proc.stderr
 
+        def _record_stderr(line: bytes) -> None:
+            line_text = line.decode("utf-8", errors="replace")
+            with stderr_lock:
+                if len(stderr_head) < 20:
+                    stderr_head.append(line_text)
+                stderr_tail.append(line_text)
+
         def _drain_sam_stderr():
             if not sam_stderr:
                 return
+            pending = b""
             try:
-                for line in sam_stderr:
+                fd = sam_stderr.fileno()
+                os.set_blocking(fd, False)
+                while not stop_reader.is_set():
+                    ready, _, _ = select.select([fd], [], [], 0.1)
+                    if not ready:
+                        continue
                     try:
-                        decoded = line.decode("utf-8", errors="replace")
-                    except Exception:
-                        decoded = str(line)
-                    line_text = decoded.rstrip("\n")
-                    if len(stderr_head) < 20:
-                        stderr_head.append(line_text)
-                    stderr_tail.append(line_text)
+                        chunk = os.read(fd, 65536)
+                    except BlockingIOError:
+                        continue
+                    if not chunk:
+                        break
+                    lines = (pending + chunk).split(b"\n")
+                    pending = lines.pop()
+                    for line in lines:
+                        _record_stderr(line)
+                if pending:
+                    _record_stderr(pending)
+            except OSError as exc:
+                logger.warning("Cannot read samtools stderr: %s", exc)
             finally:
-                try:
-                    sam_stderr.close()
-                except Exception as exc:
-                    logger.debug("Ignore stderr reader close error: %s", exc)
+                sam_stderr.close()
 
         if sam_proc.stderr:
             stderr_thread = Thread(target=_drain_sam_stderr, daemon=True)
             stderr_thread.start()
 
         try:
-            nano_out, nano_err = nano_proc.communicate(timeout=overall_timeout)
+            nano_out, nano_err = communicate_process(nano_proc, timeout=overall_timeout)
         except subprocess.TimeoutExpired:
             sam_running = sam_proc.poll() is None
             nano_running = nano_proc.poll() is None
@@ -393,7 +421,8 @@ def nanoq_from_bam_streaming(
                 if nano_running and not sam_running
                 else "both"
             )
-            stderr_context = "\n".join(list(stderr_tail)[-10:]) if stderr_tail else "(no stderr captured)"
+            with stderr_lock:
+                stderr_context = "\n".join(list(stderr_tail)[-10:]) if stderr_tail else "(no stderr captured)"
             raise RuntimeError(
                 f"Timeout while running samtools|nanoq pipeline (>{overall_timeout}s); "
                 f"likely hung at {hung_stage}. "
@@ -403,7 +432,7 @@ def nanoq_from_bam_streaming(
 
         remaining = max(0.0, overall_timeout - (time.monotonic() - start_time))
         try:
-            sam_proc.wait(timeout=remaining or 0.1)
+            wait_process(sam_proc, timeout=remaining or 0.1)
         except subprocess.TimeoutExpired:
             raise RuntimeError(
                 f"Timeout waiting for samtools fastq to exit (>{overall_timeout}s). cmd: {format_cmd(sam_cmd)}"
@@ -412,9 +441,10 @@ def nanoq_from_bam_streaming(
             stderr_thread.join(timeout=0.2)
 
         sam_rc = sam_proc.returncode
-        sam_err_lines = list(stderr_tail)
-        if len(sam_err_lines) == stderr_tail.maxlen:
-            sam_err_lines = stderr_head + ["... (truncated) ..."] + sam_err_lines[-20:]
+        with stderr_lock:
+            sam_err_lines = list(stderr_tail)
+            if len(sam_err_lines) == stderr_tail.maxlen:
+                sam_err_lines = stderr_head + ["... (truncated) ..."] + sam_err_lines[-20:]
         sam_err_text = "\n".join(sam_err_lines)
         nano_out_text = (
             nano_out.decode("utf-8", errors="replace") if isinstance(nano_out, (bytes, bytearray)) else nano_out
@@ -460,52 +490,19 @@ def nanoq_from_bam_streaming(
         report_progress(f"nanoq streaming done: {path}")
         return stats
     finally:
-        # Own every acquired child from startup through parsing. On success both
-        # have exited, so only reap/close; on failure stop any remaining children.
-        for proc in (nano_proc, sam_proc):
-            if proc is not None:
-                try:
-                    if proc.poll() is None:
-                        proc.terminate()
-                except Exception as exc:
-                    logger.debug("Ignore terminate error for %s: %s", proc, exc)
-        for proc in (nano_proc, sam_proc):
-            if proc is not None:
-                try:
-                    proc.wait(timeout=1)
-                except Exception as exc:
-                    logger.debug("Wait failed for %s; trying kill: %s", proc, exc)
+        # Stop the reader before closing pipes; inherited stderr need not reach EOF.
+        stop_reader.set()
+        if stderr_thread and stderr_thread.ident is not None:
+            stderr_thread.join()
+        try:
+            cleanup_processes([nano_proc, sam_proc])
+        finally:
+            for aux_path in (read_lengths_path, read_qualities_path):
+                if aux_path is not None:
                     try:
-                        proc.kill()
-                    except Exception as kill_exc:
-                        logger.debug("Ignore kill error for %s: %s", proc, kill_exc)
-                    try:
-                        proc.wait(timeout=1)
-                    except Exception as wait_exc:
-                        logger.debug("Ignore wait error for %s: %s", proc, wait_exc)
-        if stderr_thread:
-            try:
-                stderr_thread.join(timeout=1)
-            except Exception as exc:
-                logger.debug("Ignore stderr thread join error: %s", exc)
-        for proc in (nano_proc, sam_proc):
-            if proc is not None:
-                for stream in (proc.stdin, proc.stdout, proc.stderr):
-                    if stream is not None:
-                        # A descendant may still hold stderr open after our direct
-                        # child exits. Its reader owns close; do not block on its lock.
-                        if proc is sam_proc and stream is proc.stderr and stderr_thread and stderr_thread.is_alive():
-                            continue
-                        try:
-                            stream.close()
-                        except Exception as exc:
-                            logger.debug("Ignore pipe close error: %s", exc)
-        for aux_path in (read_lengths_path, read_qualities_path):
-            if aux_path is not None:
-                try:
-                    aux_path.unlink(missing_ok=True)
-                except OSError as exc:
-                    logger.debug("Ignore auxiliary file cleanup error for %s: %s", aux_path, exc)
+                        aux_path.unlink(missing_ok=True)
+                    except OSError as exc:
+                        logger.debug("Ignore auxiliary file cleanup error for %s: %s", aux_path, exc)
 
 
 def mosdepth_coverage(
@@ -563,9 +560,9 @@ def detect_container_runtime(tools: ToolPaths) -> Literal["docker", "apptainer",
     docker_path = which(tools.docker)
     if docker_path:
         try:
-            subprocess.run([docker_path, "info"], capture_output=True, timeout=5, check=True)  # nosec B603
+            run_command([docker_path, "info"], timeout=5)
             return "docker"
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        except CommandError:
             pass
 
     for cmd in (tools.apptainer, tools.singularity):
@@ -609,11 +606,14 @@ def run_igv_snapshot(
     timeout = cfg.timeout_for("igv")
     image = cfg.igv_container_image
 
+    container_name = f"ont-qc-igv-{uuid4().hex}"
     if runtime == "docker":
         cmd: list[str] = [
             tools.docker,
             "run",
             "--rm",
+            "--name",
+            container_name,
         ]
         for mount in sorted(read_mounts):
             cmd += ["-v", f"{mount}:{mount}:ro"]
@@ -652,11 +652,21 @@ def run_igv_snapshot(
         ]
 
     try:
-        run_command(cmd, timeout=timeout)
-    except CommandError as exc:
-        raise RuntimeError(
-            f"igv snapshot failed: {format_cmd(exc.result.cmd)}\n{_truncate_stderr(exc.result.stderr)}"
-        ) from exc
+        try:
+            run_command(cmd, timeout=timeout)
+        except CommandError as exc:
+            raise RuntimeError(
+                f"igv snapshot failed: {format_cmd(exc.result.cmd)}\n{_truncate_stderr(exc.result.stderr)}"
+            ) from exc
+    except BaseException:
+        if runtime == "docker":
+            # The Docker daemon owns the container separately from the CLI process.
+            with cancellation_disabled():
+                try:
+                    run_command([tools.docker, "rm", "--force", container_name], timeout=5)
+                except Exception as exc:
+                    logger.warning("Docker cleanup could not confirm removal of %s: %s", container_name, exc)
+        raise
 
     snapshots = sorted(output_dir.glob(f"*.{snapshot_format}"))
     return snapshots, runtime, cmd
@@ -763,42 +773,40 @@ def run_mosdepth_targeted(
 
     # Create temp directory for mosdepth output
     output_dir = Path(tempfile.mkdtemp(prefix="mosdepth_targeted_"))
-    prefix = output_dir / "coverage"
+    with ExitStack() as cleanup:
+        cleanup.callback(rmtree, output_dir, ignore_errors=True)
+        prefix = output_dir / "coverage"
 
-    cmd: list[str] = [tools.mosdepth]
-    cmd += flag_args
-    cmd += ["--by", safe_path_arg(bed_path)]
+        cmd: list[str] = [tools.mosdepth]
+        cmd += flag_args
+        cmd += ["--by", safe_path_arg(bed_path)]
 
-    if thresholds:
-        threshold_str = ",".join(str(t) for t in thresholds)
-        cmd += ["--thresholds", threshold_str]
+        if thresholds:
+            threshold_str = ",".join(str(t) for t in thresholds)
+            cmd += ["--thresholds", threshold_str]
 
-    cmd += [str(prefix), safe_path_arg(bam_path)]
+        cmd += [str(prefix), safe_path_arg(bam_path)]
 
-    report_progress(f"mosdepth targeted start: {bam_path} x {bed_path}")
-    logger.debug("Executing mosdepth targeted: %s", format_cmd(cmd))
-    try:
-        run_command(cmd, timeout=timeout)
-    except CommandError as exc:
-        # Clean up on failure
-        import shutil
+        report_progress(f"mosdepth targeted start: {bam_path} x {bed_path}")
+        logger.debug("Executing mosdepth targeted: %s", format_cmd(cmd))
+        try:
+            run_command(cmd, timeout=timeout)
+        except CommandError as exc:
+            raise RuntimeError(
+                f"mosdepth targeted failed: {format_cmd(exc.result.cmd)}\n{_truncate_stderr(exc.result.stderr)}"
+            ) from exc
 
-        shutil.rmtree(output_dir, ignore_errors=True)
-        raise RuntimeError(
-            f"mosdepth targeted failed: {format_cmd(exc.result.cmd)}\n{_truncate_stderr(exc.result.stderr)}"
-        ) from exc
+        regions_bed = prefix.with_suffix(".regions.bed.gz")
+        thresholds_bed = prefix.with_suffix(".thresholds.bed.gz")
 
-    regions_bed = prefix.with_suffix(".regions.bed.gz")
-    thresholds_bed = prefix.with_suffix(".thresholds.bed.gz")
+        if not regions_bed.exists():
+            raise RuntimeError(f"mosdepth did not produce expected output: {regions_bed}")
 
-    if not regions_bed.exists():
-        import shutil
-
-        shutil.rmtree(output_dir, ignore_errors=True)
-        raise RuntimeError(f"mosdepth did not produce expected output: {regions_bed}")
-
-    report_progress(f"mosdepth targeted done: {bam_path} x {bed_path}")
-    return regions_bed, thresholds_bed if thresholds_bed.exists() else None, output_dir
+        report_progress(f"mosdepth targeted done: {bam_path} x {bed_path}")
+        result = regions_bed, thresholds_bed if thresholds_bed.exists() else None, output_dir
+        check_cancelled()
+        cleanup.pop_all()
+        return result
 
 
 __all__ = [

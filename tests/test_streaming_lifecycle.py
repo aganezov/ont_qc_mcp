@@ -1,7 +1,9 @@
 """Direct child-process ownership in the samtools -> nanoq pipeline."""
 
+import asyncio
 import json
 import os
+import signal
 import subprocess
 import sys
 import tempfile
@@ -140,10 +142,14 @@ def test_cleanup_failure_does_not_replace_start_error(pipeline_probe, tmp_path, 
     tools = make_tools()
     tools.nanoq = str(tmp_path / "missing-nanoq")
 
-    def failed_terminate(proc):
-        raise OSError("termination failed")
+    original_killpg = os.killpg
 
-    monkeypatch.setattr(popen_class, "terminate", failed_terminate)
+    def failed_terminate(pgid, sig):
+        if sig == signal.SIGTERM:
+            raise OSError("termination failed")
+        return original_killpg(pgid, sig)
+
+    monkeypatch.setattr(os, "killpg", failed_terminate)
     with pytest.raises(FileNotFoundError, match="missing-nanoq"):
         nanoq_from_bam_streaming(tmp_path / "unused.bam", tools, exec_cfg=config())
     assert_released(children, tmp_path)
@@ -172,11 +178,16 @@ def test_success_reaps_closes_and_does_not_terminate(pipeline_probe, tmp_path, m
     make_tools, children, popen_class = pipeline_probe
     tools = make_tools("print('@r\\nACGT\\n+\\nIIII')", f"sys.stdin.read()\nprint({NANOQ_JSON!r})")
 
-    def unexpected_signal(proc):
-        pytest.fail("Successful children must not be terminated or killed")
+    original_killpg = os.killpg
 
-    monkeypatch.setattr(popen_class, "terminate", unexpected_signal)
-    monkeypatch.setattr(popen_class, "kill", unexpected_signal)
+    def unexpected_signal(pgid, sig):
+        try:
+            original_killpg(pgid, 0)
+        except ProcessLookupError:
+            raise
+        pytest.fail("Successful children must have exited before cleanup signals")
+
+    monkeypatch.setattr(os, "killpg", unexpected_signal)
     stats = nanoq_from_bam_streaming(tmp_path / "unused.bam", tools, exec_cfg=config())
     assert (stats.read_count, stats.total_bases) == (1, 4)
     assert_released(children, tmp_path)
@@ -252,10 +263,21 @@ def test_descendant_held_stderr_does_not_extend_wrapper_timeout(pipeline_probe, 
         "signal.pause()\n"
     )
     marker = holder.with_suffix(".started")
+    from ont_qc_mcp import cli_wrappers
+
+    threads = []
+    original_thread = cli_wrappers.Thread
+
+    def tracked_thread(*args, **kwargs):
+        thread = original_thread(*args, **kwargs)
+        threads.append(thread)
+        return thread
+
+    monkeypatch.setattr(cli_wrappers, "Thread", tracked_thread)
     tools = make_tools(
         "import subprocess\n"
         f"subprocess.Popen([{sys.executable!r}, {str(holder)!r}], "
-        "stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL)\n"
+        "stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, start_new_session=True)\n"
         "signal.pause()"
     )
     tracked_start = subprocess.Popen
@@ -281,9 +303,10 @@ def test_descendant_held_stderr_does_not_extend_wrapper_timeout(pipeline_probe, 
         for proc in children:
             with pytest.raises(ChildProcessError):
                 os.waitpid(proc.pid, os.WNOHANG)
-        # The caller returns before the descendant releases the reader's stream.
+        # An escaped descendant remains alive, but the reader no longer depends on EOF.
         os.kill(int(marker.read_text()), 0)
-        assert not children[0].stderr.closed
+        assert children[0].stderr.closed
+        assert all(not thread.is_alive() for thread in threads)
         assert children[0].stdout.closed
         assert children[1].stdout.closed and children[1].stderr.closed
         assert not list(tmp_path.glob("*.nanoq.*.txt"))
@@ -298,3 +321,31 @@ def test_descendant_held_stderr_does_not_extend_wrapper_timeout(pipeline_probe, 
     while not children[0].stderr.closed and time.monotonic() < deadline:
         time.sleep(0.01)
     assert_released(children, tmp_path)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ignore_term", [False, True])
+async def test_request_cancellation_releases_pipeline(pipeline_probe, tmp_path, ignore_term):
+    import signal
+    from ont_qc_mcp.threadpool import run_sync
+
+    make_tools, children, _ = pipeline_probe
+    body = "signal.signal(signal.SIGTERM, signal.SIG_IGN)\nsignal.pause()" if ignore_term else "signal.pause()"
+    tools = make_tools(body, body)
+    cfg = ExecutionConfig(per_tool_timeouts={"samtools": 20, "nanoq": 20}, per_tool_threads={}, nanoq_aux_stats=True)
+    task = asyncio.create_task(run_sync(nanoq_from_bam_streaming, tmp_path / "unused.bam", tools, exec_cfg=cfg))
+    try:
+        deadline = time.monotonic() + 5
+        while len(children) < 2 or not (tmp_path / "nanoq.started").exists():
+            assert time.monotonic() < deadline
+            await asyncio.sleep(0.01)
+        task.cancel()
+        done, _ = await asyncio.wait({task}, timeout=4)
+        assert task in done, "Cancelled pipeline did not stop before its execution timeout"
+        assert task.cancelled()
+        assert_released(children, tmp_path)
+    finally:
+        for proc in children:
+            if proc.poll() is None:
+                os.kill(proc.pid, signal.SIGKILL)
+        await asyncio.gather(task, return_exceptions=True)

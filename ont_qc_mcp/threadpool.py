@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import logging
 import os
 import select
@@ -12,6 +13,8 @@ from typing import Callable, ParamSpec, TypeVar
 
 from anyio import CancelScope
 from anyio.lowlevel import checkpoint
+
+from .process_control import CANCEL_EVENT
 
 P = ParamSpec("P")
 T = TypeVar("T")
@@ -133,11 +136,15 @@ async def run_sync(func: Callable[P, T], /, *args: P.args, **kwargs: P.kwargs) -
             return func(*args, **kwargs)
 
     await checkpoint()
-    submitted = get_executor().submit(partial(func, *args, **kwargs))
+    context = contextvars.copy_context()
+    cancelled = threading.Event()
+    context.run(CANCEL_EVENT.set, cancelled)
+    submitted = get_executor().submit(context.run, partial(func, *args, **kwargs))
     future = asyncio.wrap_future(submitted, loop=loop)
     try:
         return await asyncio.shield(future)
     except asyncio.CancelledError:
+        cancelled.set()
         if not submitted.cancel():
             # Running threads cannot be canceled. Keep the caller (and its
             # dispatch semaphore) alive until the worker actually finishes.
@@ -151,7 +158,7 @@ async def run_sync(func: Callable[P, T], /, *args: P.args, **kwargs: P.kwargs) -
                         continue
                 if not future.cancelled():
                     error = future.exception()  # Retrieve worker errors; cancellation wins.
-                    if error is not None:
+                    if error is not None and not isinstance(error, asyncio.CancelledError):
                         logger.warning("Worker failed after request cancellation: %r", error)
         raise
 

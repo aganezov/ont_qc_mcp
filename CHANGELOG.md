@@ -47,7 +47,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Parser semantics clarified for missing vs empty histogram blocks
 
 ### Fixed
-- Keep MCP concurrency capacity reserved until a cancelled running worker finishes, and prevent cancelled queued work from starting. Cancellation does not yet terminate workers or subprocesses.
+- Cooperatively stop owned subprocess groups on request cancellation, interrupt retry waits and streaming stderr readers, attempt removal of the invocation's Docker container, clean generated IGV and targeted mosdepth artifacts on failure, and release waiters when a shared read-QC owner is cancelled.
+- Keep MCP concurrency capacity reserved until a cancelled running worker finishes, and prevent cancelled queued work from starting.
 - Honor the caller's execution configuration for every `alignment_summary` component, including alignment and coverage input limits, thread counts, and timeouts.
 - Validate mosdepth summary footers against the executed mode and cross-check aggregate length/base counts before returning QC results.
 - Exclude mosdepth whole-genome and region aggregates from contig summaries, mean calculations, and low-coverage locations. Preserve real contigs with aggregate-like names or names beginning with `chrom`.

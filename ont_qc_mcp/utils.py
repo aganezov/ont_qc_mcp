@@ -3,11 +3,11 @@ import logging
 import os
 import shlex
 import subprocess  # nosec B404: intentional use for CLI execution
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Sequence
 
+from .process_control import check_cancelled, cleanup_processes, communicate_process, start_process, wait_or_cancel
 from .threadpool import run_sync
 
 
@@ -81,6 +81,7 @@ def run_command(
 ) -> CommandResult:
     """Run a command and capture stdio. When stdout_path is provided, stream stdout to that file."""
     out_file: IO[str] | None = None
+    process: subprocess.Popen | None = None
 
     def _bound(text: str, limit: int | None) -> str:
         if limit is None or limit <= 0 or len(text) <= limit:
@@ -89,27 +90,18 @@ def run_command(
         return f"{text[:limit]}... (truncated {truncated} chars)"
 
     try:
+        check_cancelled()
         logger.debug("Running command: %s", format_cmd(cmd))
         if stdout_path is not None:
             out_file = Path(stdout_path).open("w", encoding="utf-8")
-            process = subprocess.run(  # nosec B603: commands built from trusted args, shell=False
-                cmd,
-                check=False,
-                text=True,
-                stdout=out_file,
-                stderr=subprocess.PIPE,
-                timeout=timeout,
-                stdin=stdin,
-            )
-        else:
-            process = subprocess.run(  # nosec B603: commands built from trusted args, shell=False
-                cmd,
-                check=False,
-                text=True,
-                capture_output=True,
-                timeout=timeout,
-                stdin=stdin,
-            )
+        process = start_process(
+            cmd,
+            text=True,
+            stdout=out_file if out_file is not None else subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            stdin=stdin,
+        )
+        stdout, stderr = communicate_process(process, timeout)
     except subprocess.TimeoutExpired as exc:
         stdout = _decode_bytes(exc.stdout) if stdout_path is None else f"<streamed to {stdout_path}>"
         stderr = _decode_bytes(exc.stderr)
@@ -128,12 +120,15 @@ def run_command(
             message += f"\n{_truncate_stderr(stderr)}"
         raise CommandError(result, message_override=message) from exc
     finally:
-        if out_file is not None:
-            out_file.close()
+        try:
+            cleanup_processes([process])
+        finally:
+            if out_file is not None:
+                out_file.close()
 
-    stdout_val = process.stdout if stdout_path is None else f"<streamed to {stdout_path}>"
+    stdout_val = stdout if stdout_path is None else f"<streamed to {stdout_path}>"
     bounded_stdout = _bound(stdout_val or "", max_stdout_chars)
-    bounded_stderr = _bound(process.stderr or "", max_stderr_chars)
+    bounded_stderr = _bound(stderr or "", max_stderr_chars)
     result = CommandResult(cmd=cmd, returncode=process.returncode, stdout=bounded_stdout, stderr=bounded_stderr)
     if process.returncode != 0:
         logger.warning("Command failed rc=%s: %s", process.returncode, format_cmd(cmd))
@@ -169,6 +164,7 @@ def run_command_with_retry(
     attempt = 0
     last_error: CommandError | None = None
     while attempt < max_attempts:
+        check_cancelled()
         try:
             return run_command(
                 cmd,
@@ -184,7 +180,7 @@ def run_command_with_retry(
             if attempt >= max_attempts:
                 break
             logger.warning("Retrying command (attempt %s/%s): %s", attempt + 1, max_attempts, format_cmd(cmd))
-            time.sleep(backoff_seconds * (2 ** (attempt - 1)))
+            wait_or_cancel(backoff_seconds * (2 ** (attempt - 1)))
     if last_error is None:
         raise RuntimeError("Command retry exhausted without captured error")
     raise last_error
