@@ -6,6 +6,10 @@ These tests spawn the server as a subprocess and communicate via MCP protocol.
 
 import json
 import importlib
+import os
+import signal
+import sys
+import time
 import ont_qc_mcp
 from typing import cast
 
@@ -496,26 +500,37 @@ def test_invalid_flags_return_validation_error(mcp_server_params, sample_fastq):
 
 
 def test_bam_streaming_timeout_surface_runtime_error(mcp_server_params, tmp_path):
-    """Streaming pipeline should fail cleanly on timeout."""
+    """Require both child startups, a real timeout diagnostic, and child exit."""
+    scripts = []
+    for name in ("samtools", "nanoq"):
+        script = tmp_path / f"{name}.py"
+        script.write_text(
+            f"#!{sys.executable}\nimport os, signal\nfrom pathlib import Path\n"
+            "Path(__file__).with_suffix('.started').write_text(str(os.getpid()))\n"
+            "signal.pause()\n"
+        )
+        script.chmod(0o755)
+        scripts.append(script)
 
-    sleep_script = tmp_path / "sleep_tool.py"
-    sleep_script.write_text("#!/usr/bin/env python3\nimport time\nimport sys\ntime.sleep(5)\n")
-    sleep_script.chmod(0o755)
-
-    # Force very short timeouts and redirect samtools/nanoq to the sleeping stub.
     base_env: dict[str, str] = dict(getattr(mcp_server_params, "env", None) or {})
     base_env.update(
         {
-            "SAMTOOLS": str(sleep_script),
-            "NANOQ": str(sleep_script),
-            "MCP_TIMEOUT_SAMTOOLS": "1",
-            "MCP_TIMEOUT_NANOQ": "1",
+            "SAMTOOLS": str(scripts[0]),
+            "NANOQ": str(scripts[1]),
+            "MCP_TIMEOUT_SAMTOOLS": "2",
+            "MCP_TIMEOUT_NANOQ": "2",
         }
     )
     server_params = mcp_server_params.model_copy(update={"env": base_env})
-
     dummy_bam = tmp_path / "dummy.bam"
     dummy_bam.write_text("bam")
+
+    def alive(pid):
+        try:
+            os.kill(pid, 0)
+            return True
+        except ProcessLookupError:
+            return False
 
     async def _test():
         async with stdio_client(server_params) as (read, write):
@@ -523,10 +538,49 @@ def test_bam_streaming_timeout_surface_runtime_error(mcp_server_params, tmp_path
                 await session.initialize()
                 result = await session.call_tool("read_length_distribution_bam_tool", {"path": str(dummy_bam)})
                 assert result.isError
-                assert result.content
-                payload = _text_content(result.content[0]).text
-                # Accept runtime/timeout errors and environments lacking samtools/nanoq.
-                assert "runtime" in payload or "Timeout" in payload or "not_found" in payload
+                payload = json.loads(_text_content(result.content[0]).text)
+                assert payload["kind"] == "runtime"
+                assert "Timeout while running samtools|nanoq pipeline" in payload["message"]
+                assert "likely hung at both" in payload["message"]
+                for script in scripts:
+                    marker = script.with_suffix(".started")
+                    assert marker.exists(), f"Child never started: {script}"
+                    pid = int(marker.read_text())
+                    deadline = time.monotonic() + 5
+                    while alive(pid) and time.monotonic() < deadline:
+                        await anyio.sleep(0.01)
+                    assert not alive(pid), f"Timeout left child {pid} alive or unreaped"
+
+    try:
+        anyio.run(_test)
+    finally:
+        # Independent test cleanup also runs if a mutation breaks wrapper teardown.
+        for script in scripts:
+            marker = script.with_suffix(".started")
+            if marker.exists():
+                try:
+                    os.kill(int(marker.read_text()), signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+
+
+def test_bam_streaming_missing_executable_is_not_timeout(mcp_server_params, tmp_path):
+    env = dict(mcp_server_params.env or {})
+    env["SAMTOOLS"] = str(tmp_path / "missing-samtools")
+    server_params = mcp_server_params.model_copy(update={"env": env})
+    bam = tmp_path / "dummy.bam"
+    bam.write_text("bam")
+
+    async def _test():
+        async with stdio_client(server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool("read_length_distribution_bam_tool", {"path": str(bam)})
+                assert result.isError
+                payload = json.loads(_text_content(result.content[0]).text)
+                assert payload["kind"] == "not_found"
+                assert "missing-samtools" in payload["message"]
+                assert "Timeout" not in payload["message"]
 
     anyio.run(_test)
 
