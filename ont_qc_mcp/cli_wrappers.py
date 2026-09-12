@@ -547,7 +547,12 @@ def mosdepth_coverage(
             summary_text = fh.read()
 
     report_progress(f"mosdepth done: {path}")
-    return parse_mosdepth_summary(summary_text, file_path=str(path), threshold=low_cov_threshold)
+    return parse_mosdepth_summary(
+        summary_text,
+        file_path=str(path),
+        threshold=low_cov_threshold,
+        expected_region_mode="--by" in flag_args,
+    )
 
 
 def detect_container_runtime(tools: ToolPaths) -> Literal["docker", "apptainer", None]:

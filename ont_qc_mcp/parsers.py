@@ -211,21 +211,48 @@ def parse_cramino_json(payload: str | dict) -> CraminoStats:
     )
 
 
-def parse_mosdepth_summary(text: str, file_path: str, threshold: float | int | None = None) -> MosdepthStats:
+def parse_mosdepth_summary(
+    text: str,
+    file_path: str,
+    threshold: float | int | None = None,
+    *,
+    expected_region_mode: bool | None = None,
+) -> MosdepthStats:
     """
     Parse mosdepth .summary.txt output.
     Expected columns: chrom, length, bases, mean
+    A known region mode requires its aggregate footer; None permits legacy input
+    without a footer. Present aggregates must match their constituent counts.
     """
     coverage_by_contig: list[CoverageByContig] = []
     coverage_distribution: list[HistogramBin] = []
     rows = [line.strip().split("\t") for line in text.splitlines() if line.strip()]
     rows = [parts for parts in rows if parts[:4] != ["chrom", "length", "bases", "mean"]]
 
+    def validate_total(total: list[str], detail_rows: list[list[str]]) -> None:
+        counts: list[tuple[int, int]] = []
+        for row in [total, *detail_rows]:
+            if len(row) < 4 or not all(re.fullmatch(r"[0-9]+", value) for value in row[1:3]):
+                raise ValueError(
+                    f"Malformed mosdepth summary for {file_path}: expected nonnegative length/bases counts"
+                )
+            counts.append((int(row[1]), int(row[2])))
+        if counts[0] != (sum(length for length, _ in counts[1:]), sum(bases for _, bases in counts[1:])):
+            raise ValueError(
+                f"Malformed mosdepth summary for {file_path}: {total[0]} length/bases do not match row sums"
+            )
+
     # mosdepth ends whole-contig summaries with total, or summaries using --by
     # with total followed by total_region. Names alone cannot identify earlier
     # categories: real contigs may be named total, total_region, or *_region.
     region_mode = len(rows) >= 2 and rows[-2][0] == "total" and rows[-1][0] == "total_region"
+    whole_footer = bool(rows) and rows[-1][0] == "total"
+    if expected_region_mode is True and not region_mode:
+        raise ValueError(f"Malformed mosdepth summary for {file_path}: expected terminal total and total_region rows")
+    if expected_region_mode is False and not whole_footer:
+        raise ValueError(f"Malformed mosdepth summary for {file_path}: expected terminal total row for whole mode")
     if region_mode:
+        whole_total, region_total = rows[-2:]
         rows = rows[:-2]
         if len(rows) % 2:
             raise ValueError(f"Malformed mosdepth summary for {file_path}: missing region row")
@@ -233,14 +260,20 @@ def parse_mosdepth_summary(text: str, file_path: str, threshold: float | int | N
             contig_row, region_row = rows[index], rows[index + 1]
             if len(contig_row) < 4 or len(region_row) < 4 or region_row[0] != f"{contig_row[0]}_region":
                 raise ValueError(f"Malformed mosdepth summary for {file_path}: expected contig/region row pair")
+        validate_total(whole_total, rows[::2])
+        validate_total(region_total, rows[1::2])
         rows = rows[::2]
-    elif rows and rows[-1][0] == "total":
+    elif whole_footer:
+        validate_total(rows[-1], rows[:-1])
         rows = rows[:-1]
 
     for parts in rows:
         if len(parts) < 4:
             continue
-        contig, length, _, mean = parts[0], int(parts[1]), float(parts[2]), float(parts[3])
+        try:
+            contig, length, _, mean = parts[0], int(parts[1]), float(parts[2]), float(parts[3])
+        except ValueError as error:
+            raise ValueError(f"Malformed mosdepth summary for {file_path}: invalid numeric row") from error
         coverage_by_contig.append(CoverageByContig(contig=contig, length=length, mean_depth=mean, median_depth=None))
 
     total_len = sum(c.length or 0 for c in coverage_by_contig)
