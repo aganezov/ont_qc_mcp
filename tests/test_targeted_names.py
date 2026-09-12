@@ -66,6 +66,21 @@ def test_unnamed_output_consumes_bed_names_per_coordinate(tmp_path):
     ]
 
 
+@pytest.mark.parametrize("named_first", [True, False])
+def test_mixed_output_retains_each_input_occurrence(tmp_path, named_first):
+    bed = tmp_path / "targets.bed"
+    named = "chr1\t0\t10\tNamed\n"
+    unnamed = "chr1\t0\t10\n"
+    bed.write_text(named + unnamed if named_first else unnamed + named)
+    regions = tmp_path / "regions.bed.gz"
+    named_output = "chr1\t0\t10\tNamed\t1.0\n"
+    unnamed_output = "chr1\t0\t10\t1.0\n"
+    with gzip.open(regions, "wt") as output:
+        output.write(named_output + unnamed_output if named_first else unnamed_output + named_output)
+    expected = ["Named", "chr1:0-10"] if named_first else ["chr1:0-10", "Named"]
+    assert [r["region_name"] for r in parse_mosdepth_regions_bed(regions, bed)] == expected
+
+
 @pytest.mark.integration
 def test_duplicate_target_names_through_mcp(mcp_server_params, tmp_path):
     require_executable_tools(["samtools", "mosdepth"])
