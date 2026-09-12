@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import select
 import threading
@@ -9,8 +10,13 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from typing import Callable, ParamSpec, TypeVar
 
+from anyio import CancelScope
+from anyio.lowlevel import checkpoint
+
 P = ParamSpec("P")
 T = TypeVar("T")
+
+logger = logging.getLogger(__name__)
 
 _EXECUTOR: ThreadPoolExecutor | None = None
 _LOCK = threading.Lock()
@@ -126,7 +132,28 @@ async def run_sync(func: Callable[P, T], /, *args: P.args, **kwargs: P.kwargs) -
         if not _THREADSAFE_WAKEUP_OK:
             return func(*args, **kwargs)
 
-    return await loop.run_in_executor(get_executor(), partial(func, *args, **kwargs))
+    await checkpoint()
+    submitted = get_executor().submit(partial(func, *args, **kwargs))
+    future = asyncio.wrap_future(submitted, loop=loop)
+    try:
+        return await asyncio.shield(future)
+    except asyncio.CancelledError:
+        if not submitted.cancel():
+            # Running threads cannot be canceled. Keep the caller (and its
+            # dispatch semaphore) alive until the worker actually finishes.
+            with CancelScope(shield=True):
+                while not future.done():
+                    try:
+                        # wait() leaves future intact if another Task.cancel()
+                        # interrupts cleanup; the scope shields AnyIO cancellation.
+                        await asyncio.wait([future])
+                    except asyncio.CancelledError:
+                        continue
+                if not future.cancelled():
+                    error = future.exception()  # Retrieve worker errors; cancellation wins.
+                    if error is not None:
+                        logger.warning("Worker failed after request cancellation: %r", error)
+        raise
 
 
 __all__ = ["get_executor", "run_sync"]
