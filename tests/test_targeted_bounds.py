@@ -132,9 +132,10 @@ def test_valid_boundary_targets_are_unchanged(tmp_path, target_runner, mode, sta
     bam, _header, runner = target_runner
     kwargs: dict[str, Any]
     if mode == "bed":
-        content = f"# targets\ntrack name=targets\nbrowser position chr1:1-100\n\nchr1\t{start}\t{end}\tname\t0\t+\n"
+        content = f"chr1\t{start}\t{end}\tname\t0\t+\n"
         bed = tmp_path / "targets.bed"
-        bed.write_text(content)
+        original = "# targets\ntrack name=targets\nbrowser position chr1:1-100\n\n" + content
+        bed.write_text(original)
         kwargs = {"bed_path": str(bed)}
     else:
         location = f"chr1:{start}-{end}"
@@ -149,7 +150,9 @@ def test_valid_boundary_targets_are_unchanged(tmp_path, target_runner, mode, sta
     tools.targeted_coverage(str(bam), **kwargs)
     runner.assert_called_once()
     used_bed = runner.call_args.kwargs["bed_path"]
-    assert used_bed.exists() == (mode == "bed")
+    assert not used_bed.exists()
+    if mode == "bed":
+        assert bed.read_text() == original
 
 
 def test_metadata_keyword_contig_is_validated(tmp_path, target_runner):
