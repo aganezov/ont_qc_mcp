@@ -2,6 +2,7 @@ import anyio
 import json
 import importlib
 import logging
+import mcp_types as types
 
 from ont_qc_mcp import app_server
 
@@ -16,7 +17,8 @@ def test_list_tools_and_resources_smoke():
 
 def test_provenance_includes_request_and_effective_settings():
     result = anyio.run(app_server.dispatch_tool, "env_status", {})
-    assert not result.isError
+    assert not result.is_error
+    assert isinstance(result.content[0], types.TextContent)
     payload = json.loads(result.content[0].text)
     provenance = payload.get("provenance", {})
     assert provenance.get("request_id")
@@ -31,7 +33,8 @@ def test_provenance_verbose_mode(monkeypatch):
     srv = importlib.reload(app_server)
 
     result = anyio.run(srv.dispatch_tool, "env_status", {})
-    assert not result.isError
+    assert not result.is_error
+    assert isinstance(result.content[0], types.TextContent)
     payload = json.loads(result.content[0].text)
     provenance = payload.get("provenance", {})
     assert provenance.get("resolved_paths")
@@ -42,7 +45,7 @@ def test_provenance_verbose_mode(monkeypatch):
 def test_request_id_logged(caplog):
     caplog.set_level(logging.INFO, logger=app_server.__name__)
     result = anyio.run(app_server.dispatch_tool, "env_status", {})
-    assert not result.isError
+    assert not result.is_error
 
     # Expect a tool_call_start log with a request_id tag/prefix.
     messages = [rec.getMessage() for rec in caplog.records]

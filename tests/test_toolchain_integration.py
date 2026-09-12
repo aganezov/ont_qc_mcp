@@ -8,7 +8,7 @@ from typing import cast
 
 import anyio
 import pytest
-from mcp import types
+import mcp_types as types
 from mcp.client.session import ClientSession
 from mcp.client.stdio import stdio_client
 
@@ -30,7 +30,7 @@ def test_mcp_uses_selected_toolchain(mcp_server_params):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.call_tool("env_status", {})
-                assert not result.isError, result.content
+                assert not result.is_error, result.content
                 status = json.loads(cast(types.TextContent, result.content[0]).text)
                 for tool in tools:
                     assert Path(status["resolved_paths"][tool]).resolve() == Path(expected[tool]).resolve()
@@ -58,14 +58,14 @@ def test_long_reads_survive_filtering_and_qc(mcp_server_params, tmp_path):
                     "filter_reads_fastq_tool",
                     {"path": str(source), "output_fastq": str(output), "flags": {"minlength": 1000}},
                 )
-                assert not filtered.isError, filtered.content
+                assert not filtered.is_error, filtered.content
                 lines = output.read_text().splitlines()
                 assert len(lines) == 8
                 actual = {lines[i][1:]: (lines[i + 1], lines[i + 3]) for i in range(0, len(lines), 4)}
                 assert actual == {name: reads[name] for name in ["r1", "r2"]}
 
                 result = await session.call_tool("qc_reads_fastq_tool", {"path": str(output)})
-                assert not result.isError, result.content
+                assert not result.is_error, result.content
                 stats = json.loads(cast(types.TextContent, result.content[0]).text)
                 assert stats["read_count"] == 2
                 assert stats["total_bases"] == 1_200_001
@@ -93,7 +93,7 @@ def test_cramino_read_and_histogram_counts(mcp_server_params, tmp_path):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.call_tool("qc_alignment_tool", {"path": str(bam), "include_hist": True})
-                assert not result.isError, result.content
+                assert not result.is_error, result.content
                 stats = json.loads(cast(types.TextContent, result.content[0]).text)
                 assert stats["total_reads"] == 3
                 assert stats["mean_length"] == 2150

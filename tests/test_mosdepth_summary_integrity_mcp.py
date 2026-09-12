@@ -8,7 +8,7 @@ from typing import Any, cast
 
 import anyio
 import pytest
-from mcp import types
+import mcp_types as types
 from mcp.client.session import ClientSession
 from mcp.client.stdio import stdio_client
 
@@ -75,11 +75,11 @@ def test_summary_integrity_through_mcp(tmp_path, mcp_server_params, mode, trunca
                 assert (proof["original"] != proof["delivered"]) == truncate
                 content = cast(types.TextContent, result.content[0]).text
                 if truncate:
-                    assert result.isError, content
+                    assert result.is_error, content
                     assert "Malformed mosdepth summary" in content
                     assert str(bam) in content
                 else:
-                    assert not result.isError, content
+                    assert not result.is_error, content
                     payload = json.loads(content)
                     if mode == "summary":
                         payload = payload["coverage"]

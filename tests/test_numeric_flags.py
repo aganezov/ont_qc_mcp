@@ -6,7 +6,7 @@ from typing import cast
 
 import anyio
 import pytest
-from mcp import types
+import mcp_types as types
 from mcp.client.session import ClientSession
 from mcp.client.stdio import stdio_client
 
@@ -92,13 +92,13 @@ def test_numeric_validation_through_mcp(tmp_path, mcp_server_params, key, cli_na
                     content = cast(types.TextContent, result.content[0]).text
                     payload = json.loads(content)
                     if isinstance(value, bool):
-                        assert result.isError, content
+                        assert result.is_error, content
                         assert payload["kind"] == "validation"
                         assert f"Flag {key} expects" in payload["message"]
                         assert "got bool" in payload["message"]
                         assert not receipt.exists()
                     else:
-                        assert not result.isError, content
+                        assert not result.is_error, content
                         assert payload["read_count"] == 1
                         args = json.loads(receipt.read_text())
                         if value is None:

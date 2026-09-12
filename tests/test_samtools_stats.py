@@ -9,7 +9,7 @@ import anyio
 import pytest
 from mcp.client.session import ClientSession
 from mcp.client.stdio import stdio_client
-from mcp.types import TextContent
+from mcp_types import TextContent
 
 from ont_qc_mcp.config import ToolPaths
 from ont_qc_mcp.parsers import parse_error_profile
@@ -136,7 +136,7 @@ def test_real_mcp_reads_sn_and_coverage(mcp_server_params, tmp_path):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.call_tool("alignment_error_profile_tool", {"path": str(bam)})
-                assert not result.isError, result.content
+                assert not result.is_error, result.content
                 content = result.content[0]
                 assert isinstance(content, TextContent)
                 stats = json.loads(content.text)

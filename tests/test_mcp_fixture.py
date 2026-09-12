@@ -5,7 +5,7 @@ from typing import cast
 
 import anyio
 import pytest
-from mcp import types
+import mcp_types as types
 from mcp.client.session import ClientSession
 from mcp.client.stdio import stdio_client
 
@@ -46,7 +46,7 @@ def test_mcp_server_preserves_container_runtime(monkeypatch, request, tmp_path, 
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.call_tool("env_status", {})
-                assert not result.isError
+                assert not result.is_error
                 payload = json.loads(cast(types.TextContent, result.content[0]).text)
                 assert payload["igv_runtime"] == expected
                 assert payload["resolved_paths"][selected] == str(selected_path)

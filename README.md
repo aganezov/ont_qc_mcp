@@ -77,6 +77,10 @@ uv sync               # reproducible venv from uv.lock  (or: pip install -e .)
 uv run ont-qc-mcp     # launches the MCP stdio server
 ```
 
+The server uses MCP Python SDK 2.2 or later in the 2.x series. Run `uv sync`
+and restart the server process after upgrading. The existing tool names, input
+schemas, resource contents, and numerical result payloads are preserved.
+
 ### Consistent environment for tests/tools
 - Use `scripts/with-env.sh` to set PATH and venv for all commands: `scripts/with-env.sh pytest`.
 - It activates `.venv` (if present) and optionally prepends toolchain paths via:

@@ -11,7 +11,7 @@ from typing import cast
 
 import anyio
 import pytest
-from mcp import types
+import mcp_types as types
 from mcp.client.session import ClientSession
 from mcp.client.stdio import stdio_client
 
@@ -21,7 +21,7 @@ from conftest import require_executable_tools
 pytestmark = pytest.mark.integration
 
 
-def _text_content(content: types.Content) -> types.TextContent:
+def _text_content(content: types.ContentBlock) -> types.TextContent:
     return cast(types.TextContent, content)
 
 
@@ -36,7 +36,7 @@ def test_sequencing_summary_tool(mcp_server_params, synthetic_sequencing_summary
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.call_tool("sequencing_summary_tool", {"path": str(synthetic_sequencing_summary)})
-                assert not result.isError, f"Tool error: {result.content}"
+                assert not result.is_error, f"Tool error: {result.content}"
                 payload = json.loads(_text_content(result.content[0]).text)
                 assert payload["file"] == str(synthetic_sequencing_summary)
                 assert payload["total_reads"] == 20
@@ -61,7 +61,7 @@ def test_qc_variants_tool_real_vcf(mcp_server_params, sample_vcf):
                 result = await session.call_tool(
                     "qc_variants_tool", {"path": str(sample_vcf), "include_snps": True, "include_indels": True}
                 )
-                assert not result.isError, f"Tool error: {result.content}"
+                assert not result.is_error, f"Tool error: {result.content}"
                 payload = json.loads(_text_content(result.content[0]).text)
                 assert payload["file"] == str(sample_vcf)
                 assert "general" in payload
@@ -87,7 +87,7 @@ def test_qc_variants_tool_synthetic_vcf(mcp_server_params, synthetic_vcf):
                 result = await session.call_tool(
                     "qc_variants_tool", {"path": str(synthetic_vcf), "include_snps": True, "include_indels": True}
                 )
-                assert not result.isError, f"Tool error: {result.content}"
+                assert not result.is_error, f"Tool error: {result.content}"
                 payload = json.loads(_text_content(result.content[0]).text)
                 assert payload["file"] == str(synthetic_vcf)
                 assert "general" in payload
@@ -108,7 +108,7 @@ def test_qc_variants_tool_snps_only(mcp_server_params, sample_vcf):
                 result = await session.call_tool(
                     "qc_variants_tool", {"path": str(sample_vcf), "include_snps": True, "include_indels": False}
                 )
-                assert not result.isError, f"Tool error: {result.content}"
+                assert not result.is_error, f"Tool error: {result.content}"
                 payload = json.loads(_text_content(result.content[0]).text)
                 assert payload["file"] == str(sample_vcf)
                 assert "general" in payload
@@ -135,7 +135,7 @@ def test_targeted_coverage_tool_bed(mcp_server_params, sample_bam, synthetic_bed
                 result = await session.call_tool(
                     "targeted_coverage_tool", {"bam_path": str(sample_bam), "bed_path": str(synthetic_bed_valid)}
                 )
-                assert not result.isError, f"Tool error: {result.content}"
+                assert not result.is_error, f"Tool error: {result.content}"
                 payload = json.loads(_text_content(result.content[0]).text)
                 assert isinstance(payload, list), "Expected list of coverage reports"
                 assert len(payload) > 0, "Expected at least one coverage report"
@@ -182,7 +182,7 @@ def test_targeted_coverage_tool_location(mcp_server_params, sample_bam):
                     "targeted_coverage_tool",
                     {"bam_path": str(sample_bam), "location": "chr1:1000-2000"},
                 )
-                assert not result.isError, f"Tool error: {result.content}"
+                assert not result.is_error, f"Tool error: {result.content}"
                 payload = json.loads(_text_content(result.content[0]).text)
                 assert isinstance(payload, list)
                 assert len(payload) == 1
@@ -221,7 +221,7 @@ def test_targeted_coverage_tool_gene_name(mcp_server_params, sample_bam, synthet
                         "annotation_path": str(synthetic_gff3),
                     },
                 )
-                assert not result.isError, f"Tool error: {result.content}"
+                assert not result.is_error, f"Tool error: {result.content}"
                 payload = json.loads(_text_content(result.content[0]).text)
                 assert isinstance(payload, list)
                 assert len(payload) > 0
@@ -251,7 +251,7 @@ def test_qc_bed_tool_valid(mcp_server_params, synthetic_bed_valid):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.call_tool("qc_bed_tool", {"path": str(synthetic_bed_valid)})
-                assert not result.isError, f"Tool error: {result.content}"
+                assert not result.is_error, f"Tool error: {result.content}"
                 payload = json.loads(_text_content(result.content[0]).text)
                 assert payload["file"] == str(synthetic_bed_valid)
                 assert payload["is_valid"] is True
@@ -272,7 +272,7 @@ def test_qc_bed_tool_invalid(mcp_server_params, synthetic_bed_invalid):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.call_tool("qc_bed_tool", {"path": str(synthetic_bed_invalid)})
-                assert not result.isError, f"Tool error: {result.content}"
+                assert not result.is_error, f"Tool error: {result.content}"
                 payload = json.loads(_text_content(result.content[0]).text)
                 assert payload["file"] == str(synthetic_bed_invalid)
                 assert payload["is_valid"] is False
@@ -301,7 +301,7 @@ def test_targeted_coverage_tool_missing_bam(mcp_server_params, tmp_path):
                 result = await session.call_tool(
                     "targeted_coverage_tool", {"bam_path": str(missing_bam), "location": "chr1:1000-2000"}
                 )
-                assert result.isError
+                assert result.is_error
                 assert result.content
                 assert "not_found" in _text_content(result.content[0]).text
 
@@ -318,7 +318,7 @@ def test_qc_variants_tool_missing_vcf(mcp_server_params, tmp_path):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.call_tool("qc_variants_tool", {"path": str(missing_vcf)})
-                assert result.isError
+                assert result.is_error
                 assert result.content
                 assert "not_found" in _text_content(result.content[0]).text
 
@@ -335,7 +335,7 @@ def test_sequencing_summary_tool_missing_file(mcp_server_params, tmp_path):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.call_tool("sequencing_summary_tool", {"path": str(missing_file)})
-                assert result.isError
+                assert result.is_error
                 assert result.content
                 assert "not_found" in _text_content(result.content[0]).text
 
@@ -355,7 +355,7 @@ def test_targeted_coverage_tool_invalid_input_modes(mcp_server_params, sample_ba
                     "targeted_coverage_tool",
                     {"bam_path": str(sample_bam), "bed_path": str(synthetic_bed_valid), "location": "chr1:1000-2000"},
                 )
-                assert result.isError
+                assert result.is_error
                 assert result.content
                 assert "validation" in _text_content(result.content[0]).text
 

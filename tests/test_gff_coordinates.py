@@ -4,7 +4,7 @@ from typing import cast
 
 import anyio
 import pytest
-from mcp import types
+import mcp_types as types
 from mcp.client.session import ClientSession
 from mcp.client.stdio import stdio_client
 
@@ -43,7 +43,7 @@ def test_gene_coverage_converts_gff_coordinates(
                     "targeted_coverage_tool",
                     {"bam_path": str(bam), "gene_name": "Target", "annotation_path": str(gff)},
                 )
-                assert not response.isError, response.content
+                assert not response.is_error, response.content
                 reports = json.loads(cast(types.TextContent, response.content[0]).text)
                 assert len(reports) == 1
                 report = reports[0]

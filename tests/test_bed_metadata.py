@@ -7,7 +7,7 @@ from typing import cast
 
 import anyio
 import pytest
-from mcp import types
+import mcp_types as types
 from mcp.client.session import ClientSession
 from mcp.client.stdio import stdio_client
 
@@ -95,7 +95,7 @@ def test_metadata_keyword_contigs_through_mcp(mcp_server_params, tmp_path):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 qc = await session.call_tool("qc_bed_tool", {"path": str(bed)})
-                assert not qc.isError, qc.content
+                assert not qc.is_error, qc.content
                 qc_report = json.loads(cast(types.TextContent, qc.content[0]).text)
                 assert qc_report["is_valid"]
                 assert qc_report["total_intervals"] == qc_report["valid_intervals"] == len(CONTIGS)
@@ -104,7 +104,7 @@ def test_metadata_keyword_contigs_through_mcp(mcp_server_params, tmp_path):
                 coverage = await session.call_tool(
                     "targeted_coverage_tool", {"bam_path": str(bam), "bed_path": str(bed)}
                 )
-                assert not coverage.isError, coverage.content
+                assert not coverage.is_error, coverage.content
                 reports = json.loads(cast(types.TextContent, coverage.content[0]).text)
                 assert len(reports) == len(CONTIGS)
                 by_chrom = {report["chrom"]: report for report in reports}
