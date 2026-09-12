@@ -44,6 +44,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Parser semantics clarified for missing vs empty histogram blocks
 
 ### Fixed
+- Write valid gzip for filtered output paths ending in `.gz`, including empty results, while preserving atomic replacement and cleaning raw/compressed staging files on failure. Reject recognized unsupported compressed-output suffixes before filtering.
 - Targeted coverage preserves distinct names for repeated coordinates, taking names from each mosdepth output record and retaining occurrence order for unnamed-output fallbacks.
 - Normalize validated target BED rows before mosdepth, preventing blank lines and surrounding whitespace from dropping targets or causing coverage errors. Preserve the original BED file and remove temporary targets after each run.
 - Reap streaming samtools/nanoq children and close their pipes on startup, timeout, and other failures; clean auxiliary files even when allocation fails. A descendant-held stderr pipe no longer blocks the caller during cleanup; its reader closes the pipe at EOF.

@@ -1,3 +1,4 @@
+import gzip
 import tempfile
 from pathlib import Path
 
@@ -119,14 +120,18 @@ def test_publish_complete_output(input_fastq, tmp_path, monkeypatch, contents, d
     report = chopper_filter(input_fastq, ToolPaths(), output)
     assert report.output_fastq is not None
     result = Path(report.output_fastq)
-    assert result.read_text() == contents
+    if output is not None and output.suffix.lower() == ".gz":
+        assert result.read_bytes()[:2] == b"\x1f\x8b"
+        assert gzip.decompress(result.read_bytes()).decode() == contents
+    else:
+        assert result.read_text() == contents
     assert not {"input_reads", "output_reads", "filtered_reads"} & report.model_dump().keys()
     assert input_fastq.read_text() == FASTQ
     if output is not None:
         assert report.output_fastq == str(output)
     if destination == "symlink":
         assert output.is_symlink()
-        assert target.read_text() == contents
+        assert gzip.decompress(target.read_bytes()).decode() == contents
     if destination in ("existing", "symlink"):
         assert target.stat().st_mode & 0o777 == 0o640
     assert set(tmp_path.iterdir()) == before | {result.resolve()}
