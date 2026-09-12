@@ -308,6 +308,7 @@ def nanoq_from_bam_streaming(
         start_time = time.monotonic()
 
         stderr_tail: deque[str] = deque(maxlen=200)
+        stderr_head: list[str] = []
         sam_stderr = sam_proc.stderr
 
         def _drain_sam_stderr():
@@ -319,7 +320,10 @@ def nanoq_from_bam_streaming(
                         decoded = line.decode("utf-8", errors="replace")
                     except Exception:
                         decoded = str(line)
-                    stderr_tail.append(decoded.rstrip("\n"))
+                    line_text = decoded.rstrip("\n")
+                    if len(stderr_head) < 20:
+                        stderr_head.append(line_text)
+                    stderr_tail.append(line_text)
             finally:
                 try:
                     sam_stderr.close()
@@ -361,7 +365,10 @@ def nanoq_from_bam_streaming(
             stderr_thread.join(timeout=0.2)
 
         sam_rc = sam_proc.returncode
-        sam_err_text = "\n".join(stderr_tail)
+        sam_err_lines = list(stderr_tail)
+        if len(sam_err_lines) == stderr_tail.maxlen:
+            sam_err_lines = stderr_head + ["... (truncated) ..."] + sam_err_lines[-20:]
+        sam_err_text = "\n".join(sam_err_lines)
         nano_out_text = (
             nano_out.decode("utf-8", errors="replace") if isinstance(nano_out, (bytes, bytearray)) else nano_out
         )

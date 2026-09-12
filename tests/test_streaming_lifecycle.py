@@ -192,6 +192,19 @@ def test_samtools_failure_preserves_stderr(pipeline_probe, tmp_path):
     assert_released(children, tmp_path)
 
 
+@pytest.mark.parametrize("line_count", [199, 200, 201])
+def test_verbose_samtools_failure_preserves_first_and_last_lines(pipeline_probe, tmp_path, line_count):
+    make_tools, children, _ = pipeline_probe
+    lines = [f"diagnostic {index}" for index in range(line_count)]
+    stderr = "\n".join(lines) + "\n"
+    tools = make_tools(f"sys.stderr.write({stderr!r})\nsys.exit(7)", f"sys.stdin.read()\nprint({NANOQ_JSON!r})")
+    with pytest.raises(RuntimeError, match="samtools fastq failed") as error:
+        nanoq_from_bam_streaming(tmp_path / "unused.bam", tools, exec_cfg=config())
+    expected = "\n".join(lines[:20] + ["... (truncated) ..."] + lines[-20:])
+    assert str(error.value).partition("\n")[2] == expected
+    assert_released(children, tmp_path)
+
+
 def test_unexpected_wait_failure_still_reaps_children(pipeline_probe, tmp_path, monkeypatch):
     make_tools, children, popen_class = pipeline_probe
     tools = make_tools("os.close(1)\nsignal.pause()", f"print({NANOQ_JSON!r})")
