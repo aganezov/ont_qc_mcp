@@ -54,6 +54,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Validate mosdepth summary footers against the executed mode and cross-check aggregate length/base counts before returning QC results.
 - Exclude mosdepth whole-genome and region aggregates from contig summaries, mean calculations, and low-coverage locations. Preserve real contigs with aggregate-like names or names beginning with `chrom`.
 - Parse samtools SN numeric values separately from trailing comments and retain COV ranges and base counts, including underflow and overflow bins. Stop interpreting MPC N-base counts as mismatch rates.
+- Include an hourly yield bin when sequencing-summary reads share one finite timestamp, including single-read summaries with zero run duration.
 - Write valid gzip for filtered output paths ending in `.gz`, including empty results, while preserving atomic replacement and cleaning raw/compressed staging files on failure. Reject recognized unsupported compressed-output suffixes before filtering.
 - Targeted coverage preserves distinct names for repeated coordinates, taking names from each mosdepth output record and retaining occurrence order for unnamed-output fallbacks.
 - Normalize validated target BED rows before mosdepth, preventing blank lines and surrounding whitespace from dropping targets or causing coverage errors. Preserve the original BED file and remove temporary targets after each run.
