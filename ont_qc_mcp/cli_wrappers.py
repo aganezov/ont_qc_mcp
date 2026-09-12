@@ -101,10 +101,10 @@ def build_cli_args(tool: str, flags: dict[str, Any] | None) -> list[str]:
                     args.append(_select_flag_name(flag))
                 continue
             case "int":
-                if not isinstance(value, int):
+                if isinstance(value, bool) or not isinstance(value, int):
                     raise FlagValidationError(f"Flag {key} expects int, got {type(value).__name__}")
             case "float":
-                if not isinstance(value, (int, float)):
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
                     raise FlagValidationError(f"Flag {key} expects float, got {type(value).__name__}")
             case "path":
                 value = str(Path(value))
