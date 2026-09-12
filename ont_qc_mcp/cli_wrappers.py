@@ -1,3 +1,4 @@
+import gzip
 import logging
 import os
 import subprocess  # nosec B404
@@ -5,7 +6,7 @@ import tempfile
 import time
 from collections import deque
 from pathlib import Path
-from shutil import which
+from shutil import copyfileobj, which
 from threading import Thread
 from typing import Any, Literal
 
@@ -182,6 +183,32 @@ def chopper_filter(
     Run chopper for ONT-oriented filtering/trimming.
     Stream stdout into an atomic staging file; the CLI does not emit JSON stats.
     """
+    supplied_name = output_fastq.name.lower() if output_fastq is not None else ""
+    gzip_output = supplied_name.endswith(".gz")
+    unsupported_suffix = next(
+        (
+            suffix
+            for suffix in {
+                ".bgz",
+                ".bgzf",
+                ".bz",
+                ".bz2",
+                ".bzip2",
+                ".xz",
+                ".lzma",
+                ".zst",
+                ".zstd",
+                ".lz4",
+                ".zip",
+                ".z",
+                ".gzip",
+            }
+            if supplied_name.endswith(suffix)
+        ),
+        None,
+    )
+    if unsupported_suffix:
+        raise ValueError(f"Unsupported output compression suffix {unsupported_suffix!r}; use .gz for gzip output")
     merged_flags, timeout = _prepare_execution("chopper", flags, exec_cfg)
     report_progress(f"chopper start: {input_fastq}")
     flag_args = build_cli_args("chopper", merged_flags)
@@ -195,6 +222,7 @@ def chopper_filter(
     # Stage beside the resolved destination so replacement is atomic and symlinks
     # retain their existing write-through behavior.
     staged_output: Path | None = None
+    compressed_output: Path | None = None
     published = False
     try:
         with tempfile.NamedTemporaryFile(
@@ -220,16 +248,35 @@ def chopper_filter(
             params={"flags": flags or {}},
             output_fastq=str(output_fastq),
         )
+        publish_stage = staged_output
+        if gzip_output and destination is not None:
+            # Chopper writes plain FASTQ. Compress in Python after it succeeds;
+            # a GzipFile passed as subprocess stdout would bypass compression.
+            with tempfile.NamedTemporaryFile(dir=destination.parent, suffix=".gz", delete=False) as compressed_fp:
+                compressed_output = Path(compressed_fp.name)
+                with staged_output.open("rb") as raw_fp:
+                    with gzip.GzipFile(
+                        filename="", mode="wb", fileobj=compressed_fp, compresslevel=6, mtime=0
+                    ) as gzip_fp:
+                        copyfileobj(raw_fp, gzip_fp, length=1024 * 1024)
+            # Close the gzip trailer and both files, then remove the raw stage
+            # before publication so a cleanup failure leaves the destination intact.
+            staged_output.unlink()
+            publish_stage = compressed_output
         if destination is not None:
             if destination.exists():
-                staged_output.chmod(destination.stat().st_mode & 0o777)
-            os.replace(staged_output, destination)
+                publish_stage.chmod(destination.stat().st_mode & 0o777)
+            os.replace(publish_stage, destination)
         published = True
         report_progress(f"chopper done: {input_fastq}")
         return report
     finally:
-        if staged_output is not None and not published:
-            staged_output.unlink(missing_ok=True)
+        for stage in (compressed_output, staged_output if gzip_output or not published else None):
+            if stage is not None:
+                try:
+                    stage.unlink(missing_ok=True)
+                except OSError as exc:
+                    logger.warning("Failed to remove Chopper staging file %s: %s", stage, exc)
 
 
 def cramino_stats(

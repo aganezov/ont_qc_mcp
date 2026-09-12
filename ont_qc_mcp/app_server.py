@@ -457,14 +457,21 @@ _TOOL_SPECS = [
             "type": "object",
             "properties": {
                 "path": {**_PATH_PROP, "description": "Path to input FASTQ file"},
-                "output_fastq": {"type": "string", "description": "Path for filtered output FASTQ"},
+                "output_fastq": {
+                    "type": "string",
+                    "description": (
+                        "Filtered FASTQ path; names ending .gz (case-insensitive) write gzip. "
+                        "BGZF and other recognized compression suffixes are unsupported. "
+                        "Omit for temporary plain FASTQ output."
+                    ),
+                },
                 "flags": _FLAGS_PROP,
             },
             "required": ["path"],
         },
         metadata={
             "runtime_hint": "medium (minutes for multi-GB FASTQ, depends on flags)",
-            "io_hint": "Reads FASTQ, writes filtered FASTQ; returns command, params, and output_fastq",
+            "io_hint": "Reads FASTQ, writes plain or gzip FASTQ; returns command, params, and output_fastq",
             "default_threads": EXEC_CFG.threads_for("chopper"),
             "timeout_seconds": EXEC_CFG.timeout_for("chopper"),
             "when_to_use": (

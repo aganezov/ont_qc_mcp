@@ -94,7 +94,11 @@ uv run ont-qc-mcp     # launches the MCP stdio server
 ### Read-level QC (FASTQ)
 - `qc_reads_fastq_tool`: nanoq read-level QC (counts, lengths, qscore histogram).
 - `filter_reads_fastq_tool`: chopper filtering/trimming; returns the command and output path (use `qc_reads_fastq_tool` for output statistics).
-  Rejects input/output aliases and replaces output only after filtering succeeds.
+  Output names ending in `.gz` (case-insensitive) write gzip-compressed FASTQ; automatic and other ordinary filenames write plain FASTQ.
+  The supplied filename determines encoding, including when it is a symlink.
+  Unsupported compressed endings are rejected: `.bgz`, `.bgzf`, `.bz`, `.bz2`, `.bzip2`, `.xz`, `.lzma`, `.zst`, `.zstd`, `.lz4`, `.zip`, `.z` (including `.Z`), and `.gzip`. Use `.gz` for gzip output.
+  Gzip output uses a separate compression pass and temporarily needs space for both the raw and compressed filtered data.
+  Rejects input/output aliases and replaces output only after filtering and any compression succeed.
   Existing file permission bits are retained; new output files are private to the current user.
 - `read_length_distribution_fastq_tool`: percentiles + histogram from nanoq.
 - `qscore_distribution_fastq_tool`: per-read q-score histogram from nanoq.
