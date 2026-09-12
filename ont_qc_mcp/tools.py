@@ -150,6 +150,8 @@ def _validate_input_file(path: Path, cfg: ExecutionConfig, allowed_exts: tuple[s
 
 def _cached_nanoq_stats(path: Path, tools: ToolPaths, flags: dict[str, Any] | None, cfg: ExecutionConfig) -> NanoqStats:
     check_cancelled()
+    # Validate before lookup: Boolean flag values compare equal to numeric cache keys.
+    build_cli_args("nanoq", flags)
     key = _nanoq_cache_key(path, flags, cfg)
     with _NANOQ_CACHE_LOCK:
         cached = _NANOQ_CACHE.get(key)
