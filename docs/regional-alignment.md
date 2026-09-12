@@ -28,8 +28,13 @@ characters and optional names at most 256 characters.
 The input must be local, coordinate-sorted, and have a usable matching index.
 BAM index discovery checks `.bam.csi`, `.csi`, `.bam.bai`, then `.bai`; CRAM checks
 `.cram.crai`, then `.crai`. The selected index is passed explicitly to samtools and
-identified in the result. No index is generated or repaired. SAM input is not
-supported by this indexed operation.
+identified in the result. For a symlinked input, discovery first checks beside
+that supplied path, then beside its resolved target. FASTA `.fai` discovery follows
+the same rule. The reference path passed to samtools keeps the selected `.fai`
+adjacent, so a staged index does not require another index beside the target. Both access paths
+are checked again for changes, and the response reports the resolved identities.
+No index is generated or repaired. SAM input is not supported by this indexed
+operation.
 
 For CRAM, supply `reference_path`, pointing to a local uncompressed `.fa`,
 `.fasta` or `.fna` beginning with `>`, with an existing `.fai`. All alignment-header

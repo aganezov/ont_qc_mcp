@@ -216,3 +216,44 @@ def test_real_supplementary_exclusion(regional_files):
     assert item["span_overlapping_alignments"] == 4
     assert item["supplementary_alignments"] == 0
     assert item["mean_base_quality"] == pytest.approx(296 / 12)
+
+
+@pytest.mark.parametrize("file_type", ["bam", "cram"])
+def test_index_beside_alignment_symlink(regional_files, file_type):
+    bam, cram, reference = regional_files
+    alignment = bam if file_type == "bam" else cram
+    suffix = ".bai" if file_type == "bam" else ".crai"
+    staging = alignment.parent / "staging"
+    staging.mkdir()
+    alias = staging / f"sample.{file_type}"
+    alias.symlink_to(alignment)
+    alias_index = Path(str(alias) + suffix)
+    Path(str(alignment) + suffix).rename(alias_index)
+    reference_args = ["-T", str(reference)] if file_type == "cram" else []
+    # The native CLI accepts the layout; the wrapper must discover the same index.
+    native = subprocess.check_output(["samtools", "view", "-c", *reference_args, str(alias), "chr1:103-108"], text=True)
+    assert int(native) == 8
+    result = regional_alignment_stats(
+        str(alias), [selected_region()], reference_path=str(reference) if file_type == "cram" else None
+    )
+    assert_known_result(result["regions"][0])
+    assert result["input"]["path"] == str(alignment)
+    assert result["index"]["path"] == str(alias_index)
+    assert not Path(str(alignment) + suffix).exists()
+
+
+def test_index_beside_reference_symlink(regional_files):
+    _bam, cram, reference = regional_files
+    staging = reference.parent / "staging"
+    staging.mkdir()
+    alias = staging / "sample.fa"
+    alias.symlink_to(reference)
+    alias_index = Path(str(alias) + ".fai")
+    Path(str(reference) + ".fai").rename(alias_index)
+    native = subprocess.check_output(["samtools", "view", "-c", "-T", str(alias), str(cram), "chr1:103-108"], text=True)
+    assert int(native) == 8
+    result = regional_alignment_stats(str(cram), [selected_region()], reference_path=str(alias))
+    assert_known_result(result["regions"][0])
+    assert result["reference"]["path"] == str(reference)
+    assert result["reference_index"]["path"] == str(alias_index)
+    assert not Path(str(reference) + ".fai").exists()

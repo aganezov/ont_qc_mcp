@@ -27,6 +27,8 @@ def _local_file(value: str, cfg: ExecutionConfig, extensions: tuple[str, ...] | 
     if not isinstance(value, str) or not value or "##idx##" in value:
         raise ValueError("Expected a local file path without HTSlib index-routing syntax")
     path = Path(value).resolve()
+    if "##idx##" in str(path):
+        raise ValueError("Resolved local paths must not contain HTSlib index-routing syntax")
     _validate_input_file(path, cfg, extensions)
     return path
 
@@ -43,13 +45,20 @@ def _identity(path: Path) -> dict[str, Any]:
     }
 
 
-def _alignment_index(path: Path, cfg: ExecutionConfig) -> Path:
-    suffixes = (".crai",) if path.suffix.lower() == ".cram" else (".csi", ".bai")
-    for suffix in suffixes:
-        for candidate in (Path(str(path) + suffix), path.with_suffix(suffix)):
-            if candidate.exists():
-                return _local_file(str(candidate), cfg)
-    raise FileNotFoundError(f"An existing alignment index is required for {path}; no index is created")
+def _companion_index(
+    supplied: Path, resolved: Path, cfg: ExecutionConfig, suffixes: tuple[str, ...], *, replace_suffix: bool
+) -> tuple[Path, Path]:
+    # A staged symlink may have its own index. Search there first, then beside
+    # its target. Return the resolved index and the path paired with it.
+    for base in dict.fromkeys((supplied.absolute(), resolved)):
+        for suffix in suffixes:
+            candidates = [Path(str(base) + suffix)]
+            if replace_suffix:
+                candidates.append(base.with_suffix(suffix))
+            for candidate in candidates:
+                if candidate.exists():
+                    return _local_file(str(candidate), cfg), base
+    raise FileNotFoundError(f"An existing {suffixes} index is required for {supplied}; no index is created")
 
 
 def regional_alignment_stats(
@@ -90,25 +99,36 @@ def regional_alignment_stats(
         return seconds
 
     bam = _local_file(path, cfg, (".bam", ".cram"))
-    index = _alignment_index(bam, cfg)
+    index, _alignment_access_path = _companion_index(
+        Path(path), bam, cfg, (".crai",) if bam.suffix.lower() == ".cram" else (".csi", ".bai"), replace_suffix=True
+    )
     reference = None
+    reference_access_path = None
     fai = None
     if reference_path is not None:
         reference = _local_file(reference_path, cfg, (".fa", ".fasta", ".fna"))
         with reference.open("rb") as reference_stream:
             if reference_stream.read(1) != b">":
                 raise ValueError("Reference must be an uncompressed FASTA beginning with '>'")
-        fai = _local_file(str(reference) + ".fai", cfg)
+        fai, reference_access_path = _companion_index(
+            Path(reference_path), reference, cfg, (".fai",), replace_suffix=False
+        )
     if bam.suffix.lower() == ".cram" and reference is None:
         raise ValueError("CRAM requires an explicit local uncompressed FASTA and existing .fai index")
     tracked = [bam, index] + ([reference, fai] if reference is not None and fai is not None else [])
+    # Reference access must preserve its adjacent index. Track both lexical
+    # paths as well as resolved files so retargeted symlinks invalidate results.
+    if reference_access_path is not None:
+        tracked.extend([reference_access_path, Path(str(reference_access_path) + ".fai")])
     identities = [_identity(item) for item in tracked]
     env = dict(os.environ, REF_PATH=os.devnull, REF_CACHE=os.devnull)
     threads = cfg.threads_for("samtools")
     if threads is not None and (isinstance(threads, bool) or not isinstance(threads, int) or threads < 0):
         raise ValueError("samtools threads must be a nonnegative integer or unset")
     thread_args = build_cli_args("samtools", {"threads": threads})
-    reference_args = ["-T", str(reference)] if reference is not None else []
+    # Keep the validated reference/index pair together. samtools 1.24 can
+    # create a default .fai even with explicit ##idx## routing; do not use it.
+    reference_args = ["-T", str(reference_access_path)] if reference_access_path is not None else []
     warnings: list[str] = []
 
     def command(cmd: list[str], consume: Callable[[str], None]) -> None:
@@ -262,6 +282,7 @@ def regional_alignment_stats(
             "server_version": server_version,
             "threads": threads,
             "samtools_filters": {"exclude_flags": exclude_flags | 4, "min_mapq": min_mapq},
+            "reference_access_path": str(reference_access_path) if reference_access_path is not None else None,
             "timeout_seconds": timeout,
             "max_regions": MAX_REGIONS,
             "max_sam_line_bytes": MAX_SAM_LINE_BYTES,

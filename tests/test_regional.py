@@ -192,3 +192,38 @@ def test_missing_package_metadata_does_not_discard_measurement(fake_region, monk
     assert report["complete"] is True
     assert report["regions"][0]["mean_base_quality"] == 20
     assert report["execution"]["server_version"] is None
+
+
+def test_reference_symlink_retarget_invalidates_result(fake_region, monkeypatch):
+    bam, _commands, _beds = fake_region
+    reference = bam.parent / "reference.fa"
+    reference.write_text(">chr1\n" + "A" * 100 + "\n")
+    alternate = bam.parent / "alternate.fa"
+    alternate.write_text(">chr1\n" + "C" * 100 + "\n")
+    alias = bam.parent / "alias.fa"
+    alias.symlink_to(reference)
+    Path(str(alias) + ".fai").write_text("chr1\t100\t6\t100\t101\n")
+    original = regional.run_line_stream
+
+    def retarget(cmd, consume, **kwargs):
+        result = original(cmd, consume, **kwargs)
+        if "-M" in cmd:
+            alias.unlink()
+            alias.symlink_to(alternate)
+        return result
+
+    monkeypatch.setattr(regional, "run_line_stream", retarget)
+    with pytest.raises(RuntimeError, match="changed"):
+        regional.regional_alignment_stats(str(bam), REGIONS, reference_path=str(alias))
+    assert not Path(str(reference) + ".fai").exists()
+
+
+def test_symlink_alignment_falls_back_to_target_index(fake_region):
+    bam, commands, _beds = fake_region
+    staging = bam.parent / "staging"
+    staging.mkdir()
+    alias = staging / "alias.bam"
+    alias.symlink_to(bam)
+    report = regional.regional_alignment_stats(str(alias), REGIONS)
+    assert report["regions"][0]["mean_base_quality"] == 20
+    assert commands[-1][0][-2:] == [str(bam), str(bam) + ".bai"]
