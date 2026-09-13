@@ -15,13 +15,9 @@ from .regional_metrics import RegionalInterval
 from .schemas import (
     BedQCReport,
     ChopperReport,
-    CoverageBin,
-    CycleMismatchCounts,
     EnvStatus,
     HeaderMetadata,
-    HistogramBin,
     IgvSnapshotResult,
-    LengthPercentiles,
     SequencingSummaryStats,
 )
 
@@ -30,6 +26,46 @@ class ContractModel(BaseModel):
     """Strict base for wire contracts."""
 
     model_config = ConfigDict(strict=True, extra="forbid", allow_inf_nan=False)
+
+
+class V2HistogramBin(ContractModel):
+    start: float
+    end: float
+    count: NonNegativeInt
+
+    @model_validator(mode="after")
+    def ordered_bounds(self) -> "V2HistogramBin":
+        if self.start > self.end:
+            raise ValueError("histogram bin start must not exceed end")
+        return self
+
+
+class V2LengthPercentiles(ContractModel):
+    p1: float | None = None
+    p5: float | None = None
+    p25: float | None = None
+    p50: float | None = None
+    p75: float | None = None
+    p95: float | None = None
+    p99: float | None = None
+
+
+class V2CoverageBin(ContractModel):
+    start: NonNegativeInt
+    end: NonNegativeInt | None = None
+    count: NonNegativeInt
+
+    @model_validator(mode="after")
+    def ordered_bounds(self) -> "V2CoverageBin":
+        if self.end is not None and self.start > self.end:
+            raise ValueError("coverage bin start must not exceed end")
+        return self
+
+
+class V2CycleMismatchCounts(ContractModel):
+    cycle: PositiveInt
+    n_count: NonNegativeInt
+    mismatches_by_quality: list[NonNegativeInt]
 
 
 class SamtoolsRegions(ContractModel):
@@ -381,16 +417,18 @@ class ReadQualitySection(ContractModel):
             raise ValueError("quality summaries must be null when no reads have quality")
         if self.reads_with_quality > 0 and not summaries_complete:
             raise ValueError("quality summaries require both mean and median when quality is present")
+        if self.reads_missing_quality > 0:
+            raise ValueError("successful read quality sections cannot contain missing quality records")
         return self
 
 
 class LengthDistributionSection(ContractModel):
-    percentiles: LengthPercentiles
-    histogram: list[HistogramBin]
+    percentiles: V2LengthPercentiles
+    histogram: list[V2HistogramBin]
 
 
 class QualityDistributionSection(ContractModel):
-    histogram: list[HistogramBin]
+    histogram: list[V2HistogramBin]
     per_position_mean: list[float] | None = None
 
 
@@ -421,6 +459,9 @@ class ReadQCResponse(ContractModel):
             raise ValueError("resolved grouping must match effective_request")
         if self.resolved_group_by == "combined" and len(self.results) != 1:
             raise ValueError("combined grouping requires exactly one result")
+        if self.resolved_group_by == "combined":
+            if self.selected_records != self.emitted_sequences + self.conversion_exclusions:
+                raise ValueError("selected_records must equal emitted_sequences plus conversion_exclusions")
         if self.resolved_group_by == "region":
             expected_ids = [region.region_id for region in self.effective_request.normalized_regions]
             if [result.region_id for result in self.results] != expected_ids:
@@ -433,6 +474,14 @@ class ReadQCResponse(ContractModel):
                 present = getattr(result, metric) is not None
                 if present != (metric in requested):
                     raise ValueError(f"result section '{metric}' must match requested metrics")
+        if self.resolved_group_by == "combined":
+            result = self.results[0]
+            if result.length is not None and result.length.read_count != self.emitted_sequences:
+                raise ValueError("length read_count must equal emitted_sequences")
+            if result.read_quality is not None:
+                quality_count = result.read_quality.reads_with_quality + result.read_quality.reads_missing_quality
+                if quality_count != self.emitted_sequences:
+                    raise ValueError("read_quality count must equal emitted_sequences")
         return self
 
 
@@ -442,6 +491,12 @@ class AlignmentCounts(ContractModel):
     unmapped_records: NonNegativeInt
     secondary_records: NonNegativeInt
     supplementary_records: NonNegativeInt
+
+    @model_validator(mode="after")
+    def population_is_consistent(self) -> "AlignmentCounts":
+        if self.mapped_records + self.unmapped_records != self.eligible_records:
+            raise ValueError("mapped and unmapped records must sum to eligible_records")
+        return self
 
 
 class MappingQualitySection(ContractModel):
@@ -504,9 +559,9 @@ class ErrorProfileSection(ContractModel):
     )
     insertion_rate: float | None = Field(default=None, ge=0)
     deletion_rate: float | None = Field(default=None, ge=0)
-    coverage_histogram: list[CoverageBin] | None = None
-    mismatch_counts_by_cycle: list[CycleMismatchCounts] | None = None
-    insert_size_histogram: list[HistogramBin] | None = None
+    coverage_histogram: list[V2CoverageBin] | None = None
+    mismatch_counts_by_cycle: list[V2CycleMismatchCounts] | None = None
+    insert_size_histogram: list[V2HistogramBin] | None = None
     scope: Literal["whole_selected_record"] = "whole_selected_record"
 
     @model_validator(mode="after")
@@ -552,6 +607,10 @@ class AlignmentQCResponse(ContractModel):
             for metric in ("counts", "mapping_quality", "aligned_base_quality", "identity", "error_profile"):
                 if (getattr(result, metric) is not None) != (metric in requested):
                     raise ValueError(f"result section '{metric}' must match requested metrics")
+            if result.counts is not None and result.mapping_quality is not None:
+                mapq_total = result.mapping_quality.known_records + result.mapping_quality.missing_records
+                if mapq_total != result.counts.eligible_records:
+                    raise ValueError("MAPQ denominators must sum to eligible_records")
         return self
 
 
@@ -642,6 +701,14 @@ class CoverageQCResponse(ContractModel):
         union_has_depth = self.union_summary.depth_sum is not None or self.union_summary.mean_depth is not None
         if depth_requested != union_has_depth:
             raise ValueError("depth fields must match requested metrics")
+        if self.resolved_group_by == "region":
+            expected = [
+                (region.region_id, region.chrom, region.start, region.end, region.name)
+                for region in self.effective_request.normalized_regions
+            ]
+            actual = [(row.row_id, row.chrom, row.start, row.end, row.name) for row in self.rows]
+            if actual != expected:
+                raise ValueError("coverage region rows must match normalized requested intervals in order")
         return self
 
 
@@ -656,6 +723,19 @@ class VariantSnpSection(ContractModel):
     transitions: NonNegativeInt | None = None
     transversions: NonNegativeInt | None = None
     ts_tv_ratio: float | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def tstv_is_consistent(self) -> "VariantSnpSection":
+        if (self.transitions is None) != (self.transversions is None):
+            raise ValueError("transition and transversion counts must be available together")
+        if self.transitions is None or self.transversions is None or self.transversions == 0:
+            if self.ts_tv_ratio is not None:
+                raise ValueError("ts_tv_ratio must be null when its allele-count denominator is unavailable or zero")
+        else:
+            expected = self.transitions / self.transversions
+            if self.ts_tv_ratio is None or abs(self.ts_tv_ratio - expected) > 1e-9:
+                raise ValueError("ts_tv_ratio must be recomputed from transition and transversion allele counts")
+        return self
 
 
 class VariantIndelSection(ContractModel):
@@ -745,11 +825,15 @@ class FilterReadsRequest(PathRequest):
     extra_args: dict[Literal["chopper"], list[str]] = Field(default_factory=dict)
 
 
+class V2IgvRegion(RegionalInterval):
+    extra_commands: list[str] = Field(default_factory=list)
+
+
 class IgvSnapshotsRequest(ContractModel):
     batch_file: str | None = Field(default=None, min_length=1)
     genome: str | None = Field(default=None, min_length=1)
     tracks: list[str] | None = Field(default=None, min_length=1)
-    regions: list[RegionalInterval] | str | None = None
+    regions: list[V2IgvRegion] | str | None = None
     output_dir: str | None = Field(default=None, min_length=1)
     snapshot_format: Literal["png", "svg"] = "png"
     compact: Literal["expand", "collapse", "squish"] = "squish"

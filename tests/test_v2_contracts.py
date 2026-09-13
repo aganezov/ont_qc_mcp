@@ -20,12 +20,14 @@ from ont_qc_mcp.v2_contracts import (
     FilterReadsRequest,
     IgvSnapshotsRequest,
     IdentitySection,
+    LengthDistributionSection,
     ErrorProfileSection,
     ReadQCRequest,
     ReadQCResponse,
     ReadQualitySection,
     ReadSelection,
     ValidationErrorResponse,
+    VariantSnpSection,
     VariantQCRequest,
     VariantQCResponse,
     api_v2_contracts,
@@ -300,12 +302,133 @@ def test_depth_only_response_requires_depth_and_allows_empty_union() -> None:
         CoverageQCResponse.model_validate(
             {**payload, "rows": [{key: value for key, value in row.items() if key not in {"depth_sum", "mean_depth"}}]}
         )
+    whole_entry = next(
+        item for item in load_fixture("response-examples.json") if item["case"] == "coverage-whole-contigs"
+    )
+    whole = cast(dict[str, Any], whole_entry["response"])
     empty = {
-        **payload,
+        **whole,
         "rows": [],
         "union_summary": {"reference_bases": 0, "depth_sum": 0, "mean_depth": None},
     }
     CoverageQCResponse.model_validate(empty)
+
+
+@pytest.mark.parametrize("mutation", ["missing", "reordered", "duplicate", "shifted", "renamed"])
+def test_coverage_region_rows_exactly_match_requested_intervals(mutation: str) -> None:
+    entry = next(item for item in load_fixture("response-examples.json") if item["case"] == "coverage-requested-region")
+    payload = cast(dict[str, Any], entry["response"])
+    effective = cast(dict[str, Any], payload["effective_request"])
+    region = cast(list[dict[str, Any]], effective["normalized_regions"])[0]
+    second = {**region, "start": 5, "end": 10, "name": "second", "region_id": "region_2"}
+    row = cast(list[dict[str, Any]], payload["rows"])[0]
+    second_row = {**row, "row_id": "region_2", "start": 5, "end": 10, "name": "second"}
+    rows = [row, second_row]
+    if mutation == "missing":
+        rows = [row]
+    elif mutation == "reordered":
+        rows = [second_row, row]
+    elif mutation == "duplicate":
+        rows = [row, row]
+    elif mutation == "shifted":
+        rows = [row, {**second_row, "start": 6, "reference_bases": 4, "depth_sum": 4}]
+    else:
+        rows = [row, {**second_row, "name": "changed"}]
+    with pytest.raises(ValidationError, match="coverage region rows must match"):
+        CoverageQCResponse.model_validate(
+            {
+                **payload,
+                "effective_request": {**effective, "normalized_regions": [region, second]},
+                "rows": rows,
+            }
+        )
+
+
+def test_successful_read_quality_rejects_missing_quality_records() -> None:
+    with pytest.raises(ValidationError, match="missing quality"):
+        ReadQualitySection(
+            reads_with_quality=1,
+            reads_missing_quality=1,
+            mean_qscore=20,
+            median_qscore=20,
+        )
+
+
+def test_combined_read_accounting_and_result_counts_are_consistent() -> None:
+    entry = next(item for item in load_fixture("response-examples.json") if item["case"] == "read-whole-file-full")
+    payload = cast(dict[str, Any], entry["response"])
+    with pytest.raises(ValidationError, match="selected_records must equal"):
+        ReadQCResponse.model_validate({**payload, "selected_records": 3})
+    result = cast(list[dict[str, Any]], payload["results"])[0]
+    length = cast(dict[str, Any], result["length"])
+    with pytest.raises(ValidationError, match="emitted_sequences"):
+        ReadQCResponse.model_validate({**payload, "results": [{**result, "length": {**length, "read_count": 1}}]})
+
+
+def test_alignment_count_and_mapq_denominators_are_consistent() -> None:
+    entry = next(
+        item for item in load_fixture("response-examples.json") if item["case"] == "alignment-default-combined"
+    )
+    payload = cast(dict[str, Any], entry["response"])
+    result = cast(list[dict[str, Any]], payload["results"])[0]
+    counts = cast(dict[str, Any], result["counts"])
+    with pytest.raises(ValidationError, match="mapped and unmapped"):
+        AlignmentQCResponse.model_validate(
+            {**payload, "results": [{**result, "counts": {**counts, "mapped_records": 1}}]}
+        )
+    mapq = cast(dict[str, Any], result["mapping_quality"])
+    with pytest.raises(ValidationError, match="MAPQ denominators"):
+        AlignmentQCResponse.model_validate(
+            {**payload, "results": [{**result, "mapping_quality": {**mapq, "missing_records": 0}}]}
+        )
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"count": 2, "transitions": None, "transversions": None, "ts_tv_ratio": 1.0},
+        {"count": 2, "transitions": 1, "transversions": None, "ts_tv_ratio": None},
+        {"count": 2, "transitions": 1, "transversions": 1, "ts_tv_ratio": 2.0},
+        {"count": 2, "transitions": 1, "transversions": 0, "ts_tv_ratio": 1.0},
+    ],
+)
+def test_variant_tstv_requires_available_consistent_allele_counts(payload: dict[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        VariantSnpSection.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    "histogram",
+    [
+        [{"start": 1.0, "end": 2.0, "count": -1}],
+        [{"start": 2.0, "end": 1.0, "count": 1}],
+        [{"start": float("inf"), "end": 2.0, "count": 1}],
+        [{"start": 1.0, "end": 2.0, "count": 1.0}],
+    ],
+)
+def test_v2_histograms_reject_invalid_legacy_shapes(histogram: list[dict[str, object]]) -> None:
+    with pytest.raises(ValidationError):
+        LengthDistributionSection.model_validate({"percentiles": {}, "histogram": histogram})
+
+
+def test_igv_region_retains_strict_per_region_commands() -> None:
+    request = IgvSnapshotsRequest.model_validate(
+        {
+            "genome": "reference.fa",
+            "tracks": ["reads.bam"],
+            "regions": [{"chrom": "chr1", "start": 0, "end": 10, "name": "target", "extra_commands": ["sort BASE"]}],
+        }
+    )
+    assert isinstance(request.regions, list)
+    assert request.regions[0].extra_commands == ["sort BASE"]
+    with pytest.raises(ValidationError):
+        IgvSnapshotsRequest.model_validate(
+            {
+                "genome": "reference.fa",
+                "tracks": ["reads.bam"],
+                "regions": [{"chrom": "chr1", "start": 0, "end": 10, "extra_commands": "sort BASE"}],
+            }
+        )
 
 
 @pytest.mark.parametrize(
