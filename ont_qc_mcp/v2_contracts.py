@@ -13,6 +13,7 @@ from typing import Annotated, Literal, TypeAlias
 from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt, PositiveInt, field_validator, model_validator
 
 from .regional_metrics import RegionalInterval
+from .v2_native_args import validate_native_args
 from .schemas import (
     BedQCReport,
     ChopperReport,
@@ -223,6 +224,14 @@ class ReadQCRequest(NumericalRequest):
             raise ValueError("FASTQ input does not support alignment selection or samtools arguments")
         if len(set(self.metrics)) != len(self.metrics):
             raise ValueError("metrics must not contain duplicates")
+        mapq_protection = ("-e", "--expr") if self.selection.min_mapq and self.selection.min_mapq > 0 else ()
+        validate_native_args(
+            "samtools_view",
+            self.extra_args.samtools_view,
+            additionally_protected=mapq_protection,
+        )
+        validate_native_args("samtools_fastq", self.extra_args.samtools_fastq)
+        validate_native_args("nanoq", self.extra_args.nanoq)
         return self
 
 
@@ -247,6 +256,14 @@ class AlignmentQCRequest(NumericalRequest):
             raise ValueError("unmapped records are ineligible for regional reporting")
         if len(set(self.metrics)) != len(self.metrics):
             raise ValueError("metrics must not contain duplicates")
+        mapq_protection = ("-e", "--expr") if self.selection.min_mapq > 0 else ()
+        validate_native_args(
+            "samtools_view",
+            self.extra_args.samtools_view,
+            additionally_protected=mapq_protection,
+        )
+        validate_native_args("samtools_stats", self.extra_args.samtools_stats)
+        validate_native_args("cramino", self.extra_args.cramino)
         return self
 
 
@@ -280,6 +297,7 @@ class CoverageQCRequest(NumericalRequest):
             raise ValueError("thresholds must not contain duplicates")
         if len(set(self.metrics)) != len(self.metrics):
             raise ValueError("metrics must not contain duplicates")
+        validate_native_args("mosdepth", self.extra_args.mosdepth)
         return self
 
 
@@ -302,6 +320,7 @@ class VariantQCRequest(NumericalRequest):
             raise ValueError("group_by='region' requires regions")
         if len(set(self.metrics)) != len(self.metrics):
             raise ValueError("metrics must not contain duplicates")
+        validate_native_args("bcftools_stats", self.extra_args.bcftools_stats)
         return self
 
 
@@ -915,6 +934,11 @@ class FilterReadsRequest(PathRequest):
     output_fastq: str | None = Field(default=None, min_length=1)
     selection: FilterReadSelection = Field(default_factory=FilterReadSelection)
     extra_args: dict[Literal["chopper"], list[str]] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def protected_options_are_rejected(self) -> "FilterReadsRequest":
+        validate_native_args("chopper", self.extra_args.get("chopper", []))
+        return self
 
 
 class V2IgvRegion(RegionalInterval):

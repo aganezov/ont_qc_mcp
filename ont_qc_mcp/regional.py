@@ -17,48 +17,11 @@ from .process_control import check_cancelled
 from .regional_metrics import RegionalAccumulator, RegionalInterval
 from .tools import _validate_input_file
 from .utils import CommandError, CommandResult, report_progress
+from .v2_samtools import companion_index, file_identity, local_file
 
 MAX_REGIONS = 1024
 MAX_HEADER_BYTES = 16 * 1024 * 1024
 MAX_SAM_LINE_BYTES = 16 * 1024 * 1024
-
-
-def _local_file(value: str, cfg: ExecutionConfig, extensions: tuple[str, ...] | None = None) -> Path:
-    if not isinstance(value, str) or not value or "##idx##" in value:
-        raise ValueError("Expected a local file path without HTSlib index-routing syntax")
-    path = Path(value).resolve()
-    if "##idx##" in str(path):
-        raise ValueError("Resolved local paths must not contain HTSlib index-routing syntax")
-    _validate_input_file(path, cfg, extensions)
-    return path
-
-
-def _identity(path: Path) -> dict[str, Any]:
-    stat = path.stat()
-    return {
-        "path": str(path),
-        "size_bytes": stat.st_size,
-        "mtime_ns": stat.st_mtime_ns,
-        "device": stat.st_dev,
-        "inode": stat.st_ino,
-        "identity_method": "path_size_mtime_device_inode",
-    }
-
-
-def _companion_index(
-    supplied: Path, resolved: Path, cfg: ExecutionConfig, suffixes: tuple[str, ...], *, replace_suffix: bool
-) -> tuple[Path, Path]:
-    # A staged symlink may have its own index. Search there first, then beside
-    # its target. Return the resolved index and the path paired with it.
-    for base in dict.fromkeys((supplied.absolute(), resolved)):
-        for suffix in suffixes:
-            candidates = [Path(str(base) + suffix)]
-            if replace_suffix:
-                candidates.append(base.with_suffix(suffix))
-            for candidate in candidates:
-                if candidate.exists():
-                    return _local_file(str(candidate), cfg), base
-    raise FileNotFoundError(f"An existing {suffixes} index is required for {supplied}; no index is created")
 
 
 def regional_alignment_stats(
@@ -98,19 +61,19 @@ def regional_alignment_stats(
             )
         return seconds
 
-    bam = _local_file(path, cfg, (".bam", ".cram"))
-    index, _alignment_access_path = _companion_index(
+    bam = local_file(path, cfg, (".bam", ".cram"), validator=_validate_input_file)
+    index, _alignment_access_path = companion_index(
         Path(path), bam, cfg, (".crai",) if bam.suffix.lower() == ".cram" else (".csi", ".bai"), replace_suffix=True
     )
     reference = None
     reference_access_path = None
     fai = None
     if reference_path is not None:
-        reference = _local_file(reference_path, cfg, (".fa", ".fasta", ".fna"))
+        reference = local_file(reference_path, cfg, (".fa", ".fasta", ".fna"), validator=_validate_input_file)
         with reference.open("rb") as reference_stream:
             if reference_stream.read(1) != b">":
                 raise ValueError("Reference must be an uncompressed FASTA beginning with '>'")
-        fai, reference_access_path = _companion_index(
+        fai, reference_access_path = companion_index(
             Path(reference_path), reference, cfg, (".fai",), replace_suffix=False
         )
     if bam.suffix.lower() == ".cram" and reference is None:
@@ -120,7 +83,7 @@ def regional_alignment_stats(
     # paths as well as resolved files so retargeted symlinks invalidate results.
     if reference_access_path is not None:
         tracked.extend([reference_access_path, Path(str(reference_access_path) + ".fai")])
-    identities = [_identity(item) for item in tracked]
+    identities = [file_identity(item) for item in tracked]
     env = dict(os.environ, REF_PATH=os.devnull, REF_CACHE=os.devnull)
     threads = cfg.threads_for("samtools")
     if threads is not None and (isinstance(threads, bool) or not isinstance(threads, int) or threads < 0):
@@ -233,7 +196,7 @@ def regional_alignment_stats(
             accumulator.add_sam_line,
         )
     remaining()
-    if identities != [_identity(item) for item in tracked]:
+    if identities != [file_identity(item) for item in tracked]:
         raise RuntimeError("An input, index or reference changed during regional analysis; retry with stable files")
     selected_refs = list(dict.fromkeys(region.chrom for region in intervals))
     try:
@@ -243,10 +206,10 @@ def regional_alignment_stats(
     report_progress(f"regional alignment stats done: {bam}")
     return {
         "schema_version": "1.0",
-        "input": identities[0],
-        "index": identities[1],
-        "reference": identities[2] if reference is not None else None,
-        "reference_index": identities[3] if reference is not None else None,
+        "input": identities[0].as_dict(),
+        "index": identities[1].as_dict(),
+        "reference": identities[2].as_dict() if reference is not None else None,
+        "reference_index": identities[3].as_dict() if reference is not None else None,
         "alignment_references": [
             {"name": name, "length": reference_lengths[name], "header_md5": reference_md5.get(name)}
             for name in selected_refs

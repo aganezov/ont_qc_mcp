@@ -10,6 +10,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Migrate the local stdio adapter to MCP SDK 2.2, preserving existing tool schemas, input validation, resource contents, and numerical result payloads.
 
 ### Added
+- Add shared, unregistered API v2 infrastructure for ordered region normalization and genomic unions, explicit
+  BAM/CRAM index and reference resolution, protected native argument arrays, samtools selection/FASTQ conversion
+  plans, and one-deadline subprocess pipelines that drain every stage before reporting success.
 - Add `regional_alignment_stats_tool` for indexed BAM/CRAM interval batches, with explicit alignment-record counts, MAPQ missingness, and base-quality means for aligned bases inside each interval. Preserve repeated intervals, require existing indexes, and stream without alignment copies.
 - Add `mismatch_counts_by_cycle` records with explicit cycle numbers, N-base counts, and per-quality mismatch counts when parsing samtools MPC output.
 - Four new MCP tools for enhanced QC workflows:
@@ -92,4 +95,3 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   instead of an input file. Every untrusted path passed to `nanoq`, `chopper`,
   `cramino`, `samtools`, `mosdepth`, and `bcftools` is now prefixed with `./`
   when needed, so it is always read as a file.
-
