@@ -813,6 +813,8 @@ class VariantSnpSection(ContractModel):
     def tstv_is_consistent(self) -> "VariantSnpSection":
         if (self.transitions is None) != (self.transversions is None):
             raise ValueError("transition and transversion counts must be available together")
+        if self.count == 0 and (self.transitions or self.transversions):
+            raise ValueError("zero SNP records require zero allele counts")
         if self.transitions is None or self.transversions is None or self.transversions == 0:
             if self.ts_tv_ratio is not None:
                 raise ValueError("ts_tv_ratio must be null when its allele-count denominator is unavailable or zero")

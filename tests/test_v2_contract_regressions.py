@@ -199,3 +199,28 @@ def test_zero_variant_records_require_zero_counts_across_sections(grouping, sect
     result["general"] = None
     payload["effective_request"]["metrics"] = [section]
     v2.VariantQCResponse.model_validate(payload)
+
+
+@pytest.mark.parametrize("grouping", ["combined", "region"])
+@pytest.mark.parametrize("transitions,transversions", [(1, 0), (0, 1), (1, 1)])
+def test_zero_snp_records_require_zero_allele_counts(grouping, transitions, transversions):
+    payload = response("variant_qc", grouping)
+    payload["effective_request"]["metrics"] = ["general", "snps"]
+    result = payload["results"][0]
+    result.update(general=dict(total_records=0), indels=None)
+    result["snps"] = dict(
+        count=0,
+        transitions=transitions,
+        transversions=transversions,
+        ts_tv_ratio=transitions / transversions if transversions else None,
+    )
+    with pytest.raises(ValidationError, match="zero SNP records require zero allele counts"):
+        v2.VariantQCResponse.model_validate(payload)
+
+    result["snps"].update(transitions=0, transversions=0, ts_tv_ratio=None)
+    v2.VariantQCResponse.model_validate(payload)
+    result["snps"].update(transitions=None, transversions=None)
+    v2.VariantQCResponse.model_validate(payload)
+
+    # Multiallelic records may contribute more than one SNP allele.
+    v2.VariantSnpSection(count=1, transitions=2, transversions=4, ts_tv_ratio=0.5)
