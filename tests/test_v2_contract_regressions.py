@@ -88,9 +88,17 @@ def test_regional_identity_matches_normalized_request(tool, mutation):
     if mutation == "name":
         payload["results"][0]["region_name"] = "wrong-label"
     else:
-        payload["effective_request"]["normalized_regions"][0]["region_id"] = "target-a"
         payload["results"][0]["region_id"] = "target-a"
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValidationError, match="IDs and order"):
+        MODELS[tool].model_validate(payload)
+
+
+@pytest.mark.parametrize("tool", ["read_qc", "alignment_qc", "variant_qc"])
+def test_matching_noncanonical_region_ids_are_rejected(tool):
+    payload = response(tool, "region")
+    payload["effective_request"]["normalized_regions"][0]["region_id"] = "target-a"
+    payload["results"][0]["region_id"] = "target-a"
+    with pytest.raises(ValidationError, match="normalized region IDs must follow request order"):
         MODELS[tool].model_validate(payload)
 
 
@@ -141,14 +149,28 @@ def test_union_length_uses_overlaps_per_contig():
         v2.CoverageQCResponse.model_validate(payload)
 
 
-def test_alignment_result_obeys_effective_selection():
+def test_alignment_mapq_obeys_effective_selection():
     payload = response("alignment_qc", "combined")
     payload["effective_request"]["selection"]["min_mapq"] = 10
     with pytest.raises(ValidationError, match="selection"):
         v2.AlignmentQCResponse.model_validate(payload)
-    payload["effective_request"]["selection"]["min_mapq"] = 0
+
+
+@pytest.mark.parametrize("exclude_flags", [0, 1792, 1796])
+def test_unmapped_eligibility_requires_explicit_opt_in(exclude_flags):
+    payload = response("alignment_qc", "combined")
+    payload["effective_request"]["metrics"] = ["counts"]
+    payload["effective_request"]["selection"] = dict(exclude_flags=exclude_flags, include_unmapped=False)
+    payload["results"][0]["mapping_quality"] = None
     counts = payload["results"][0]["counts"]
-    counts["mapped_records"] = 0
     counts["unmapped_records"] = counts["eligible_records"]
-    with pytest.raises(ValidationError, match="selection"):
+    counts["mapped_records"] = counts["secondary_records"] = counts["supplementary_records"] = 0
+    with pytest.raises(ValidationError, match="unmapped records violate effective selection"):
+        v2.AlignmentQCResponse.model_validate(payload)
+
+    payload["effective_request"]["selection"]["include_unmapped"] = True
+    if exclude_flags & 0x4:
+        with pytest.raises(ValidationError, match="unmapped bit"):
+            v2.AlignmentQCResponse.model_validate(payload)
+    else:
         v2.AlignmentQCResponse.model_validate(payload)
