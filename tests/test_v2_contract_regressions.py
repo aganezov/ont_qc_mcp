@@ -174,3 +174,28 @@ def test_unmapped_eligibility_requires_explicit_opt_in(exclude_flags):
             v2.AlignmentQCResponse.model_validate(payload)
     else:
         v2.AlignmentQCResponse.model_validate(payload)
+
+
+@pytest.mark.parametrize("grouping", ["combined", "region"])
+@pytest.mark.parametrize("section", ["snps", "indels"])
+def test_zero_variant_records_require_zero_counts_across_sections(grouping, section):
+    payload = response("variant_qc", grouping)
+    payload["effective_request"]["metrics"] = ["general", section]
+    result = payload["results"][0]
+    result.update(general=dict(total_records=0), snps=None, indels=None)
+    result[section] = dict(count=1)
+    with pytest.raises(ValidationError, match="zero variant records require zero subtype counts"):
+        v2.VariantQCResponse.model_validate(payload)
+
+    result[section]["count"] = 0
+    v2.VariantQCResponse.model_validate(payload)
+
+    # Subtypes need not partition records; do not infer a sum or equality.
+    result["general"]["total_records"] = 1
+    result[section]["count"] = 2
+    v2.VariantQCResponse.model_validate(payload)
+
+    # Omitted general metrics provide no evidence of an empty population.
+    result["general"] = None
+    payload["effective_request"]["metrics"] = [section]
+    v2.VariantQCResponse.model_validate(payload)

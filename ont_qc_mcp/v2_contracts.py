@@ -859,6 +859,11 @@ class VariantQCResponse(ContractModel):
             for metric in ("general", "snps", "indels"):
                 if (getattr(result, metric) is not None) != (metric in requested):
                     raise ValueError(f"result section '{metric}' must match requested metrics")
+            if result.general is not None and result.general.total_records == 0:
+                if (result.snps is not None and result.snps.count) or (
+                    result.indels is not None and result.indels.count
+                ):
+                    raise ValueError("zero variant records require zero subtype counts")
         return self
 
 
