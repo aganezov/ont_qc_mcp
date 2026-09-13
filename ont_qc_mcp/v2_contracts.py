@@ -7,7 +7,8 @@ the currently advertised MCP catalog.
 
 from __future__ import annotations
 
-from typing import Literal, TypeAlias
+from math import isclose
+from typing import Annotated, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt, PositiveInt, field_validator, model_validator
 
@@ -48,6 +49,15 @@ class V2LengthPercentiles(ContractModel):
     p75: float | None = None
     p95: float | None = None
     p99: float | None = None
+
+    @model_validator(mode="after")
+    def ordered_lengths(self) -> "V2LengthPercentiles":
+        values = [
+            value for value in (self.p1, self.p5, self.p25, self.p50, self.p75, self.p95, self.p99) if value is not None
+        ]
+        if any(value < 0 for value in values) or values != sorted(values):
+            raise ValueError("known length percentiles must be nonnegative and monotonic")
+        return self
 
 
 class V2CoverageBin(ContractModel):
@@ -314,6 +324,21 @@ def _validate_normalized_regions(scope: str, regions: list[NormalizedInterval]) 
     ids = [region.region_id for region in regions]
     if len(ids) != len(set(ids)):
         raise ValueError("normalized region IDs must be unique")
+    if ids != [f"region_{index + 1}" for index in range(len(ids))]:
+        raise ValueError("normalized region IDs must follow request order: region_1, region_2, ...")
+
+
+def _interval_union_length(regions: list[NormalizedInterval]) -> int:
+    total = 0
+    previous_chrom: str | None = None
+    previous_end = 0
+    for region in sorted(regions, key=lambda value: (value.chrom, value.start, value.end)):
+        if region.chrom != previous_chrom:
+            previous_end = region.start
+        total += max(0, region.end - max(region.start, previous_end))
+        previous_chrom = region.chrom
+        previous_end = max(previous_end, region.end)
+    return total
 
 
 class ReadEffectiveRequest(ContractModel):
@@ -329,6 +354,10 @@ class ReadEffectiveRequest(ContractModel):
     @model_validator(mode="after")
     def scope_matches_regions(self) -> "ReadEffectiveRequest":
         _validate_normalized_regions(self.region_scope, self.normalized_regions)
+        if len(self.metrics) != len(set(self.metrics)):
+            raise ValueError("metrics must not contain duplicates")
+        if self.resolved_group_by == "region" and not self.normalized_regions:
+            raise ValueError("region grouping requires normalized intervals")
         return self
 
 
@@ -345,6 +374,12 @@ class AlignmentEffectiveRequest(ContractModel):
     @model_validator(mode="after")
     def scope_matches_regions(self) -> "AlignmentEffectiveRequest":
         _validate_normalized_regions(self.region_scope, self.normalized_regions)
+        if len(self.metrics) != len(set(self.metrics)):
+            raise ValueError("metrics must not contain duplicates")
+        if self.resolved_group_by == "region" and not self.normalized_regions:
+            raise ValueError("region grouping requires normalized intervals")
+        if self.selection.include_unmapped and self.normalized_regions:
+            raise ValueError("unmapped records are ineligible for regional reporting")
         return self
 
 
@@ -363,6 +398,11 @@ class CoverageEffectiveRequest(ContractModel):
     @model_validator(mode="after")
     def scope_matches_regions(self) -> "CoverageEffectiveRequest":
         _validate_normalized_regions(self.region_scope, self.normalized_regions)
+        if len(self.metrics) != len(set(self.metrics)):
+            raise ValueError("metrics must not contain duplicates")
+        expected = "window" if self.window_size is not None else "region" if self.normalized_regions else "contig"
+        if self.resolved_group_by != expected:
+            raise ValueError("effective coverage grouping must match regions and window_size")
         if len(self.thresholds) != len(set(self.thresholds)):
             raise ValueError("thresholds must not contain duplicates")
         return self
@@ -381,6 +421,10 @@ class VariantEffectiveRequest(ContractModel):
     @model_validator(mode="after")
     def scope_matches_regions(self) -> "VariantEffectiveRequest":
         _validate_normalized_regions(self.region_scope, self.normalized_regions)
+        if len(self.metrics) != len(set(self.metrics)):
+            raise ValueError("metrics must not contain duplicates")
+        if self.resolved_group_by == "region" and not self.normalized_regions:
+            raise ValueError("region grouping requires normalized intervals")
         return self
 
 
@@ -400,6 +444,19 @@ class ReadLengthSection(ContractModel):
             raise ValueError("length summaries must be null when read_count is zero")
         if self.read_count > 0 and any(value is None for value in values[:4]):
             raise ValueError("nonempty length summaries require min, max, mean, and median")
+        if self.read_count == 0 and self.total_bases != 0:
+            raise ValueError("zero reads require zero total_bases")
+        if self.read_count > 0:
+            if self.mean_length is None or not isclose(
+                self.mean_length, self.total_bases / self.read_count, rel_tol=1e-9, abs_tol=1e-9
+            ):
+                raise ValueError("mean_length must equal total_bases/read_count after adapter normalization")
+            if self.min_length is not None and self.max_length is not None:
+                if self.min_length > self.max_length or any(
+                    value is not None and not self.min_length <= value <= self.max_length
+                    for value in (self.mean_length, self.median_length, self.n50)
+                ):
+                    raise ValueError("length summaries must lie within min_length and max_length")
         return self
 
 
@@ -463,9 +520,9 @@ class ReadQCResponse(ContractModel):
             if self.selected_records != self.emitted_sequences + self.conversion_exclusions:
                 raise ValueError("selected_records must equal emitted_sequences plus conversion_exclusions")
         if self.resolved_group_by == "region":
-            expected_ids = [region.region_id for region in self.effective_request.normalized_regions]
-            if [result.region_id for result in self.results] != expected_ids:
-                raise ValueError("result region IDs and order must match normalized requested intervals")
+            expected_ids = [(region.region_id, region.name) for region in self.effective_request.normalized_regions]
+            if [(result.region_id, result.region_name) for result in self.results] != expected_ids:
+                raise ValueError("result region IDs and order must match normalized requested intervals and names")
         requested = set(self.effective_request.metrics)
         for result in self.results:
             if self.resolved_group_by == "region" and result.region_id is None:
@@ -496,6 +553,8 @@ class AlignmentCounts(ContractModel):
     def population_is_consistent(self) -> "AlignmentCounts":
         if self.mapped_records + self.unmapped_records != self.eligible_records:
             raise ValueError("mapped and unmapped records must sum to eligible_records")
+        if max(self.secondary_records, self.supplementary_records) > self.eligible_records:
+            raise ValueError("alignment annotations must not exceed eligible_records")
         return self
 
 
@@ -597,9 +656,9 @@ class AlignmentQCResponse(ContractModel):
         if self.resolved_group_by == "combined" and len(self.results) != 1:
             raise ValueError("combined grouping requires exactly one result")
         if self.resolved_group_by == "region":
-            expected_ids = [region.region_id for region in self.effective_request.normalized_regions]
-            if [result.region_id for result in self.results] != expected_ids:
-                raise ValueError("result region IDs and order must match normalized requested intervals")
+            expected_ids = [(region.region_id, region.name) for region in self.effective_request.normalized_regions]
+            if [(result.region_id, result.region_name) for result in self.results] != expected_ids:
+                raise ValueError("result region IDs and order must match normalized requested intervals and names")
         requested = set(self.effective_request.metrics)
         for result in self.results:
             if self.resolved_group_by == "region" and result.region_id is None:
@@ -611,6 +670,20 @@ class AlignmentQCResponse(ContractModel):
                 mapq_total = result.mapping_quality.known_records + result.mapping_quality.missing_records
                 if mapq_total != result.counts.eligible_records:
                     raise ValueError("MAPQ denominators must sum to eligible_records")
+            selection = self.effective_request.selection
+            if result.counts is not None:
+                if not selection.include_unmapped and result.counts.unmapped_records:
+                    raise ValueError("returned unmapped records violate effective selection")
+                if (selection.exclude_flags & 0x100 and result.counts.secondary_records) or (
+                    selection.exclude_flags & 0x800 and result.counts.supplementary_records
+                ):
+                    raise ValueError("returned alignment annotations violate effective selection")
+            if result.mapping_quality is not None and selection.min_mapq > 0:
+                if result.mapping_quality.missing_records or (
+                    result.mapping_quality.mean_mapq is not None
+                    and result.mapping_quality.mean_mapq < selection.min_mapq
+                ):
+                    raise ValueError("returned MAPQ values violate effective selection")
         return self
 
 
@@ -646,6 +719,8 @@ class CoverageRow(ContractModel):
         for value in self.breadth:
             if value.bases_at_or_above > self.reference_bases:
                 raise ValueError("breadth count must not exceed reference_bases")
+            if value.threshold == 0 and value.bases_at_or_above != self.reference_bases:
+                raise ValueError("threshold zero breadth must cover every reference base")
             expected_fraction = value.bases_at_or_above / self.reference_bases
             if value.fraction_at_or_above is None or abs(value.fraction_at_or_above - expected_fraction) > 1e-9:
                 raise ValueError("breadth fraction must equal bases_at_or_above/reference_bases")
@@ -709,6 +784,10 @@ class CoverageQCResponse(ContractModel):
             actual = [(row.row_id, row.chrom, row.start, row.end, row.name) for row in self.rows]
             if actual != expected:
                 raise ValueError("coverage region rows must match normalized requested intervals in order")
+        if self.effective_request.normalized_regions and self.union_summary.reference_bases != _interval_union_length(
+            self.effective_request.normalized_regions
+        ):
+            raise ValueError("coverage union denominator must equal the requested genomic interval union")
         return self
 
 
@@ -716,6 +795,12 @@ class VariantGeneralSection(ContractModel):
     total_records: NonNegativeInt
     mnps: NonNegativeInt = 0
     others: NonNegativeInt = 0
+
+    @model_validator(mode="after")
+    def subtypes_require_records(self) -> "VariantGeneralSection":
+        if self.total_records == 0 and (self.mnps or self.others):
+            raise ValueError("zero variant records require zero subtype counts")
+        return self
 
 
 class VariantSnpSection(ContractModel):
@@ -764,9 +849,9 @@ class VariantQCResponse(ContractModel):
         if self.resolved_group_by == "combined" and len(self.results) != 1:
             raise ValueError("combined grouping requires exactly one result")
         if self.resolved_group_by == "region":
-            expected_ids = [region.region_id for region in self.effective_request.normalized_regions]
-            if [result.region_id for result in self.results] != expected_ids:
-                raise ValueError("result region IDs and order must match normalized requested intervals")
+            expected_ids = [(region.region_id, region.name) for region in self.effective_request.normalized_regions]
+            if [(result.region_id, result.region_name) for result in self.results] != expected_ids:
+                raise ValueError("result region IDs and order must match normalized requested intervals and names")
         requested = set(self.effective_request.metrics)
         for result in self.results:
             if self.resolved_group_by == "region" and result.region_id is None:
@@ -833,7 +918,7 @@ class IgvSnapshotsRequest(ContractModel):
     batch_file: str | None = Field(default=None, min_length=1)
     genome: str | None = Field(default=None, min_length=1)
     tracks: list[str] | None = Field(default=None, min_length=1)
-    regions: list[V2IgvRegion] | str | None = None
+    regions: list[V2IgvRegion] | Annotated[str, Field(min_length=1)] | None = None
     output_dir: str | None = Field(default=None, min_length=1)
     snapshot_format: Literal["png", "svg"] = "png"
     compact: Literal["expand", "collapse", "squish"] = "squish"

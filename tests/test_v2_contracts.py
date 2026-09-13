@@ -362,7 +362,26 @@ def test_combined_read_accounting_and_result_counts_are_consistent() -> None:
     result = cast(list[dict[str, Any]], payload["results"])[0]
     length = cast(dict[str, Any], result["length"])
     with pytest.raises(ValidationError, match="emitted_sequences"):
-        ReadQCResponse.model_validate({**payload, "results": [{**result, "length": {**length, "read_count": 1}}]})
+        ReadQCResponse.model_validate(
+            {
+                **payload,
+                "results": [
+                    {
+                        **result,
+                        "length": {
+                            **length,
+                            "read_count": 1,
+                            "total_bases": 15,
+                            "min_length": 15,
+                            "max_length": 15,
+                            "mean_length": 15,
+                            "median_length": 15,
+                            "n50": 15,
+                        },
+                    }
+                ],
+            }
+        )
 
 
 def test_alignment_count_and_mapq_denominators_are_consistent() -> None:
