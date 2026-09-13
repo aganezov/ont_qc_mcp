@@ -9,6 +9,7 @@
   {"case": "coverage-regions", "tool": "coverage_qc", "request": {"path": "reads.bam", "regions": [{"chrom": "chr1", "start": 0, "end": 10, "name": "target"}]}},
   {"case": "coverage-whole-windows", "tool": "coverage_qc", "request": {"path": "reads.bam", "window_size": 1000}},
   {"case": "coverage-region-windows", "tool": "coverage_qc", "request": {"path": "reads.bam", "regions": {"format": "bed", "path": "targets.bed"}, "window_size": 1000, "thresholds": [0, 1, 10, 20]}},
+  {"case": "coverage-breadth-only", "tool": "coverage_qc", "request": {"path": "reads.bam", "metrics": ["breadth"], "thresholds": [1, 10, 20]}},
   {"case": "variant-combined", "tool": "variant_qc", "request": {"path": "calls.vcf.gz"}},
   {"case": "variant-by-region", "tool": "variant_qc", "request": {"path": "calls.vcf.gz", "regions": [{"chrom": "chr2", "start": 20, "end": 40}], "group_by": "region", "metrics": ["general", "snps"]}},
   {"case": "gff3-gene", "tool": "coverage_qc", "request": {"path": "reads.bam", "regions": {"format": "gff3", "path": "genes.gff3", "feature_type": "gene", "ids": ["GENE1"]}}},

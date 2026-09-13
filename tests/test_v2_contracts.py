@@ -252,6 +252,62 @@ def test_coverage_breadth_matches_requested_threshold_and_denominator() -> None:
         )
 
 
+def test_breadth_only_response_omits_depth_fields() -> None:
+    entry = next(item for item in load_fixture("response-examples.json") if item["case"] == "coverage-whole-contigs")
+    payload = cast(dict[str, Any], entry["response"])
+    effective = cast(dict[str, Any], payload["effective_request"])
+    row = cast(dict[str, Any], cast(list[dict[str, Any]], payload["rows"])[0])
+    union = cast(dict[str, Any], payload["union_summary"])
+    breadth_only = {
+        **payload,
+        "effective_request": {**effective, "metrics": ["breadth"]},
+        "rows": [{key: value for key, value in row.items() if key not in {"depth_sum", "mean_depth"}}],
+        "union_summary": {key: value for key, value in union.items() if key not in {"depth_sum", "mean_depth"}},
+    }
+    CoverageQCResponse.model_validate(breadth_only)
+    with pytest.raises(ValidationError, match="depth fields must match requested metrics"):
+        CoverageQCResponse.model_validate(
+            {
+                **breadth_only,
+                "rows": [{**cast(list[dict[str, Any]], breadth_only["rows"])[0], "depth_sum": 0, "mean_depth": 0.0}],
+            }
+        )
+    with pytest.raises(ValidationError, match="depth fields must match requested metrics"):
+        CoverageQCResponse.model_validate(
+            {**breadth_only, "union_summary": {"reference_bases": 10, "depth_sum": 0, "mean_depth": 0.0}}
+        )
+    breadth = cast(list[dict[str, Any]], cast(list[dict[str, Any]], breadth_only["rows"])[0]["breadth"])
+    with pytest.raises(ValidationError):
+        CoverageQCResponse.model_validate(
+            {
+                **breadth_only,
+                "rows": [
+                    {
+                        **cast(list[dict[str, Any]], breadth_only["rows"])[0],
+                        "breadth": [{key: value for key, value in breadth[0].items() if key != "fraction_at_or_above"}],
+                    }
+                ],
+            }
+        )
+
+
+def test_depth_only_response_requires_depth_and_allows_empty_union() -> None:
+    entry = next(item for item in load_fixture("response-examples.json") if item["case"] == "coverage-requested-region")
+    payload = cast(dict[str, Any], entry["response"])
+    CoverageQCResponse.model_validate(payload)
+    row = cast(dict[str, Any], cast(list[dict[str, Any]], payload["rows"])[0])
+    with pytest.raises(ValidationError, match="depth fields must match requested metrics"):
+        CoverageQCResponse.model_validate(
+            {**payload, "rows": [{key: value for key, value in row.items() if key not in {"depth_sum", "mean_depth"}}]}
+        )
+    empty = {
+        **payload,
+        "rows": [],
+        "union_summary": {"reference_bases": 0, "depth_sum": 0, "mean_depth": None},
+    }
+    CoverageQCResponse.model_validate(empty)
+
+
 @pytest.mark.parametrize(
     ("model", "payload"),
     [

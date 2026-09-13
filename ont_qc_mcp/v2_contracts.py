@@ -425,20 +425,14 @@ class ReadQCResponse(ContractModel):
             expected_ids = [region.region_id for region in self.effective_request.normalized_regions]
             if [result.region_id for result in self.results] != expected_ids:
                 raise ValueError("result region IDs and order must match normalized requested intervals")
-        section_names = {
-            "length": "length",
-            "read_quality": "read_quality",
-            "length_distribution": "length_distribution",
-            "quality_distribution": "quality_distribution",
-        }
         requested = set(self.effective_request.metrics)
         for result in self.results:
             if self.resolved_group_by == "region" and result.region_id is None:
                 raise ValueError("region grouping requires region_id on every result")
-            for metric, field_name in section_names.items():
-                present = getattr(result, field_name) is not None
+            for metric in ("length", "read_quality", "length_distribution", "quality_distribution"):
+                present = getattr(result, metric) is not None
                 if present != (metric in requested):
-                    raise ValueError(f"result section '{field_name}' must match requested metrics")
+                    raise ValueError(f"result section '{metric}' must match requested metrics")
         return self
 
 
@@ -564,7 +558,7 @@ class AlignmentQCResponse(ContractModel):
 class CoverageBreadth(ContractModel):
     threshold: NonNegativeInt
     bases_at_or_above: NonNegativeInt
-    fraction_at_or_above: float | None = Field(default=None, ge=0, le=1)
+    fraction_at_or_above: float = Field(ge=0, le=1)
 
 
 class CoverageRow(ContractModel):
@@ -574,15 +568,21 @@ class CoverageRow(ContractModel):
     end: PositiveInt
     name: str | None = None
     reference_bases: PositiveInt
-    depth_sum: NonNegativeInt
-    mean_depth: float = Field(ge=0)
+    depth_sum: NonNegativeInt | None = None
+    mean_depth: float | None = Field(default=None, ge=0)
     breadth: list[CoverageBreadth]
 
     @model_validator(mode="after")
     def interval_and_mean_are_consistent(self) -> "CoverageRow":
         if self.start >= self.end or self.reference_bases != self.end - self.start:
             raise ValueError("coverage row must describe one nonempty half-open interval")
-        if abs(self.mean_depth - self.depth_sum / self.reference_bases) > 1e-9:
+        if (self.depth_sum is None) != (self.mean_depth is None):
+            raise ValueError("depth_sum and mean_depth must be present or absent together")
+        if (
+            self.depth_sum is not None
+            and self.mean_depth is not None
+            and abs(self.mean_depth - self.depth_sum / self.reference_bases) > 1e-9
+        ):
             raise ValueError("mean_depth must equal depth_sum/reference_bases")
         for value in self.breadth:
             if value.bases_at_or_above > self.reference_bases:
@@ -595,15 +595,24 @@ class CoverageRow(ContractModel):
 
 class CoverageUnionSummary(ContractModel):
     reference_bases: NonNegativeInt
-    depth_sum: NonNegativeInt
+    depth_sum: NonNegativeInt | None = None
     mean_depth: float | None = Field(default=None, ge=0)
 
     @model_validator(mode="after")
     def mean_matches_denominator(self) -> "CoverageUnionSummary":
+        if (self.depth_sum is None) != (self.mean_depth is None):
+            if not (self.reference_bases == 0 and self.depth_sum == 0 and self.mean_depth is None):
+                raise ValueError("depth_sum and mean_depth must be present or absent together")
+        if self.depth_sum is None and self.mean_depth is None:
+            return self
         if self.reference_bases == 0:
             if self.depth_sum != 0 or self.mean_depth is not None:
                 raise ValueError("empty union requires zero depth_sum and null mean_depth")
-        elif self.mean_depth is None or abs(self.mean_depth - self.depth_sum / self.reference_bases) > 1e-9:
+        elif (
+            self.depth_sum is None
+            or self.mean_depth is None
+            or abs(self.mean_depth - self.depth_sum / self.reference_bases) > 1e-9
+        ):
             raise ValueError("union mean_depth must equal depth_sum/reference_bases")
         return self
 
@@ -622,11 +631,17 @@ class CoverageQCResponse(ContractModel):
         if self.resolved_group_by != self.effective_request.resolved_group_by:
             raise ValueError("resolved grouping must match effective_request")
         breadth_requested = "breadth" in self.effective_request.metrics
+        depth_requested = "depth" in self.effective_request.metrics
         for row in self.rows:
             if breadth_requested != bool(row.breadth):
                 raise ValueError("breadth rows must match requested metrics")
             if breadth_requested and [value.threshold for value in row.breadth] != self.effective_request.thresholds:
                 raise ValueError("breadth thresholds and order must match effective_request")
+            if depth_requested != (row.depth_sum is not None and row.mean_depth is not None):
+                raise ValueError("depth fields must match requested metrics")
+        union_has_depth = self.union_summary.depth_sum is not None or self.union_summary.mean_depth is not None
+        if depth_requested != union_has_depth:
+            raise ValueError("depth fields must match requested metrics")
         return self
 
 
