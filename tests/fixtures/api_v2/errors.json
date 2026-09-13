@@ -1,0 +1,6 @@
+[
+  {"case": "validation-empty-regions", "response": {"kind": "validation_error", "tool": "coverage_qc", "message": "Request validation failed", "issues": [{"location": ["regions"], "message": "regions must be omitted for whole-file scope, not an empty list", "code": "value_error"}]}},
+  {"case": "execution-missing-bam-quality", "response": {"kind": "execution_error", "tool": "read_qc", "stage": "selected_record_conversion", "message": "Selected primary BAM/CRAM record has absent QUAL; quality metrics cannot preserve provenance", "backend": "samtools_view", "exit_code": null, "timed_out": false, "cancelled": false, "partial_result_returned": false}},
+  {"case": "execution-upstream-failure", "response": {"kind": "execution_error", "tool": "read_qc", "stage": "selection", "message": "samtools view failed before nanoq completed", "backend": "samtools_view", "exit_code": 1, "timed_out": false, "cancelled": false, "partial_result_returned": false}},
+  {"case": "execution-cancelled", "response": {"kind": "execution_error", "tool": "coverage_qc", "stage": "mosdepth", "message": "Request cancelled; child process group drained and cleaned up", "backend": "mosdepth", "exit_code": null, "timed_out": false, "cancelled": true, "partial_result_returned": false}}
+]

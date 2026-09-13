@@ -1,0 +1,44 @@
+[
+  {
+    "case": "read-zero-evidence",
+    "tool": "read_qc",
+    "response": {
+      "tool": "read_qc", "resolved_group_by": "combined", "selected_records": 0, "emitted_sequences": 0, "conversion_exclusions": 0,
+      "missing_sequence_policy": "exclude_and_count", "missing_quality_policy": "reject_when_quality_requested",
+      "effective_request": {"path": "reads.bam", "reference_path": null, "region_scope": "normalized_intervals", "normalized_regions": [{"chrom": "chr1", "start": 100, "end": 200, "name": "empty", "region_id": "region_1"}], "resolved_group_by": "combined", "metrics": ["length"], "selection": {"primary_only": true, "min_mapq": null}, "extra_args": {"samtools_view": [], "samtools_fastq": [], "nanoq": []}},
+      "results": [{"region_id": null, "region_name": null, "length": {"read_count": 0, "total_bases": 0, "min_length": null, "max_length": null, "mean_length": null, "median_length": null, "n50": null}, "read_quality": null, "length_distribution": null, "quality_distribution": null}],
+      "provenance": [{"backend": "nanoq", "backend_version": "0.10.0", "effective_args": [], "native_options_used": false, "measurement_scope": "complete stored sequences from selected primary records"}]
+    }
+  },
+  {
+    "case": "alignment-missing-data",
+    "tool": "alignment_qc",
+    "response": {
+      "tool": "alignment_qc", "resolved_group_by": "region",
+      "effective_request": {"path": "reads.cram", "reference_path": "reference.fa", "region_scope": "normalized_intervals", "normalized_regions": [{"chrom": "chr1", "start": 0, "end": 3, "name": "target", "region_id": "region_1"}], "resolved_group_by": "region", "metrics": ["counts", "mapping_quality", "aligned_base_quality"], "selection": {"min_mapq": 0, "exclude_flags": 1796, "include_unmapped": false}, "extra_args": {"samtools_view": [], "samtools_stats": [], "cramino": []}},
+      "results": [{"region_id": "region_1", "region_name": "target", "counts": {"eligible_records": 1, "mapped_records": 1, "unmapped_records": 0, "secondary_records": 0, "supplementary_records": 1}, "mapping_quality": {"known_records": 0, "missing_records": 1, "mean_mapq": null}, "aligned_base_quality": {"aligned_query_bases": 3, "known_quality_bases": 0, "missing_quality_bases": 3, "mean_base_quality": null}, "identity": null, "error_profile": null}],
+      "provenance": [{"backend": "samtools", "backend_version": "1.24", "effective_args": [], "native_options_used": false, "measurement_scope": "inside aligned bases for base quality; whole records for MAPQ"}]
+    }
+  },
+  {
+    "case": "coverage-region-windows",
+    "tool": "coverage_qc",
+    "response": {
+      "tool": "coverage_qc", "resolved_group_by": "window", "zero_depth_bases_retained": true,
+      "effective_request": {"path": "reads.bam", "reference_path": null, "region_scope": "normalized_intervals", "normalized_regions": [{"chrom": "chr1", "start": 0, "end": 5, "name": "short", "region_id": "region_1"}], "resolved_group_by": "window", "window_size": 3, "metrics": ["depth", "breadth"], "thresholds": [1, 10, 20], "selection": {"min_mapq": 0, "include_flags": null, "exclude_flags": null, "read_group": null}, "extra_args": {"mosdepth": []}},
+      "rows": [{"row_id": "region_1.window_1", "chrom": "chr1", "start": 0, "end": 3, "name": "short", "reference_bases": 3, "depth_sum": 0, "mean_depth": 0.0, "breadth": [{"threshold": 1, "bases_at_or_above": 0, "fraction_at_or_above": 0.0}, {"threshold": 10, "bases_at_or_above": 0, "fraction_at_or_above": 0.0}, {"threshold": 20, "bases_at_or_above": 0, "fraction_at_or_above": 0.0}]}, {"row_id": "region_1.window_2", "chrom": "chr1", "start": 3, "end": 5, "name": "short", "reference_bases": 2, "depth_sum": 2, "mean_depth": 1.0, "breadth": [{"threshold": 1, "bases_at_or_above": 2, "fraction_at_or_above": 1.0}, {"threshold": 10, "bases_at_or_above": 0, "fraction_at_or_above": 0.0}, {"threshold": 20, "bases_at_or_above": 0, "fraction_at_or_above": 0.0}]}],
+      "union_summary": {"reference_bases": 5, "depth_sum": 2, "mean_depth": 0.4},
+      "provenance": [{"backend": "mosdepth", "backend_version": "0.3.14", "effective_args": [], "native_options_used": false, "measurement_scope": "requested interval union; zero-depth reference bases retained"}]
+    }
+  },
+  {
+    "case": "variant-by-region",
+    "tool": "variant_qc",
+    "response": {
+      "tool": "variant_qc", "resolved_group_by": "region",
+      "effective_request": {"path": "calls.vcf.gz", "reference_path": null, "region_scope": "normalized_intervals", "normalized_regions": [{"chrom": "chr2", "start": 20, "end": 40, "name": null, "region_id": "region_1"}], "resolved_group_by": "region", "metrics": ["general", "snps"], "selection": {"include_expression": null, "exclude_expression": null}, "extra_args": {"bcftools_stats": []}},
+      "results": [{"region_id": "region_1", "region_name": null, "general": {"total_records": 0, "mnps": 0, "others": 0}, "snps": {"count": 0, "transitions": 0, "transversions": 0, "ts_tv_ratio": null}, "indels": null}],
+      "provenance": [{"backend": "bcftools stats", "backend_version": "1.24", "effective_args": [], "native_options_used": false, "measurement_scope": "variants selected by normalized interval overlap"}]
+    }
+  }
+]

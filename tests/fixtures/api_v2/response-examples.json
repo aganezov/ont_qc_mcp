@@ -1,0 +1,82 @@
+[
+  {
+    "case": "read-whole-file-full",
+    "tool": "read_qc",
+    "response": {
+      "tool": "read_qc", "resolved_group_by": "combined", "selected_records": 2, "emitted_sequences": 2, "conversion_exclusions": 0,
+      "effective_request": {"path": "reads.fastq.gz", "reference_path": null, "region_scope": "whole_file", "normalized_regions": [], "resolved_group_by": "combined", "metrics": ["length", "read_quality", "length_distribution", "quality_distribution"], "selection": {"primary_only": true, "min_mapq": null}, "extra_args": {"samtools_view": [], "samtools_fastq": [], "nanoq": []}},
+      "results": [{"length": {"read_count": 2, "total_bases": 30, "min_length": 10, "max_length": 20, "mean_length": 15.0, "median_length": 15.0, "n50": 20}, "read_quality": {"reads_with_quality": 2, "reads_missing_quality": 0, "mean_qscore": 15.0, "median_qscore": 15.0}, "length_distribution": {"percentiles": {"p50": 15.0}, "histogram": [{"start": 0, "end": 20, "count": 2}]}, "quality_distribution": {"histogram": [{"start": 10, "end": 20, "count": 2}], "per_position_mean": null}}],
+      "provenance": [{"backend": "nanoq", "effective_args": [], "native_options_used": false, "measurement_scope": "complete FASTQ sequences"}]
+    }
+  },
+  {
+    "case": "read-bam-per-region-length-subset",
+    "tool": "read_qc",
+    "response": {
+      "tool": "read_qc", "resolved_group_by": "region", "selected_records": 1, "emitted_sequences": 1, "conversion_exclusions": 0,
+      "effective_request": {"path": "reads.bam", "reference_path": null, "region_scope": "normalized_intervals", "normalized_regions": [{"chrom": "chr1", "start": 0, "end": 10, "name": "target", "region_id": "region_1"}], "resolved_group_by": "region", "metrics": ["length"], "selection": {"primary_only": true, "min_mapq": null}, "extra_args": {"samtools_view": [], "samtools_fastq": [], "nanoq": []}},
+      "results": [{"region_id": "region_1", "region_name": "target", "length": {"read_count": 1, "total_bases": 20, "min_length": 20, "max_length": 20, "mean_length": 20.0, "median_length": 20.0, "n50": 20}}],
+      "provenance": [{"backend": "samtools_fastq+nanoq", "effective_args": [], "native_options_used": false, "measurement_scope": "complete stored sequences from region-overlapping primary records"}]
+    }
+  },
+  {
+    "case": "alignment-default-combined",
+    "tool": "alignment_qc",
+    "response": {
+      "tool": "alignment_qc", "resolved_group_by": "combined",
+      "effective_request": {"path": "reads.bam", "reference_path": null, "region_scope": "whole_file", "normalized_regions": [], "resolved_group_by": "combined", "metrics": ["counts", "mapping_quality"], "selection": {"min_mapq": 0, "exclude_flags": 1796, "include_unmapped": false}, "extra_args": {"samtools_view": [], "samtools_stats": [], "cramino": []}},
+      "results": [{"counts": {"eligible_records": 2, "mapped_records": 2, "unmapped_records": 0, "secondary_records": 0, "supplementary_records": 1}, "mapping_quality": {"known_records": 1, "missing_records": 1, "mean_mapq": 30.0}}],
+      "provenance": [{"backend": "samtools", "effective_args": [], "native_options_used": false, "measurement_scope": "whole selected alignment records"}]
+    }
+  },
+  {
+    "case": "alignment-optional-whole-record-groups",
+    "tool": "alignment_qc",
+    "response": {
+      "tool": "alignment_qc", "resolved_group_by": "combined",
+      "effective_request": {"path": "reads.cram", "reference_path": "reference.fa", "region_scope": "normalized_intervals", "normalized_regions": [{"chrom": "chr1", "start": 0, "end": 10, "name": null, "region_id": "region_1"}], "resolved_group_by": "combined", "metrics": ["identity", "error_profile"], "selection": {"min_mapq": 0, "exclude_flags": 1796, "include_unmapped": false}, "extra_args": {"samtools_view": [], "samtools_stats": [], "cramino": []}},
+      "results": [{"identity": {"records_with_identity": null, "records_missing_identity": null, "mean_identity": 0.95, "scope": "whole_selected_record", "aggregation": "cramino_backend_mean_normalized_to_fraction"}, "error_profile": {"records_with_nm": null, "records_missing_nm": null, "nm_error_rate": 0.05, "mismatch_rate": null, "insertion_rate": null, "deletion_rate": null, "coverage_histogram": null, "mismatch_counts_by_cycle": null, "insert_size_histogram": null, "scope": "whole_selected_record"}}],
+      "provenance": [{"backend": "cramino+samtools_stats", "effective_args": [], "native_options_used": false, "measurement_scope": "whole records selected by regional overlap"}]
+    }
+  },
+  {
+    "case": "coverage-whole-contigs",
+    "tool": "coverage_qc",
+    "response": {
+      "tool": "coverage_qc", "resolved_group_by": "contig",
+      "effective_request": {"path": "reads.bam", "reference_path": null, "region_scope": "whole_reference", "normalized_regions": [], "resolved_group_by": "contig", "window_size": null, "metrics": ["depth", "breadth"], "thresholds": [1], "selection": {"min_mapq": 0, "include_flags": null, "exclude_flags": null, "read_group": null}, "extra_args": {"mosdepth": []}},
+      "rows": [{"row_id": "contig.chr1", "chrom": "chr1", "start": 0, "end": 10, "reference_bases": 10, "depth_sum": 0, "mean_depth": 0.0, "breadth": [{"threshold": 1, "bases_at_or_above": 0, "fraction_at_or_above": 0.0}]}], "union_summary": {"reference_bases": 10, "depth_sum": 0, "mean_depth": 0.0},
+      "provenance": [{"backend": "mosdepth", "effective_args": [], "native_options_used": false, "measurement_scope": "whole reference"}]
+    }
+  },
+  {
+    "case": "coverage-requested-region",
+    "tool": "coverage_qc",
+    "response": {
+      "tool": "coverage_qc", "resolved_group_by": "region",
+      "effective_request": {"path": "reads.bam", "reference_path": null, "region_scope": "normalized_intervals", "normalized_regions": [{"chrom": "chr1", "start": 0, "end": 5, "name": "target", "region_id": "region_1"}], "resolved_group_by": "region", "window_size": null, "metrics": ["depth"], "thresholds": [1, 10, 20], "selection": {"min_mapq": 0, "include_flags": null, "exclude_flags": null, "read_group": null}, "extra_args": {"mosdepth": []}},
+      "rows": [{"row_id": "region_1", "chrom": "chr1", "start": 0, "end": 5, "name": "target", "reference_bases": 5, "depth_sum": 5, "mean_depth": 1.0, "breadth": []}], "union_summary": {"reference_bases": 5, "depth_sum": 5, "mean_depth": 1.0},
+      "provenance": [{"backend": "mosdepth", "effective_args": [], "native_options_used": false, "measurement_scope": "requested interval union"}]
+    }
+  },
+  {
+    "case": "coverage-whole-windows",
+    "tool": "coverage_qc",
+    "response": {
+      "tool": "coverage_qc", "resolved_group_by": "window",
+      "effective_request": {"path": "reads.bam", "reference_path": null, "region_scope": "whole_reference", "normalized_regions": [], "resolved_group_by": "window", "window_size": 10, "metrics": ["depth"], "thresholds": [1, 10, 20], "selection": {"min_mapq": 0, "include_flags": null, "exclude_flags": null, "read_group": null}, "extra_args": {"mosdepth": []}},
+      "rows": [{"row_id": "chr1.window_1", "chrom": "chr1", "start": 0, "end": 10, "reference_bases": 10, "depth_sum": 20, "mean_depth": 2.0, "breadth": []}], "union_summary": {"reference_bases": 10, "depth_sum": 20, "mean_depth": 2.0},
+      "provenance": [{"backend": "mosdepth", "effective_args": [], "native_options_used": false, "measurement_scope": "windows tiled within reference contigs"}]
+    }
+  },
+  {
+    "case": "variant-combined-default",
+    "tool": "variant_qc",
+    "response": {
+      "tool": "variant_qc", "resolved_group_by": "combined",
+      "effective_request": {"path": "calls.vcf.gz", "reference_path": null, "region_scope": "whole_file", "normalized_regions": [], "resolved_group_by": "combined", "metrics": ["general", "snps", "indels"], "selection": {"include_expression": null, "exclude_expression": null}, "extra_args": {"bcftools_stats": []}},
+      "results": [{"general": {"total_records": 3, "mnps": 0, "others": 0}, "snps": {"count": 2, "transitions": 1, "transversions": 1, "ts_tv_ratio": 1.0}, "indels": {"count": 1}}],
+      "provenance": [{"backend": "bcftools stats", "effective_args": [], "native_options_used": false, "measurement_scope": "whole variant file"}]
+    }
+  }
+]
