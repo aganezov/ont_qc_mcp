@@ -226,6 +226,12 @@ def _read_threshold_counts(
             parsed = [int(value) for value in values]
             if any(value > row.end - row.start for value in parsed):
                 raise ValueError(f"Mosdepth threshold row {row.row_id!r} exceeds its reference length")
+            # Mosdepth 0.3.14 writes zero for every threshold when a contig has
+            # no alignment records. Depth is nonnegative, so threshold zero is
+            # definitionally the complete requested reference domain.
+            for index, threshold in enumerate(thresholds):
+                if threshold == 0:
+                    parsed[index] = row.end - row.start
             counts[output_index] = parsed
 
     if not header_seen:

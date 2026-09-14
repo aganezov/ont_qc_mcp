@@ -166,6 +166,28 @@ def test_all_modes_match_separate_raw_mosdepth(
 
 
 @pytest.mark.integration
+def test_threshold_zero_covers_a_contig_with_no_alignment_records(tmp_path: Path) -> None:
+    require_executable_tools(["samtools", "mosdepth"])
+    samtools = shutil.which("samtools")
+    mosdepth = shutil.which("mosdepth")
+    assert samtools is not None and mosdepth is not None
+    sam = tmp_path / "empty.sam"
+    sam.write_text("@HD\tVN:1.6\tSO:coordinate\n@SQ\tSN:chrEmpty\tLN:5\n")
+    bam = tmp_path / "empty.bam"
+    subprocess.run([samtools, "view", "-b", "-o", str(bam), str(sam)], check=True, capture_output=True)
+    subprocess.run([samtools, "index", str(bam)], check=True, capture_output=True)
+
+    result = coverage_qc(
+        {"path": str(bam), "metrics": ["breadth"], "thresholds": [0, 1]},
+        tools=ToolPaths(mosdepth=mosdepth, samtools=samtools),
+    )
+
+    assert len(result.rows) == 1
+    assert result.rows[0].reference_bases == 5
+    assert [entry.bases_at_or_above for entry in result.rows[0].breadth] == [5, 0]
+
+
+@pytest.mark.integration
 @pytest.mark.parametrize(
     ("selection", "expected"),
     [

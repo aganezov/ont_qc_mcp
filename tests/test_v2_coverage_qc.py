@@ -103,6 +103,18 @@ def test_threshold_counts_follow_internal_row_ids_not_native_output_order(tmp_pa
     assert counts == [[4, 0, 0], [1, 0, 0], [0, 0, 0]]
 
 
+def test_threshold_zero_uses_reference_domain_when_mosdepth_reports_empty_contig_as_zero(tmp_path) -> None:
+    thresholds_path = tmp_path / "coverage.thresholds.bed.gz"
+    with gzip.open(thresholds_path, "wt") as output:
+        output.write("#chrom\tstart\tend\tregion\t0X\t1X\n")
+        output.write("chr2\t0\t5\tcontig.chr2\t0\t0\n")
+
+    rows = _plan_rows({"chr2": 5}, NormalizedRegionSet(requested=(), union=(), external_dependencies=()), None)
+    counts = _read_threshold_counts(thresholds_path, rows, [0, 1])
+
+    assert counts == [[5, 0]]
+
+
 def test_threshold_output_must_contain_each_planned_occurrence(tmp_path) -> None:
     thresholds_path = tmp_path / "truncated.thresholds.bed.gz"
     with gzip.open(thresholds_path, "wt") as output:

@@ -46,4 +46,7 @@ The unregistered API v2 `coverage_qc` backend has a stricter numerical contract.
 It does not derive integer depth sums from the rounded means described above.
 When depth is requested, it reads mosdepth's temporary integer per-base runs and
 checks that they cover every reference base exactly once. Breadth uses native
-integer threshold counts, and breadth-only requests still suppress per-base output.
+integer counts for positive thresholds. Mosdepth 0.3.14 reports zero for all
+thresholds on a contig with no alignment records, so v2 defines threshold zero as
+the complete nonnegative reference domain after validating the native row.
+Breadth-only requests still suppress per-base output.
