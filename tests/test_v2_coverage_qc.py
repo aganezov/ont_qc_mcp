@@ -87,7 +87,7 @@ def test_exact_depth_sums_use_integer_per_base_evidence_and_union(tmp_path) -> N
         output.write("chr1\t0\t2\t2\nchr1\t2\t4\t1\nchr1\t4\t10\t0\nchr2\t0\t5\t0\n")
 
     rows = _plan_rows(REFERENCE_LENGTHS, REGIONS, None)
-    row_sums, union_sum = _read_per_base_depths(per_base, REFERENCE_LENGTHS, rows, REGIONS.union)
+    row_sums, union_sum = _read_per_base_depths(per_base, REFERENCE_LENGTHS, rows, REGIONS.union, [4, 1, 0])
 
     # The first two rows overlap, so their sums are 6 and 1 while the chr1 union is 6.
     assert row_sums == [6, 1, 0]
@@ -102,7 +102,7 @@ def test_per_base_output_must_cover_every_reference_base(tmp_path) -> None:
     union = tuple(RegionalInterval(chrom=chrom, start=0, end=length) for chrom, length in REFERENCE_LENGTHS.items())
 
     with pytest.raises(ValueError, match="incomplete for contig.*chr1"):
-        _read_per_base_depths(per_base, REFERENCE_LENGTHS, rows, union)
+        _read_per_base_depths(per_base, REFERENCE_LENGTHS, rows, union, [0, 0])
 
 
 def test_entirely_absent_per_base_contig_is_exact_zero_depth(tmp_path) -> None:
@@ -112,10 +112,21 @@ def test_entirely_absent_per_base_contig_is_exact_zero_depth(tmp_path) -> None:
     rows = _plan_rows(REFERENCE_LENGTHS, NormalizedRegionSet((), ()), None)
     union = tuple(RegionalInterval(chrom=chrom, start=0, end=length) for chrom, length in REFERENCE_LENGTHS.items())
 
-    row_sums, union_sum = _read_per_base_depths(per_base, REFERENCE_LENGTHS, rows, union)
+    row_sums, union_sum = _read_per_base_depths(per_base, REFERENCE_LENGTHS, rows, union, [10, 0])
 
     assert row_sums == [10, 0]
     assert union_sum == 10
+
+
+def test_entirely_absent_per_base_contig_rejects_positive_one_x_evidence(tmp_path) -> None:
+    per_base = tmp_path / "truncated-positive-contig.per-base.bed.gz"
+    with gzip.open(per_base, "wt") as output:
+        output.write("chr1\t0\t10\t1\n")
+    rows = _plan_rows(REFERENCE_LENGTHS, NormalizedRegionSet((), ()), None)
+    union = tuple(RegionalInterval(chrom=chrom, start=0, end=length) for chrom, length in REFERENCE_LENGTHS.items())
+
+    with pytest.raises(ValueError, match="positive-depth evidence.*chr2"):
+        _read_per_base_depths(per_base, REFERENCE_LENGTHS, rows, union, [10, 1])
 
 
 def test_threshold_counts_follow_internal_row_ids_not_native_output_order(tmp_path) -> None:
@@ -185,7 +196,12 @@ class _FakeState:
     directories: list[Path]
 
 
-def _install_fake_mosdepth(monkeypatch, *, failure: BaseException | None = None):
+def _install_fake_mosdepth(
+    monkeypatch,
+    *,
+    failure: BaseException | None = None,
+    omit_per_base_contig: str | None = None,
+):
     from ont_qc_mcp import v2_coverage_qc as coverage
 
     segments = {
@@ -226,6 +242,8 @@ def _install_fake_mosdepth(monkeypatch, *, failure: BaseException | None = None)
         if "--no-per-base" not in command:
             with gzip.open(prefix.with_suffix(".per-base.bed.gz"), "wt") as output:
                 for chrom, per_base_segments in segments.items():
+                    if chrom == omit_per_base_contig:
+                        continue
                     for start, end, depth in per_base_segments:
                         output.write(f"{chrom}\t{start}\t{end}\t{depth}\n")
         if "--thresholds" in command:
@@ -379,9 +397,21 @@ def test_metric_subsets_and_native_selection_shape_the_command(tmp_path, monkeyp
 
     depth = coverage_qc({"path": str(bam), "metrics": ["depth"]}, tools=tools)
     depth_command = state.commands[1]
-    assert "--thresholds" not in depth_command and "--no-per-base" not in depth_command
+    assert depth_command[depth_command.index("--thresholds") + 1] == "1"
+    assert "--no-per-base" not in depth_command
     assert depth_command[depth_command.index("--flag") + 1] == "1796"
     assert all(not row.breadth for row in depth.rows)
+
+
+def test_depth_request_rejects_absent_positive_contig_despite_valid_threshold_output(tmp_path, monkeypatch) -> None:
+    bam = _alignment_files(tmp_path)
+    _install_fake_mosdepth(monkeypatch, omit_per_base_contig="chr1")
+
+    with pytest.raises(ValueError, match="positive-depth evidence.*contig.chr1"):
+        coverage_qc(
+            {"path": str(bam), "metrics": ["depth"]},
+            tools=ToolPaths(mosdepth="mosdepth", samtools="samtools"),
+        )
 
 
 def test_breadth_response_cell_limit_is_checked_before_native_execution(tmp_path, monkeypatch) -> None:

@@ -150,16 +150,21 @@ def _read_per_base_depths(
     reference_lengths: Mapping[str, int],
     rows: Sequence[_PlannedRow],
     union: Sequence[RegionalInterval],
+    one_x_counts: Sequence[int],
     deadline: RequestDeadline | None = None,
 ) -> tuple[list[int], int]:
-    """Read complete integer run-length depth evidence and aggregate rows plus union."""
+    """Read complete integer depths and corroborate their positive-base counts."""
+    if len(one_x_counts) != len(rows):
+        raise ValueError("1X threshold evidence must contain one count per planned row")
     row_intervals = _intervals_by_chrom(
         [(index, RegionalInterval(chrom=row.chrom, start=row.start, end=row.end)) for index, row in enumerate(rows)]
     )
     union_intervals = _intervals_by_chrom(list(enumerate(union)))
     row_totals = [0] * len(rows)
+    row_one_x_totals = [0] * len(rows)
     union_totals = [0] * len(union)
     row_first: dict[str, int] = {}
+    row_one_x_first: dict[str, int] = {}
     union_first: dict[str, int] = {}
     next_start = {chrom: 0 for chrom in reference_lengths}
     closed_contigs: set[str] = set()
@@ -188,15 +193,22 @@ def _read_per_base_depths(
                 raise ValueError(f"Mosdepth per-base output is incomplete or overlapping for {chrom!r}")
             next_start[chrom] = end
             _add_segment(row_intervals, row_first, row_totals, chrom, start, end, depth)
+            _add_segment(row_intervals, row_one_x_first, row_one_x_totals, chrom, start, end, int(depth >= 1))
             _add_segment(union_intervals, union_first, union_totals, chrom, start, end, depth)
 
     # Mosdepth 0.3.14 omits a contig from per-base output when it has no
-    # selected alignments. A wholly absent contig therefore represents exact
-    # zero depth. Once a contig appears, however, its run-length rows must span
-    # the complete reference domain without gaps or overlaps.
+    # selected alignments. Once a contig appears, its run-length rows must span
+    # the complete reference domain without gaps or overlaps. Exact 1X counts
+    # independently corroborate that any absent planned row is truly all zero.
     incomplete = [chrom for chrom, length in reference_lengths.items() if next_start[chrom] not in {0, length}]
     if incomplete:
         raise ValueError(f"Mosdepth per-base output is incomplete for contig(s): {', '.join(incomplete)}")
+    inconsistent = [row.row_id for index, row in enumerate(rows) if row_one_x_totals[index] != one_x_counts[index]]
+    if inconsistent:
+        raise ValueError(
+            "Mosdepth per-base output is missing or inconsistent with positive-depth evidence for row(s): "
+            + ", ".join(inconsistent)
+        )
     return row_totals, sum(union_totals)
 
 
@@ -421,7 +433,10 @@ def coverage_qc(
     resolved_group_by = validated.group_by or (
         "window" if validated.window_size is not None else "region" if regions.requested else "contig"
     )
-    sorted_thresholds = sorted(validated.thresholds)
+    native_thresholds = sorted(
+        set(validated.thresholds if "breadth" in validated.metrics else ())
+        | ({1} if "depth" in validated.metrics else set())
+    )
 
     with tempfile.TemporaryDirectory(prefix="ont-qc-v2-coverage-") as directory:
         output_dir = Path(directory)
@@ -437,8 +452,8 @@ def coverage_qc(
             "--by",
             safe_path_arg(target_path),
         ]
-        if "breadth" in validated.metrics:
-            command.extend(("--thresholds", ",".join(str(value) for value in sorted_thresholds)))
+        if native_thresholds:
+            command.extend(("--thresholds", ",".join(str(value) for value in native_thresholds)))
         if "depth" not in validated.metrics:
             command.append("--no-per-base")
         if alignment.reference_access_path is not None:
@@ -452,6 +467,15 @@ def coverage_qc(
         if not regions_output.is_file():
             raise RuntimeError(f"mosdepth did not produce expected output: {regions_output}")
 
+        threshold_output = prefix.with_suffix(".thresholds.bed.gz")
+        if not threshold_output.is_file():
+            raise RuntimeError(f"mosdepth did not produce expected output: {threshold_output}")
+        native_counts = _read_threshold_counts(threshold_output, rows, native_thresholds, deadline)
+        native_count_maps = [
+            {threshold: count for threshold, count in zip(native_thresholds, counts, strict=True)}
+            for counts in native_counts
+        ]
+
         depth_sums: Sequence[int | None]
         median_depths: Sequence[float | None]
         union_depth_sum: int | None
@@ -460,7 +484,12 @@ def coverage_qc(
             if not per_base_output.is_file():
                 raise RuntimeError(f"mosdepth did not produce expected output: {per_base_output}")
             depth_sums, union_depth_sum = _read_per_base_depths(
-                per_base_output, reference_lengths, rows, union, deadline
+                per_base_output,
+                reference_lengths,
+                rows,
+                union,
+                [counts[1] for counts in native_count_maps],
+                deadline,
             )
             median_depths = (
                 _read_median_depths(regions_output, rows, deadline)
@@ -473,13 +502,8 @@ def coverage_qc(
             union_depth_sum = None
 
         if "breadth" in validated.metrics:
-            threshold_output = prefix.with_suffix(".thresholds.bed.gz")
-            if not threshold_output.is_file():
-                raise RuntimeError(f"mosdepth did not produce expected output: {threshold_output}")
-            sorted_counts = _read_threshold_counts(threshold_output, rows, sorted_thresholds, deadline)
             breadth_counts = [
-                {threshold: count for threshold, count in zip(sorted_thresholds, counts, strict=True)}
-                for counts in sorted_counts
+                {threshold: counts[threshold] for threshold in validated.thresholds} for counts in native_count_maps
             ]
         else:
             breadth_counts = [{} for _ in rows]
