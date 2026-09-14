@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import Callable, Mapping
 from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,6 +13,7 @@ from typing import Sequence
 from .config import ExecutionConfig, ToolPaths
 from .nanoq_aux_pipes import NanoqAuxPipes
 from .parsers import parse_nanoq_json
+from .process_control import wait_or_cancel
 from .schemas import HistogramBin, NanoqStats
 from .tools import _validate_input_file
 from .v2_contracts import (
@@ -27,7 +29,7 @@ from .v2_contracts import (
     V2HistogramBin,
     V2LengthPercentiles,
 )
-from .v2_execution import PipelineStage, RequestDeadline, run_pipeline
+from .v2_execution import PipelineResult, PipelineStage, PipelineStageError, RequestDeadline, run_pipeline
 from .v2_native_args import READ_QC_NANOQ_POPULATION_ARGS, ValidatedNativeArgs, validate_native_args
 from .v2_read_records import ReadRecordReport, parse_report
 from .v2_regions import NormalizedRegionSet
@@ -116,6 +118,36 @@ def _provenance(backend: str, args: Sequence[str], *, native: bool, scope: str) 
     )
 
 
+def _run_nanoq_pipeline(
+    request: ReadQCRequest,
+    cfg: ExecutionConfig,
+    deadline: RequestDeadline,
+    build_stages: Callable[[Sequence[str]], tuple[Sequence[PipelineStage], list[str]]],
+    *,
+    env: Mapping[str, str] | None = None,
+) -> tuple[PipelineResult, NanoqStats, list[str]]:
+    """Run nanoq at most twice, with fresh auxiliary pipes for each attempt."""
+    for attempt in range(2):
+        try:
+            with ExitStack() as cleanup:
+                aux = (
+                    cleanup.enter_context(NanoqAuxPipes(cfg))
+                    if _uses_distributions(request) and cfg.nanoq_aux_stats
+                    else None
+                )
+                stages, effective_args = build_stages(aux.args if aux is not None else ())
+                result = run_pipeline(stages, deadline, env=env)
+                stats = parse_nanoq_json(result.final.stdout)
+                if aux is not None:
+                    aux.augment(stats, deadline=deadline)
+                return result, stats, effective_args
+        except PipelineStageError as error:
+            if attempt == 1 or error.stage != "nanoq":
+                raise
+            wait_or_cancel(min(0.5, deadline.remaining()))
+    raise RuntimeError("nanoq retry exhausted")  # Unreachable: the second failure is raised above.
+
+
 def _run_fastq(
     path: Path,
     request: ReadQCRequest,
@@ -124,13 +156,12 @@ def _run_fastq(
     deadline: RequestDeadline,
 ) -> _PopulationResult:
     native = _nanoq_native(request)
-    with ExitStack() as cleanup:
-        aux = cleanup.enter_context(NanoqAuxPipes(cfg)) if _uses_distributions(request) else None
-        stage, effective_args = _nanoq_stage(tools, native, aux.args if aux is not None else (), path=path)
-        result = run_pipeline([stage], deadline)
-        stats = parse_nanoq_json(result.final.stdout)
-        if aux is not None:
-            aux.augment(stats, deadline=deadline)
+
+    def build_stages(aux_args: Sequence[str]) -> tuple[Sequence[PipelineStage], list[str]]:
+        stage, effective_args = _nanoq_stage(tools, native, aux_args, path=path)
+        return [stage], effective_args
+
+    _, stats, effective_args = _run_nanoq_pipeline(request, cfg, deadline, build_stages)
     deadline.checkpoint()
     accounting = ReadRecordReport(stats.read_count, stats.read_count, 0)
     return _PopulationResult(
@@ -224,14 +255,9 @@ def _run_alignment_population(
         exec_cfg=cfg,
         native_args=request.extra_args.samtools_view,
     ) as view:
-        with ExitStack() as cleanup:
-            aux = cleanup.enter_context(NanoqAuxPipes(cfg)) if _uses_distributions(request) else None
-            nanoq, nanoq_args = _nanoq_stage(
-                tools,
-                native_nanoq,
-                aux.args if aux is not None else (),
-                path=None,
-            )
+
+        def build_stages(aux_args: Sequence[str]) -> tuple[Sequence[PipelineStage], list[str]]:
+            nanoq, nanoq_args = _nanoq_stage(tools, native_nanoq, aux_args, path=None)
             stages = [
                 view.stage,
                 _sam_to_text_stage(tools),
@@ -239,11 +265,16 @@ def _run_alignment_population(
                 fastq.stage,
                 nanoq,
             ]
-            result = run_pipeline(stages, deadline, env=_alignment_environment())
-            accounting = parse_report(result.stages[2].stderr)
-            stats = parse_nanoq_json(result.final.stdout)
-            if aux is not None:
-                aux.augment(stats, deadline=deadline)
+            return stages, nanoq_args
+
+        result, stats, nanoq_args = _run_nanoq_pipeline(
+            request,
+            cfg,
+            deadline,
+            build_stages,
+            env=_alignment_environment(),
+        )
+        accounting = parse_report(result.stages[2].stderr)
         provenance = (
             _provenance(
                 "samtools_view",

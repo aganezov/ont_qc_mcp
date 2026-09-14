@@ -200,6 +200,74 @@ def test_fastq_default_and_requested_sections_use_one_nanoq_execution(fake_nanoq
     assert fake_nanoq.with_suffix(".calls").read_text().splitlines() == ["call", "call"]
 
 
+def test_auxiliary_statistics_disable_switch_skips_pipe_creation(
+    fake_nanoq: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fastq = tmp_path / "reads.fastq"
+    fastq.write_text("@r1\nA\n+\nI\n")
+
+    def unexpected_aux_pipes(_cfg: ExecutionConfig) -> None:
+        pytest.fail("disabled auxiliary statistics must not create pipes")
+
+    monkeypatch.setattr("ont_qc_mcp.v2_read_qc.NanoqAuxPipes", unexpected_aux_pipes)
+    response = read_qc(
+        {
+            "path": str(fastq),
+            "metrics": ["length_distribution", "quality_distribution"],
+        },
+        tools=ToolPaths(nanoq=str(fake_nanoq)),
+        exec_cfg=ExecutionConfig(nanoq_aux_stats=False),
+    )
+
+    assert response.results[0].length_distribution is not None
+    assert response.results[0].length_distribution.histogram == []
+    assert response.results[0].quality_distribution is not None
+    assert response.results[0].quality_distribution.histogram == []
+
+
+def test_transient_nanoq_failure_retries_with_fresh_auxiliary_state(tmp_path: Path) -> None:
+    nanoq = tmp_path / "nanoq"
+    nanoq.write_text(
+        f"#!{sys.executable}\n"
+        "import json, pathlib, sys\n"
+        "args = sys.argv[1:]\n"
+        "calls = pathlib.Path(__file__).with_suffix('.calls')\n"
+        "attempt = len(calls.read_text().splitlines()) + 1 if calls.exists() else 1\n"
+        "calls.open('a').write(f'{attempt}\\n')\n"
+        "lengths = pathlib.Path(args[args.index('--read-lengths') + 1])\n"
+        "qualities = pathlib.Path(args[args.index('--read-qualities') + 1])\n"
+        "if attempt == 1:\n"
+        "    lengths.write_text('999\\n')\n"
+        "    qualities.write_text('99\\n')\n"
+        "    sys.exit(7)\n"
+        "lengths.write_text('10\\n20\\n')\n"
+        "qualities.write_text('10\\n20\\n')\n"
+        "print(json.dumps({'reads': 2, 'bases': 30, 'n50': 20, 'longest': 20, "
+        "'shortest': 10, 'mean_length': 15, 'median_length': 15, "
+        "'mean_quality': 15, 'median_quality': 15}))\n"
+    )
+    nanoq.chmod(0o755)
+    fastq = tmp_path / "reads.fastq"
+    fastq.write_text("@r1\nAAAAAAAAAA\n+\n++++++++++\n@r2\nCCCCCCCCCCCCCCCCCCCC\n+\n55555555555555555555\n")
+
+    response = read_qc(
+        {
+            "path": str(fastq),
+            "metrics": ["length_distribution", "quality_distribution"],
+        },
+        tools=ToolPaths(nanoq=str(nanoq)),
+        exec_cfg=ExecutionConfig(nanoq_aux_stats=True, nanoq_length_bin_width=10),
+    )
+
+    assert nanoq.with_suffix(".calls").read_text().splitlines() == ["1", "2"]
+    assert response.results[0].length_distribution is not None
+    assert sum(item.count for item in response.results[0].length_distribution.histogram) == 2
+    assert all(item.start < 100 for item in response.results[0].length_distribution.histogram)
+    assert response.results[0].quality_distribution is not None
+    assert sum(item.count for item in response.results[0].quality_distribution.histogram) == 2
+    assert all(item.start < 50 for item in response.results[0].quality_distribution.histogram)
+
+
 def test_fastq_inferred_format_rejects_alignment_controls(fake_nanoq: Path, tmp_path: Path) -> None:
     fastq = tmp_path / "reads.fastq"
     fastq.write_text("@r1\nA\n+\nI\n")
