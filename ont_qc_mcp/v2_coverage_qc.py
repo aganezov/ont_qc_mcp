@@ -32,6 +32,7 @@ from .v2_samtools import file_identity, read_alignment_reference_lengths, resolv
 
 _INTEGER = re.compile(r"[0-9]+")
 MAX_COVERAGE_ROWS = 100_000
+MAX_COVERAGE_BREADTH_CELLS = 300_000
 
 
 @dataclass(frozen=True)
@@ -359,6 +360,13 @@ def coverage_qc(
     regions = normalize_regions(validated.regions, reference_lengths, exec_cfg=cfg, deadline=deadline)
     dependency_identities = tuple(file_identity(path) for path in regions.external_dependencies)
     rows = _plan_rows(reference_lengths, regions, validated.window_size, deadline)
+    if "breadth" in validated.metrics:
+        projected_breadth_cells = len(rows) * len(validated.thresholds)
+        if projected_breadth_cells > MAX_COVERAGE_BREADTH_CELLS:
+            raise ValueError(
+                f"projected breadth cell count {projected_breadth_cells} exceeds the limit of "
+                f"{MAX_COVERAGE_BREADTH_CELLS}"
+            )
     union = _union_domain(reference_lengths, regions)
     resolved_group_by = validated.group_by or (
         "window" if validated.window_size is not None else "region" if regions.requested else "contig"

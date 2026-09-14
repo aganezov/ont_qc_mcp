@@ -297,6 +297,22 @@ def test_metric_subsets_and_native_selection_shape_the_command(tmp_path, monkeyp
     assert all(not row.breadth for row in depth.rows)
 
 
+def test_breadth_response_cell_limit_is_checked_before_native_execution(tmp_path, monkeypatch) -> None:
+    from ont_qc_mcp import v2_coverage_qc as coverage
+
+    bam = _alignment_files(tmp_path)
+    state = _install_fake_mosdepth(monkeypatch)
+    monkeypatch.setattr(coverage, "MAX_COVERAGE_BREADTH_CELLS", 5)
+
+    with pytest.raises(ValueError, match="projected breadth cell count 6 exceeds the limit of 5"):
+        coverage_qc(
+            {"path": str(bam), "metrics": ["breadth"], "thresholds": [1, 2, 3]},
+            tools=ToolPaths(mosdepth="mosdepth", samtools="samtools"),
+        )
+
+    assert state.commands == []
+
+
 def test_combined_fragment_and_fast_modes_are_both_recorded_in_provenance(tmp_path, monkeypatch) -> None:
     bam = _alignment_files(tmp_path)
     _install_fake_mosdepth(monkeypatch)
