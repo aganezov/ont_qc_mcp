@@ -199,7 +199,9 @@ def test_native_identity_and_nm_error_use_the_same_selected_whole_records(
         exec_cfg=_config(),
     )
     assert cram_response.results[0].identity == group.identity
-    assert cram_response.results[0].error_profile == group.error_profile
+    assert cram_response.results[0].error_profile is not None
+    assert cram_response.results[0].error_profile.nm_error_rate == group.error_profile.nm_error_rate
+    assert cram_response.results[0].error_profile.mismatch_counts_by_cycle is not None
 
 
 def test_grouped_native_metrics_keep_requested_order_and_whole_record_scope(
@@ -234,3 +236,29 @@ def test_grouped_native_metrics_keep_requested_order_and_whole_record_scope(
         value.error_profile is not None and value.error_profile.scope == "whole_selected_record"
         for value in response.results
     )
+
+
+def test_error_profile_uses_reference_symlink_with_adjacent_index(
+    alignment_qc_bam: Path,
+    tmp_path: Path,
+) -> None:
+    reference_target = tmp_path / "reference-target.fa"
+    reference_target.write_text(">chr1\n" + "A" * 20 + "\n")
+    reference_alias = tmp_path / "reference-alias.fa"
+    reference_alias.symlink_to(reference_target)
+    subprocess.run(["samtools", "faidx", str(reference_alias)], check=True, capture_output=True)
+
+    response = alignment_qc(
+        {
+            "path": str(alignment_qc_bam),
+            "reference_path": str(reference_alias),
+            "metrics": ["error_profile"],
+        },
+        tools=_tools(),
+        exec_cfg=_config(),
+    )
+
+    assert response.results[0].error_profile is not None
+    assert response.results[0].error_profile.mismatch_counts_by_cycle is not None
+    assert Path(str(reference_alias) + ".fai").exists()
+    assert not Path(str(reference_target) + ".fai").exists()

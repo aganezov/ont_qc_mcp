@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,7 +11,14 @@ from typing import Any, cast
 
 import pytest
 
-from ont_qc_mcp.v2_alignment_qc import _error_section, _identity_section, _record_groups, alignment_qc
+from ont_qc_mcp.v2_alignment_qc import (
+    _error_section,
+    _identity_section,
+    _record_groups,
+    _record_output_limit,
+    _run_error_profile,
+    alignment_qc,
+)
 from ont_qc_mcp.v2_alignment_records import collect_alignment_records
 from ont_qc_mcp.v2_contracts import AlignmentQCGroup, ErrorProfileSection, IdentitySection, Provenance
 from ont_qc_mcp.v2_regions import NormalizedRegionSet
@@ -139,6 +147,65 @@ def test_stats_filter_keeps_only_rows_represented_by_the_error_contract() -> Non
     destination = StringIO()
     filter_error_profile_lines(source, destination)
     assert destination.getvalue() == ("SN\terror rate:\t0.1\nCOV\t[1-1]\t1\t5\nMPC\t1\t0\t1\nIS\t10\t2\n")
+
+
+def test_record_output_limit_covers_max_valid_unicode_region_names() -> None:
+    name = "\U0001f9ec" * 256
+    requested = tuple(
+        NormalizedInterval(
+            chrom="chr1",
+            start=index,
+            end=index + 1,
+            name=name,
+            region_id=f"region_{index + 1}",
+        )
+        for index in range(1024)
+    )
+    regions = NormalizedRegionSet(requested=requested, union=())
+    groups = collect_alignment_records(
+        StringIO(""),
+        regions=[
+            RegionalInterval(chrom="chr1", start=value.start, end=value.end, name=value.name) for value in requested
+        ],
+        group_by="region",
+        include_base_quality=True,
+    )
+    encoded = json.dumps({"groups": groups}, separators=(",", ":")).encode("utf-8")
+
+    assert len(encoded) > 1024 * 1024
+    assert len(encoded) <= _record_output_limit(regions, "region")
+
+
+def test_error_profile_passes_resolved_reference_to_samtools_stats(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from ont_qc_mcp import v2_alignment_qc as module
+
+    reference = tmp_path / "reference-target.fa"
+    reference_access_path = tmp_path / "reference-alias.fa"
+    alignment = SimpleNamespace(reference=reference, reference_access_path=reference_access_path)
+    regions = NormalizedRegionSet((), ())
+    request = AlignmentQCRequest(path=str(tmp_path / "reads.bam"), metrics=["error_profile"])
+    commands: list[tuple[str, ...]] = []
+
+    def run(*args, **kwargs):
+        stages = args[-1]
+        commands.extend(stage.command for stage in stages)
+        return "SN\terror rate:\t0.1\n", SimpleNamespace(effective_args=(), native_options_used=False)
+
+    monkeypatch.setattr(module, "_run_selected_pipeline", run)
+    section, _ = _run_error_profile(
+        cast(Any, alignment),
+        regions,
+        request,
+        cast(Any, SimpleNamespace(samtools="samtools")),
+        cast(Any, SimpleNamespace(threads_for=lambda *args: None)),
+        cast(Any, SimpleNamespace()),
+    )
+
+    assert section.nm_error_rate == pytest.approx(0.1)
+    assert commands[0] == ("samtools", "stats", "-F", "0", "-r", str(reference_access_path), "-")
 
 
 def test_only_requested_native_backend_runs(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

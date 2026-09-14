@@ -36,6 +36,8 @@ from .v2_samtools import ResolvedAlignmentInput, SamtoolsSelection, resolve_and_
 
 
 _SAMTOOLS_SUMMARY = re.compile(r"^SN\t(.+?):\t([^\t]*)")
+_DEFAULT_PIPELINE_OUTPUT_BYTES = 1024 * 1024
+_RECORD_GROUP_OUTPUT_HEADROOM_BYTES = 1024
 MAX_SAMTOOLS_STATS_BYTES = 64 * 1024 * 1024
 
 
@@ -80,6 +82,19 @@ def _provenance(backend: str, args: Sequence[str], *, native: bool, scope: str) 
 
 def _population_scope(regions: NormalizedRegionSet) -> str:
     return "whole records selected by interval overlap" if regions.requested else "whole selected alignment records"
+
+
+def _record_output_limit(regions: NormalizedRegionSet, group_by: str) -> int:
+    """Bound valid grouped JSON while retaining the shared pipeline's default floor."""
+    if group_by != "region":
+        return _DEFAULT_PIPELINE_OUTPUT_BYTES
+    identity_bytes = sum(
+        len(json.dumps((region.region_id, region.name), separators=(",", ":")).encode("utf-8"))
+        for region in regions.requested
+    )
+    return (
+        _DEFAULT_PIPELINE_OUTPUT_BYTES + len(regions.requested) * _RECORD_GROUP_OUTPUT_HEADROOM_BYTES + identity_bytes
+    )
 
 
 def _selected_populations(
@@ -192,6 +207,7 @@ def _record_groups(
                     include_base_quality=include_base_quality,
                 ),
             ),
+            max_output_bytes=_record_output_limit(regions, request.group_by),
         )
     payload = json.loads(output)
     raw_groups = payload.get("groups") if isinstance(payload, dict) else None
@@ -350,7 +366,8 @@ def _run_error_profile(
     deadline: RequestDeadline,
 ) -> tuple[ErrorProfileSection, list[Provenance]]:
     native = validate_native_args("samtools_stats", request.extra_args.samtools_stats)
-    args = [*_threads(cfg, "samtools", "-@"), "-F", "0", *native.supplied_args, "-"]
+    reference_args = ("-r", str(alignment.reference_access_path)) if alignment.reference_access_path is not None else ()
+    args = [*_threads(cfg, "samtools", "-@"), "-F", "0", *reference_args, *native.supplied_args, "-"]
     payload, view_native = _run_selected_pipeline(
         alignment,
         regions,
