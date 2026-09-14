@@ -65,6 +65,16 @@ def test_all_four_row_plans_preserve_requested_identity_and_partial_windows() ->
     ]
 
 
+def test_window_plan_rejects_an_unsafe_projected_row_count_before_materialization(monkeypatch) -> None:
+    from ont_qc_mcp import v2_coverage_qc as coverage
+
+    monkeypatch.setattr(coverage, "MAX_COVERAGE_ROWS", 2)
+    no_regions = NormalizedRegionSet(requested=(), union=(), external_dependencies=())
+
+    with pytest.raises(ValueError, match="projected coverage row count 3 exceeds the limit of 2"):
+        _plan_rows({"chr1": 3}, no_regions, 1)
+
+
 def test_exact_depth_sums_use_integer_per_base_evidence_and_union(tmp_path) -> None:
     per_base = tmp_path / "coverage.per-base.bed.gz"
     with gzip.open(per_base, "wt") as output:
@@ -287,6 +297,24 @@ def test_metric_subsets_and_native_selection_shape_the_command(tmp_path, monkeyp
     assert all(not row.breadth for row in depth.rows)
 
 
+def test_combined_fragment_and_fast_modes_are_both_recorded_in_provenance(tmp_path, monkeypatch) -> None:
+    bam = _alignment_files(tmp_path)
+    _install_fake_mosdepth(monkeypatch)
+
+    result = coverage_qc(
+        {
+            "path": str(bam),
+            "metrics": ["depth"],
+            "extra_args": {"mosdepth": ["--fragment-mode", "--fast-mode"]},
+        },
+        tools=ToolPaths(mosdepth="mosdepth", samtools="samtools"),
+    )
+
+    scope = result.provenance[0].measurement_scope
+    assert "fragment mode combined with fast mode" in scope
+    assert "without internal CIGAR or mate-overlap correction" in scope
+
+
 def test_samtools_expression_is_rejected_before_input_or_native_execution(monkeypatch) -> None:
     from ont_qc_mcp import v2_coverage_qc as coverage
 
@@ -295,7 +323,7 @@ def test_samtools_expression_is_rejected_before_input_or_native_execution(monkey
 
     monkeypatch.setattr(coverage, "resolve_alignment_input", unexpected)
     monkeypatch.setattr(coverage, "run_pipeline", unexpected)
-    with pytest.raises(ValueError, match="does not support samtools filter expressions"):
+    with pytest.raises(ValueError, match="does not accept samtools-style filter expressions for mosdepth"):
         coverage_qc({"path": "missing.bam", "extra_args": {"mosdepth": ["--expr=mapq>10"]}})
 
 

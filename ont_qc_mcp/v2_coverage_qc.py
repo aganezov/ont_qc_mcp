@@ -31,6 +31,7 @@ from .v2_samtools import file_identity, read_alignment_reference_lengths, resolv
 
 
 _INTEGER = re.compile(r"[0-9]+")
+MAX_COVERAGE_ROWS = 100_000
 
 
 @dataclass(frozen=True)
@@ -60,6 +61,18 @@ def _plan_rows(
         isinstance(window_size, bool) or not isinstance(window_size, int) or window_size <= 0
     ):
         raise ValueError("window_size must be a positive integer or unset")
+
+    domains = (
+        ((region.start, region.end) for region in regions.requested)
+        if regions.requested
+        else ((0, length) for length in reference_lengths.values())
+    )
+    projected_rows = 0
+    for start, end in domains:
+        _checkpoint(deadline)
+        projected_rows += 1 if window_size is None else (end - start + window_size - 1) // window_size
+    if projected_rows > MAX_COVERAGE_ROWS:
+        raise ValueError(f"projected coverage row count {projected_rows} exceeds the limit of {MAX_COVERAGE_ROWS}")
 
     if regions.requested and window_size is None:
         return [
@@ -251,7 +264,10 @@ def _deadline(request: CoverageQCRequest, cfg: ExecutionConfig) -> RequestDeadli
 def _native(request: CoverageQCRequest) -> ValidatedNativeArgs:
     for argument in request.extra_args.mosdepth:
         if argument.split("=", 1)[0] in {"-e", "--expr", "--expression"}:
-            raise ValueError("coverage_qc does not support samtools filter expressions; use mosdepth-native controls")
+            raise ValueError(
+                "coverage_qc does not accept samtools-style filter expressions for mosdepth; "
+                "use mosdepth-native selection controls"
+            )
     return validate_native_args("mosdepth", request.extra_args.mosdepth)
 
 
@@ -296,9 +312,13 @@ def _counting_mode(native_args: Sequence[str]) -> str:
     short_flags = "".join(
         argument[1:] for argument in native_args if argument.startswith("-") and not argument.startswith("--")
     )
-    if "--fragment-mode" in native_args or "a" in short_flags:
+    fragment_mode = "--fragment-mode" in native_args or "a" in short_flags
+    fast_mode = "--fast-mode" in native_args or "x" in short_flags
+    if fragment_mode and fast_mode:
+        mode = "mosdepth fragment mode combined with fast mode without internal CIGAR or mate-overlap correction"
+    elif fragment_mode:
         mode = "mosdepth fragment mode"
-    elif "--fast-mode" in native_args or "x" in short_flags:
+    elif fast_mode:
         mode = "mosdepth fast mode without internal CIGAR or mate-overlap correction"
     else:
         mode = "mosdepth default CIGAR-aware aligned-base depth with mate-overlap correction"
