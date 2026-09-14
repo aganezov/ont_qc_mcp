@@ -13,7 +13,7 @@ from typing import Annotated, Literal, TypeAlias
 from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt, PositiveInt, field_validator, model_validator
 
 from .regional_metrics import RegionalInterval
-from .v2_native_args import validate_native_args
+from .v2_native_args import READ_QC_NANOQ_POPULATION_ARGS, validate_native_args
 from .schemas import (
     BedQCReport,
     ChopperReport,
@@ -231,7 +231,11 @@ class ReadQCRequest(NumericalRequest):
             additionally_protected=mapq_protection,
         )
         validate_native_args("samtools_fastq", self.extra_args.samtools_fastq)
-        validate_native_args("nanoq", self.extra_args.nanoq)
+        validate_native_args(
+            "nanoq",
+            self.extra_args.nanoq,
+            additionally_protected=READ_QC_NANOQ_POPULATION_ARGS,
+        )
         return self
 
 

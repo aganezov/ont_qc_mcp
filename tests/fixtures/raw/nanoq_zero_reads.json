@@ -1,0 +1,36 @@
+{
+  "reads": 0,
+  "bases": 0,
+  "n50": 0,
+  "longest": 0,
+  "shortest": 0,
+  "mean_length": 0,
+  "median_length": 0,
+  "mean_quality": null,
+  "median_quality": null,
+  "length_thresholds": {
+    "200": 0,
+    "500": 0,
+    "1000": 0,
+    "2000": 0,
+    "5000": 0,
+    "10000": 0,
+    "30000": 0,
+    "50000": 0,
+    "100000": 0,
+    "1000000": 0
+  },
+  "quality_thresholds": {
+    "5": 0,
+    "7": 0,
+    "10": 0,
+    "12": 0,
+    "15": 0,
+    "20": 0,
+    "25": 0,
+    "30": 0
+  },
+  "top_lengths": [],
+  "top_qualities": [],
+  "filtered": 221
+}

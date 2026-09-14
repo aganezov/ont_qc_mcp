@@ -1,8 +1,13 @@
+from pathlib import Path
+
 import pytest
 
 from ont_qc_mcp.parsers import parse_error_profile, parse_nanoq_json
 from ont_qc_mcp.config import ExecutionConfig
 from ont_qc_mcp.tools import _EXEC_CFG, _validate_input_file
+
+
+FIXTURES = Path(__file__).parent / "fixtures" / "raw"
 
 
 def test_parse_nanoq_json_invalid_json():
@@ -14,6 +19,15 @@ def test_parse_nanoq_json_negative_counts():
     payload = {"summary": {"reads": {"count": -1, "bases": 10}}}
     with pytest.raises(ValueError):
         parse_nanoq_json(payload)
+
+
+def test_parse_nanoq_json_preserves_null_quality_for_zero_retained_reads():
+    stats = parse_nanoq_json((FIXTURES / "nanoq_zero_reads.json").read_text())
+
+    assert stats.read_count == 0
+    assert stats.total_bases == 0
+    assert stats.mean_qscore is None
+    assert stats.median_qscore is None
 
 
 def test_parse_error_profile_skips_malformed_gcd():

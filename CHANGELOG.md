@@ -10,6 +10,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Migrate the local stdio adapter to MCP SDK 2.2, preserving existing tool schemas, input validation, resource contents, and numerical result payloads.
 
 ### Added
+- Add the unregistered API v2 `read_qc` backend for FASTQ, BAM, and CRAM, with primary-record
+  selection, union and ordered per-region grouping, complete stored-sequence measurement, explicit
+  conversion exclusions, missing-QUAL rejection, opt-in nanoq distributions, and one shared request deadline.
 - Add shared, unregistered API v2 infrastructure for ordered region normalization and genomic unions, explicit
   BAM/CRAM index and reference resolution, protected native argument arrays, samtools selection/FASTQ conversion
   plans, and one-deadline subprocess pipelines that drain every stage before reporting success.
@@ -54,6 +57,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Parser semantics clarified for missing vs empty histogram blocks
 
 ### Fixed
+- Preserve unavailable nanoq mean and median quality values when a successful filter retains zero reads.
 - Stream nanoq length and quality auxiliary output through POSIX named pipes instead of per-read temporary files, preserving histograms and percentile limits across FASTQ and BAM QC.
 - Suppress unused mosdepth per-base BED files and indexes for whole, windowed, and targeted coverage reports.
 - Report missing configured executables before launching forced Docker or local IGV runtimes.
