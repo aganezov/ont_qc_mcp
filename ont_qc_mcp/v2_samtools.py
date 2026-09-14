@@ -92,6 +92,7 @@ def companion_index(
 @dataclass(frozen=True)
 class ResolvedAlignmentInput:
     alignment: Path
+    alignment_access_path: Path
     index: Path | None
     reference: Path | None
     reference_index: Path | None
@@ -115,10 +116,11 @@ def resolve_alignment_input(
     cfg = exec_cfg or ExecutionConfig()
     supplied = Path(path)
     alignment = local_file(path, cfg, (".bam", ".cram"))
+    alignment_access_path = alignment
     index = None
     if require_index:
         suffixes = (".crai",) if alignment.suffix.lower() == ".cram" else (".csi", ".bai")
-        index, _ = companion_index(supplied, alignment, cfg, suffixes, replace_suffix=True)
+        index, alignment_access_path = companion_index(supplied, alignment, cfg, suffixes, replace_suffix=True)
 
     reference = reference_index = reference_access_path = None
     if reference_path is not None:
@@ -133,6 +135,8 @@ def resolve_alignment_input(
         raise ValueError("CRAM requires an explicit local uncompressed FASTA and existing .fai index")
 
     tracked = [alignment]
+    if alignment_access_path != alignment:
+        tracked.append(alignment_access_path)
     if index is not None:
         tracked.append(index)
     if reference is not None and reference_index is not None:
@@ -142,6 +146,7 @@ def resolve_alignment_input(
     tracked_paths = tuple(tracked)
     return ResolvedAlignmentInput(
         alignment=alignment,
+        alignment_access_path=alignment_access_path,
         index=index,
         reference=reference,
         reference_index=reference_index,
