@@ -210,8 +210,11 @@ def test_native_median_uses_lower_middle_and_retains_zero_depth_bases(tmp_path: 
         "@SQ\tSN:odd\tLN:5\n"
         "@SQ\tSN:even\tLN:4\n"
         "@SQ\tSN:empty\tLN:3\n"
+        "@SQ\tSN:skew\tLN:5\n"
         "odd-read\t0\todd\t1\t60\t3M\t*\t0\t0\tAAA\tIII\n"
         "even-read\t0\teven\t1\t60\t2M\t*\t0\t0\tAA\tII\n"
+        + "".join(f"ten-{index}\t0\tskew\t4\t60\t1M\t*\t0\t0\tA\tI\n" for index in range(10))
+        + "".join(f"forty-{index}\t0\tskew\t5\t60\t1M\t*\t0\t0\tA\tI\n" for index in range(40))
     )
     bam = tmp_path / "median.bam"
     subprocess.run([samtools, "view", "-b", "-o", str(bam), str(sam)], check=True, capture_output=True)
@@ -222,10 +225,11 @@ def test_native_median_uses_lower_middle_and_retains_zero_depth_bases(tmp_path: 
         tools=ToolPaths(mosdepth=mosdepth, samtools=samtools),
     )
 
-    assert [row.depth_sum for row in result.rows] == [3, 2, 0]
-    assert [row.mean_depth for row in result.rows] == [pytest.approx(0.6), pytest.approx(0.5), 0.0]
+    assert [row.depth_sum for row in result.rows] == [3, 2, 0, 50]
+    assert [row.mean_depth for row in result.rows] == [pytest.approx(0.6), pytest.approx(0.5), 0.0, 10.0]
     # Pinned mosdepth 0.3.14 chooses the lower middle value for even-length regions.
-    assert [row.median_depth for row in result.rows] == [1.0, 0.0, 0.0]
+    # The skew row has per-base depths [0, 0, 0, 10, 40], so its median is 0.
+    assert [row.median_depth for row in result.rows] == [1.0, 0.0, 0.0, 0.0]
 
 
 @pytest.mark.integration

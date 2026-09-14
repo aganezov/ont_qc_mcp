@@ -97,12 +97,25 @@ def test_exact_depth_sums_use_integer_per_base_evidence_and_union(tmp_path) -> N
 def test_per_base_output_must_cover_every_reference_base(tmp_path) -> None:
     per_base = tmp_path / "truncated.per-base.bed.gz"
     with gzip.open(per_base, "wt") as output:
-        output.write("chr1\t0\t10\t0\n")
+        output.write("chr1\t0\t9\t0\n")
     rows = _plan_rows(REFERENCE_LENGTHS, NormalizedRegionSet((), ()), None)
     union = tuple(RegionalInterval(chrom=chrom, start=0, end=length) for chrom, length in REFERENCE_LENGTHS.items())
 
-    with pytest.raises(ValueError, match="incomplete for contig.*chr2"):
+    with pytest.raises(ValueError, match="incomplete for contig.*chr1"):
         _read_per_base_depths(per_base, REFERENCE_LENGTHS, rows, union)
+
+
+def test_entirely_absent_per_base_contig_is_exact_zero_depth(tmp_path) -> None:
+    per_base = tmp_path / "empty-contig.per-base.bed.gz"
+    with gzip.open(per_base, "wt") as output:
+        output.write("chr1\t0\t10\t1\n")
+    rows = _plan_rows(REFERENCE_LENGTHS, NormalizedRegionSet((), ()), None)
+    union = tuple(RegionalInterval(chrom=chrom, start=0, end=length) for chrom, length in REFERENCE_LENGTHS.items())
+
+    row_sums, union_sum = _read_per_base_depths(per_base, REFERENCE_LENGTHS, rows, union)
+
+    assert row_sums == [10, 0]
+    assert union_sum == 10
 
 
 def test_threshold_counts_follow_internal_row_ids_not_native_output_order(tmp_path) -> None:

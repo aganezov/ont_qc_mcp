@@ -190,7 +190,11 @@ def _read_per_base_depths(
             _add_segment(row_intervals, row_first, row_totals, chrom, start, end, depth)
             _add_segment(union_intervals, union_first, union_totals, chrom, start, end, depth)
 
-    incomplete = [chrom for chrom, length in reference_lengths.items() if next_start[chrom] != length]
+    # Mosdepth 0.3.14 omits a contig from per-base output when it has no
+    # selected alignments. A wholly absent contig therefore represents exact
+    # zero depth. Once a contig appears, however, its run-length rows must span
+    # the complete reference domain without gaps or overlaps.
+    incomplete = [chrom for chrom, length in reference_lengths.items() if next_start[chrom] not in {0, length}]
     if incomplete:
         raise ValueError(f"Mosdepth per-base output is incomplete for contig(s): {', '.join(incomplete)}")
     return row_totals, sum(union_totals)
