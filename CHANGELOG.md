@@ -10,6 +10,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Migrate the local stdio adapter to MCP SDK 2.2, preserving existing tool schemas, input validation, resource contents, and numerical result payloads.
 
 ### Added
+- Add the unregistered API v2 `coverage_qc` backend for indexed BAM and CRAM inputs, with contig,
+  requested-interval, whole-contig window, and requested-interval window rows; exact integer depth
+  sums and native breadth counts; overlap-safe union summaries; mosdepth-native selection and mode
+  provenance; and one request deadline with complete temporary-output cleanup.
 - Add the unregistered API v2 `read_qc` backend for FASTQ, BAM, and CRAM, with primary-record
   selection, union and ordered per-region grouping, complete stored-sequence measurement, explicit
   conversion exclusions, missing-QUAL rejection, opt-in nanoq distributions, and one shared request deadline.

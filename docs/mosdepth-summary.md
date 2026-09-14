@@ -41,3 +41,9 @@ truncated report that happens to form another internally consistent report.
 The parser does not add contigs absent from the summary. For explicit BED,
 location, or gene intervals and coverage threshold percentages, use
 `targeted_coverage_tool`, which reads separate region and threshold files.
+
+The unregistered API v2 `coverage_qc` backend has a stricter numerical contract.
+It does not derive integer depth sums from the rounded means described above.
+When depth is requested, it reads mosdepth's temporary integer per-base runs and
+checks that they cover every reference base exactly once. Breadth uses native
+integer threshold counts, and breadth-only requests still suppress per-base output.
