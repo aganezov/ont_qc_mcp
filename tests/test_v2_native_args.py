@@ -61,6 +61,12 @@ def test_contract_models_reject_protected_native_options(model, extra_args, mess
         model.model_validate({"path": "reads.bam", "extra_args": extra_args})
 
 
+@pytest.mark.parametrize("native_args", [["--use-median"], ["-m"]])
+def test_coverage_contract_owns_median_native_options(native_args: list[str]) -> None:
+    with pytest.raises(ValidationError, match="wrapper-owned"):
+        CoverageQCRequest.model_validate({"path": "reads.bam", "extra_args": {"mosdepth": native_args}})
+
+
 @pytest.mark.parametrize("model", [ReadQCRequest, AlignmentQCRequest])
 @pytest.mark.parametrize("native_args", [["-e", "mapq >= 0"], ["--expr=mapq >= 0"], ["--exp=mapq >= 0"]])
 def test_positive_typed_mapq_rejects_native_expression_at_contract_boundary(model, native_args: list[str]) -> None:

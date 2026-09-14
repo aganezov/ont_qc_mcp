@@ -54,7 +54,7 @@ def _raw_mosdepth_rows(
     bam: Path,
     mosdepth: str,
     tmp_path: Path,
-) -> tuple[dict[str, int], dict[str, list[int]]]:
+) -> tuple[dict[str, int], dict[str, float], dict[str, list[int]]]:
     bed = tmp_path / f"direct-{result.resolved_group_by}.bed"
     bed.write_text(
         "".join(f"{row.chrom}\t{row.start}\t{row.end}\t{row.row_id}\n" for row in result.rows),
@@ -63,10 +63,25 @@ def _raw_mosdepth_rows(
     prefix = tmp_path / f"direct-{result.resolved_group_by}"
     thresholds = sorted(result.effective_request.thresholds)
     subprocess.run(
-        [mosdepth, "--by", str(bed), "--thresholds", ",".join(map(str, thresholds)), str(prefix), str(bam)],
+        [
+            mosdepth,
+            "--use-median",
+            "--by",
+            str(bed),
+            "--thresholds",
+            ",".join(map(str, thresholds)),
+            str(prefix),
+            str(bam),
+        ],
         check=True,
         capture_output=True,
     )
+
+    medians: dict[str, float] = {}
+    with gzip.open(prefix.with_suffix(".regions.bed.gz"), "rt") as stream:
+        for line in stream:
+            fields = line.rstrip().split("\t")
+            medians[fields[3]] = float(fields[4])
 
     arrays = {"chr1": [0] * 12, "chr2": [0] * 5}
     with gzip.open(prefix.with_suffix(".per-base.bed.gz"), "rt") as stream:
@@ -87,14 +102,21 @@ def _raw_mosdepth_rows(
         row_id: [dict(zip(thresholds, counts, strict=True))[value] for value in result.effective_request.thresholds]
         for row_id, counts in breadth.items()
     }
-    return depth_sums, requested_order_counts
+    return depth_sums, medians, requested_order_counts
 
 
 @pytest.mark.integration
 @pytest.mark.parametrize(
-    ("request_payload", "expected_ids", "expected_depths", "expected_union_bases", "expected_union_depth"),
+    (
+        "request_payload",
+        "expected_ids",
+        "expected_depths",
+        "expected_medians",
+        "expected_union_bases",
+        "expected_union_depth",
+    ),
     [
-        ({}, ["contig.chr1", "contig.chr2"], [8, 4], 17, 12),
+        ({}, ["contig.chr1", "contig.chr2"], [8, 4], [0.0, 1.0], 17, 12),
         (
             {
                 "regions": [
@@ -105,6 +127,7 @@ def _raw_mosdepth_rows(
             },
             ["region_1", "region_2", "region_3"],
             [8, 4, 3],
+            [1.0, 0.0, 1.0],
             13,
             11,
         ),
@@ -112,6 +135,7 @@ def _raw_mosdepth_rows(
             {"window_size": 5},
             ["chr1.window_1", "chr1.window_2", "chr1.window_3", "chr2.window_1"],
             [7, 1, 0, 4],
+            [1.0, 0.0, 0.0, 1.0],
             17,
             12,
         ),
@@ -132,6 +156,7 @@ def _raw_mosdepth_rows(
                 "region_3.window_1",
             ],
             [6, 2, 4, 0, 3],
+            [1.0, 1.0, 1.0, 0.0, 1.0],
             13,
             11,
         ),
@@ -143,6 +168,7 @@ def test_all_modes_match_separate_raw_mosdepth(
     request_payload,
     expected_ids,
     expected_depths,
+    expected_medians,
     expected_union_bases,
     expected_union_depth,
 ) -> None:
@@ -151,18 +177,59 @@ def test_all_modes_match_separate_raw_mosdepth(
     samtools = shutil.which("samtools")
     assert mosdepth is not None and samtools is not None
     result = coverage_qc(
-        {"path": str(bam), "thresholds": [2, 0, 1, 10], **request_payload},
+        {
+            "path": str(bam),
+            "depth_statistic": "median",
+            "thresholds": [2, 0, 1, 10],
+            **request_payload,
+        },
         tools=ToolPaths(mosdepth=mosdepth, samtools=samtools),
     )
 
     assert [row.row_id for row in result.rows] == expected_ids
     assert [row.depth_sum for row in result.rows] == expected_depths
+    assert [row.median_depth for row in result.rows] == expected_medians
     assert result.union_summary.reference_bases == expected_union_bases
     assert result.union_summary.depth_sum == expected_union_depth
-    direct_depths, direct_breadth = _raw_mosdepth_rows(result, bam, mosdepth, tmp_path)
+    direct_depths, direct_medians, direct_breadth = _raw_mosdepth_rows(result, bam, mosdepth, tmp_path)
     for row in result.rows:
         assert row.depth_sum == direct_depths[row.row_id]
+        assert row.median_depth == direct_medians[row.row_id]
         assert [value.bases_at_or_above for value in row.breadth] == direct_breadth[row.row_id]
+
+
+@pytest.mark.integration
+def test_native_median_uses_lower_middle_and_retains_zero_depth_bases(tmp_path: Path) -> None:
+    require_executable_tools(["samtools", "mosdepth"])
+    samtools = shutil.which("samtools")
+    mosdepth = shutil.which("mosdepth")
+    assert samtools is not None and mosdepth is not None
+    sam = tmp_path / "median.sam"
+    sam.write_text(
+        "@HD\tVN:1.6\tSO:coordinate\n"
+        "@SQ\tSN:odd\tLN:5\n"
+        "@SQ\tSN:even\tLN:4\n"
+        "@SQ\tSN:empty\tLN:3\n"
+        "@SQ\tSN:skew\tLN:5\n"
+        "odd-read\t0\todd\t1\t60\t3M\t*\t0\t0\tAAA\tIII\n"
+        "even-read\t0\teven\t1\t60\t2M\t*\t0\t0\tAA\tII\n"
+        + "".join(f"ten-{index}\t0\tskew\t4\t60\t1M\t*\t0\t0\tA\tI\n" for index in range(10))
+        + "".join(f"forty-{index}\t0\tskew\t5\t60\t1M\t*\t0\t0\tA\tI\n" for index in range(40))
+    )
+    bam = tmp_path / "median.bam"
+    subprocess.run([samtools, "view", "-b", "-o", str(bam), str(sam)], check=True, capture_output=True)
+    subprocess.run([samtools, "index", str(bam)], check=True, capture_output=True)
+
+    result = coverage_qc(
+        {"path": str(bam), "metrics": ["depth"], "depth_statistic": "median"},
+        tools=ToolPaths(mosdepth=mosdepth, samtools=samtools),
+    )
+
+    assert [row.depth_sum for row in result.rows] == [3, 2, 0, 50]
+    assert [row.mean_depth for row in result.rows] == [pytest.approx(0.6), pytest.approx(0.5), 0.0, 10.0]
+    # Pinned mosdepth 0.3.14 chooses the lower middle value for even-length regions.
+    # The skew row has per-base depths [0, 0, 0, 10, 40], so its median is 0.
+    assert [row.median_depth for row in result.rows] == [1.0, 0.0, 0.0, 0.0]
 
 
 @pytest.mark.integration

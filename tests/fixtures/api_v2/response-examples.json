@@ -44,7 +44,7 @@
     "tool": "coverage_qc",
     "response": {
       "tool": "coverage_qc", "resolved_group_by": "contig",
-      "effective_request": {"path": "reads.bam", "reference_path": null, "region_scope": "whole_reference", "normalized_regions": [], "resolved_group_by": "contig", "window_size": null, "metrics": ["depth", "breadth"], "thresholds": [1], "selection": {"min_mapq": 0, "include_flags": null, "exclude_flags": null, "read_group": null}, "extra_args": {"mosdepth": []}},
+      "effective_request": {"path": "reads.bam", "reference_path": null, "region_scope": "whole_reference", "normalized_regions": [], "resolved_group_by": "contig", "window_size": null, "metrics": ["depth", "breadth"], "depth_statistic": "mean", "thresholds": [1], "selection": {"min_mapq": 0, "include_flags": null, "exclude_flags": null, "read_group": null}, "extra_args": {"mosdepth": []}},
       "rows": [{"row_id": "contig.chr1", "chrom": "chr1", "start": 0, "end": 10, "reference_bases": 10, "depth_sum": 0, "mean_depth": 0.0, "breadth": [{"threshold": 1, "bases_at_or_above": 0, "fraction_at_or_above": 0.0}]}], "union_summary": {"reference_bases": 10, "depth_sum": 0, "mean_depth": 0.0},
       "provenance": [{"backend": "mosdepth", "effective_args": [], "native_options_used": false, "measurement_scope": "whole reference"}]
     }
@@ -54,7 +54,7 @@
     "tool": "coverage_qc",
     "response": {
       "tool": "coverage_qc", "resolved_group_by": "region",
-      "effective_request": {"path": "reads.bam", "reference_path": null, "region_scope": "normalized_intervals", "normalized_regions": [{"chrom": "chr1", "start": 0, "end": 5, "name": "target", "region_id": "region_1"}], "resolved_group_by": "region", "window_size": null, "metrics": ["depth"], "thresholds": [1, 10, 20], "selection": {"min_mapq": 0, "include_flags": null, "exclude_flags": null, "read_group": null}, "extra_args": {"mosdepth": []}},
+      "effective_request": {"path": "reads.bam", "reference_path": null, "region_scope": "normalized_intervals", "normalized_regions": [{"chrom": "chr1", "start": 0, "end": 5, "name": "target", "region_id": "region_1"}], "resolved_group_by": "region", "window_size": null, "metrics": ["depth"], "depth_statistic": "mean", "thresholds": [1, 10, 20], "selection": {"min_mapq": 0, "include_flags": null, "exclude_flags": null, "read_group": null}, "extra_args": {"mosdepth": []}},
       "rows": [{"row_id": "region_1", "chrom": "chr1", "start": 0, "end": 5, "name": "target", "reference_bases": 5, "depth_sum": 5, "mean_depth": 1.0, "breadth": []}], "union_summary": {"reference_bases": 5, "depth_sum": 5, "mean_depth": 1.0},
       "provenance": [{"backend": "mosdepth", "effective_args": [], "native_options_used": false, "measurement_scope": "requested interval union"}]
     }
@@ -64,8 +64,8 @@
     "tool": "coverage_qc",
     "response": {
       "tool": "coverage_qc", "resolved_group_by": "window",
-      "effective_request": {"path": "reads.bam", "reference_path": null, "region_scope": "whole_reference", "normalized_regions": [], "resolved_group_by": "window", "window_size": 10, "metrics": ["depth"], "thresholds": [1, 10, 20], "selection": {"min_mapq": 0, "include_flags": null, "exclude_flags": null, "read_group": null}, "extra_args": {"mosdepth": []}},
-      "rows": [{"row_id": "chr1.window_1", "chrom": "chr1", "start": 0, "end": 10, "reference_bases": 10, "depth_sum": 20, "mean_depth": 2.0, "breadth": []}], "union_summary": {"reference_bases": 10, "depth_sum": 20, "mean_depth": 2.0},
+      "effective_request": {"path": "reads.bam", "reference_path": null, "region_scope": "whole_reference", "normalized_regions": [], "resolved_group_by": "window", "window_size": 10, "metrics": ["depth"], "depth_statistic": "median", "thresholds": [1, 10, 20], "selection": {"min_mapq": 0, "include_flags": null, "exclude_flags": null, "read_group": null}, "extra_args": {"mosdepth": []}},
+      "rows": [{"row_id": "chr1.window_1", "chrom": "chr1", "start": 0, "end": 10, "reference_bases": 10, "depth_sum": 20, "mean_depth": 2.0, "median_depth": 1.0, "breadth": []}], "union_summary": {"reference_bases": 10, "depth_sum": 20, "mean_depth": 2.0},
       "provenance": [{"backend": "mosdepth", "effective_args": [], "native_options_used": false, "measurement_scope": "windows tiled within reference contigs"}]
     }
   },

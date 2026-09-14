@@ -157,9 +157,19 @@ def test_defaults_and_native_argv_order_are_stable() -> None:
     assert alignment.metrics == ["counts", "mapping_quality"]
     assert alignment.selection.exclude_flags == 1796
     assert coverage.thresholds == [1, 10, 20]
+    assert coverage.depth_statistic == "mean"
     argv = ["--samples", "S1", "--samples", "S2"]
     request = VariantQCRequest.model_validate({"path": "calls.vcf.gz", "extra_args": {"bcftools_stats": argv}})
     assert request.extra_args.bcftools_stats == argv
+
+
+def test_explicit_depth_statistic_requires_depth_metric() -> None:
+    breadth_only = CoverageQCRequest.model_validate({"path": "reads.bam", "metrics": ["breadth"]})
+    assert breadth_only.depth_statistic == "mean"
+    with pytest.raises(ValidationError, match="depth_statistic requires the depth metric"):
+        CoverageQCRequest.model_validate({"path": "reads.bam", "metrics": ["breadth"], "depth_statistic": "mean"})
+    with pytest.raises(ValidationError, match="depth_statistic requires the depth metric"):
+        CoverageQCRequest.model_validate({"path": "reads.bam", "metrics": ["breadth"], "depth_statistic": "median"})
 
 
 def test_response_invariants_distinguish_zero_from_missing() -> None:
@@ -312,6 +322,25 @@ def test_depth_only_response_requires_depth_and_allows_empty_union() -> None:
         "union_summary": {"reference_bases": 0, "depth_sum": 0, "mean_depth": None},
     }
     CoverageQCResponse.model_validate(empty)
+
+
+def test_median_depth_response_requires_only_row_medians() -> None:
+    entry = next(item for item in load_fixture("response-examples.json") if item["case"] == "coverage-requested-region")
+    payload = cast(dict[str, Any], entry["response"])
+    effective = cast(dict[str, Any], payload["effective_request"])
+    row = cast(dict[str, Any], cast(list[dict[str, Any]], payload["rows"])[0])
+    median_payload = {
+        **payload,
+        "effective_request": {**effective, "depth_statistic": "median"},
+        "rows": [{**row, "median_depth": 1.0}],
+    }
+    CoverageQCResponse.model_validate(median_payload)
+    with pytest.raises(ValidationError, match="median_depth must match"):
+        CoverageQCResponse.model_validate(
+            {**median_payload, "rows": [{key: value for key, value in row.items() if key != "median_depth"}]}
+        )
+    with pytest.raises(ValidationError, match="median_depth must match"):
+        CoverageQCResponse.model_validate({**payload, "rows": [{**row, "median_depth": 1.0}]})
 
 
 @pytest.mark.parametrize("mutation", ["missing", "reordered", "duplicate", "shifted", "renamed"])

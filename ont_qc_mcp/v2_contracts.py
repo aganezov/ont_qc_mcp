@@ -273,6 +273,7 @@ class AlignmentQCRequest(NumericalRequest):
 
 CoverageGroup = Literal["contig", "region", "window"]
 CoverageMetric = Literal["depth", "breadth"]
+DepthStatistic = Literal["mean", "median"]
 
 
 def _default_coverage_metrics() -> list[CoverageMetric]:
@@ -287,6 +288,10 @@ class CoverageQCRequest(NumericalRequest):
     )
     window_size: PositiveInt | None = None
     metrics: list[CoverageMetric] = Field(default_factory=_default_coverage_metrics, min_length=1)
+    depth_statistic: DepthStatistic = Field(
+        default="mean",
+        description="Optional row depth statistic; exact depth_sum and mean_depth remain available in depth responses",
+    )
     thresholds: list[NonNegativeInt] = Field(default_factory=lambda: [1, 10, 20], min_length=1)
     extra_args: CoverageExtraArgs = Field(default_factory=CoverageExtraArgs)
 
@@ -301,6 +306,8 @@ class CoverageQCRequest(NumericalRequest):
             raise ValueError("thresholds must not contain duplicates")
         if len(set(self.metrics)) != len(self.metrics):
             raise ValueError("metrics must not contain duplicates")
+        if "depth_statistic" in self.model_fields_set and "depth" not in self.metrics:
+            raise ValueError("depth_statistic requires the depth metric")
         validate_native_args("mosdepth", self.extra_args.mosdepth)
         return self
 
@@ -414,6 +421,7 @@ class CoverageEffectiveRequest(ContractModel):
     resolved_group_by: CoverageGroup
     window_size: PositiveInt | None = None
     metrics: list[CoverageMetric] = Field(min_length=1)
+    depth_statistic: DepthStatistic = "mean"
     thresholds: list[NonNegativeInt] = Field(min_length=1)
     selection: CoverageSelection
     extra_args: CoverageExtraArgs
@@ -423,6 +431,8 @@ class CoverageEffectiveRequest(ContractModel):
         _validate_normalized_regions(self.region_scope, self.normalized_regions)
         if len(self.metrics) != len(set(self.metrics)):
             raise ValueError("metrics must not contain duplicates")
+        if self.depth_statistic == "median" and "depth" not in self.metrics:
+            raise ValueError("median depth_statistic requires the depth metric")
         expected = "window" if self.window_size is not None else "region" if self.normalized_regions else "contig"
         if self.resolved_group_by != expected:
             raise ValueError("effective coverage grouping must match regions and window_size")
@@ -725,6 +735,7 @@ class CoverageRow(ContractModel):
     reference_bases: PositiveInt
     depth_sum: NonNegativeInt | None = None
     mean_depth: float | None = Field(default=None, ge=0)
+    median_depth: float | None = Field(default=None, ge=0)
     breadth: list[CoverageBreadth]
 
     @model_validator(mode="after")
@@ -796,6 +807,9 @@ class CoverageQCResponse(ContractModel):
                 raise ValueError("breadth thresholds and order must match effective_request")
             if depth_requested != (row.depth_sum is not None and row.mean_depth is not None):
                 raise ValueError("depth fields must match requested metrics")
+            median_requested = depth_requested and self.effective_request.depth_statistic == "median"
+            if median_requested != (row.median_depth is not None):
+                raise ValueError("median_depth must match the effective depth statistic")
         union_has_depth = self.union_summary.depth_sum is not None or self.union_summary.mean_depth is not None
         if depth_requested != union_has_depth:
             raise ValueError("depth fields must match requested metrics")
