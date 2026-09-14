@@ -170,16 +170,26 @@ class RegionalAccumulator:
     distinguish a genuine Q9 character from its missing-quality sentinel.
     """
 
-    def __init__(self, regions: list[RegionalInterval], exclude_flags: int = 1796, min_mapq: int = 0) -> None:
+    def __init__(
+        self,
+        regions: list[RegionalInterval],
+        exclude_flags: int = 1796,
+        min_mapq: int = 0,
+        *,
+        include_base_quality: bool = True,
+    ) -> None:
         if type(exclude_flags) is not int or not 0 <= exclude_flags <= 65535:
             raise ValueError("exclude_flags must be an integer in [0, 65535]")
         if type(min_mapq) is not int or not 0 <= min_mapq <= 254:
             raise ValueError("min_mapq must be an integer in [0, 254]")
         if not isinstance(regions, list) or any(not isinstance(region, RegionalInterval) for region in regions):
             raise ValueError("regions must be a list of RegionalInterval values")
+        if type(include_base_quality) is not bool:
+            raise ValueError("include_base_quality must be a boolean")
         self._regions = list(regions)
         self._exclude_flags = exclude_flags
         self._min_mapq = min_mapq
+        self._include_base_quality = include_base_quality
         self._counts = [_Counts() for _ in regions]
         self._failed = False
         by_chrom: dict[str, list[int]] = {}
@@ -223,10 +233,15 @@ class RegionalAccumulator:
             index = indices[offset]
             region = self._regions[index]
             if region.end > alignment.start:
-                self._accumulate(self._counts[index], region, alignment)
+                self._accumulate(self._counts[index], region, alignment, self._include_base_quality)
 
     @staticmethod
-    def _accumulate(counts: _Counts, region: RegionalInterval, alignment: _Alignment) -> None:
+    def _accumulate(
+        counts: _Counts,
+        region: RegionalInterval,
+        alignment: _Alignment,
+        include_base_quality: bool,
+    ) -> None:
         counts.span_overlapping_alignments += 1
         if alignment.mapq == 255:
             counts.mapq_missing_alignments += 1
@@ -250,7 +265,9 @@ class RegionalAccumulator:
                 if start < end:
                     bases = end - start
                     aligned_bases += bases
-                    if alignment.quality == "*":
+                    if not include_base_quality:
+                        pass
+                    elif alignment.quality == "*":
                         if alignment.query_length == 1:
                             raise ValueError(
                                 "SAM cannot distinguish one-base Q9 from missing quality (QUAL '*'); "

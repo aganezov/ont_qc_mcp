@@ -10,6 +10,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Migrate the local stdio adapter to MCP SDK 2.2, preserving existing tool schemas, input validation, resource contents, and numerical result payloads.
 
 ### Added
+- Add the unregistered API v2 `alignment_qc` backend with default selected-record counts and MAPQ,
+  optional CIGAR-aware aligned-base quality, cramino identity, and samtools NM/error sections; whole-file,
+  overlap-safe combined, and ordered per-region populations; preserved native tags; requested-backend-only
+  execution; and one deadline with no partial results or leaked temporary region files.
 - Add the unregistered API v2 `coverage_qc` backend for indexed BAM and CRAM inputs, with contig,
   requested-interval, whole-contig window, and requested-interval window rows; exact integer depth
   sums and native breadth counts; overlap-safe union summaries; mosdepth-native selection and mode
