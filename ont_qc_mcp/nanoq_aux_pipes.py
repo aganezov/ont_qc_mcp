@@ -9,11 +9,15 @@ from contextlib import ExitStack
 from pathlib import Path
 from threading import Event, Thread
 from types import TracebackType
+from typing import TYPE_CHECKING
 
 from .config import ExecutionConfig
 from .nanoq_aux import _HistogramAccumulator, _length_percentiles
 from .process_control import check_cancelled
 from .schemas import NanoqStats
+
+if TYPE_CHECKING:
+    from .v2_execution import RequestDeadline
 
 
 class _AuxReader:
@@ -103,14 +107,17 @@ class NanoqAuxPipes:
     def args(self) -> list[str]:
         return ["--read-lengths", str(self.readers[0].path), "--read-qualities", str(self.readers[1].path)]
 
-    def finish(self) -> None:
+    def finish(self, deadline: RequestDeadline | None = None) -> None:
         """Call only after the producer has exited; drain all buffered output."""
         self.done.set()
-        deadline = time.monotonic() + 5
+        local_deadline = time.monotonic() + 5
         for reader in self.readers:
             while reader.thread.is_alive():
-                check_cancelled()
-                if time.monotonic() >= deadline:
+                if deadline is None:
+                    check_cancelled()
+                else:
+                    deadline.checkpoint()
+                if deadline is None and time.monotonic() >= local_deadline:
                     raise RuntimeError("Nanoq auxiliary readers did not finish after producer exit")
                 reader.thread.join(timeout=0.05)
         self.raise_if_failed()
@@ -120,8 +127,8 @@ class NanoqAuxPipes:
             if reader.error is not None:
                 raise RuntimeError(f"Cannot read nanoq auxiliary {reader.path.name}: {reader.error}") from reader.error
 
-    def augment(self, stats: NanoqStats) -> None:
-        self.finish()
+    def augment(self, stats: NanoqStats, deadline: RequestDeadline | None = None) -> None:
+        self.finish(deadline)
         lengths, qualities = self.readers
         if lengths.had_bytes:
             if stats.length_histogram is None:

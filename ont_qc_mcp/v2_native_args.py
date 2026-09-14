@@ -303,6 +303,27 @@ NATIVE_ARGUMENT_POLICIES: Final[dict[str, NativeArgumentPolicy]] = {
     ),
 }
 
+# These options change which sequences nanoq retains or the sequence lengths it
+# measures. The read-QC response has explicit samtools-selection and conversion
+# denominators, so the family adapter cannot accept a second uncounted population
+# change without weakening that accounting contract.
+READ_QC_NANOQ_POPULATION_ARGS: Final[tuple[str, ...]] = (
+    "--max-len",
+    "--max-qual",
+    "--min-len",
+    "--min-qual",
+    "--top",
+    "--trim-end",
+    "--trim-start",
+    "-E",
+    "-l",
+    "-m",
+    "-q",
+    "-S",
+    "-t",
+    "-w",
+)
+
 
 def _long_option_kind(option: str, policy: NativeArgumentPolicy) -> tuple[str, str]:
     if option in policy.protected_long:
@@ -430,6 +451,7 @@ def validate_native_args(
 
 __all__ = [
     "NATIVE_ARGUMENT_POLICIES",
+    "READ_QC_NANOQ_POPULATION_ARGS",
     "NativeArgumentError",
     "NativeArgumentPolicy",
     "ValidatedNativeArgs",

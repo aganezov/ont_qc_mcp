@@ -64,6 +64,10 @@ def _safe_percentiles(data: dict[str, float]) -> LengthPercentiles:
     )
 
 
+def _optional_float(value: float | int | str | None) -> float | None:
+    return None if value is None else float(value)
+
+
 def parse_nanoq_json(payload: str | dict) -> NanoqStats:
     """
     Parse nanoq --stats --json output.
@@ -151,8 +155,8 @@ def parse_nanoq_json(payload: str | dict) -> NanoqStats:
         mean_len=float(length_info.get("mean", 0.0) or 0.0),
         median_len=float(length_info.get("median", length_info.get("p50", 0.0) or 0.0)),
         n50=length_info.get("n50"),
-        mean_qscore=float(qscore_info.get("mean", qscore_info.get("average", 0.0) or 0.0)) if qscore_info else None,
-        median_qscore=float(qscore_info.get("median", qscore_info.get("p50", 0.0) or 0.0)) if qscore_info else None,
+        mean_qscore=_optional_float(qscore_info.get("mean", qscore_info.get("average", 0.0))) if qscore_info else None,
+        median_qscore=_optional_float(qscore_info.get("median", qscore_info.get("p50", 0.0))) if qscore_info else None,
         gc_content=read_stats.get("gc") if isinstance(read_stats, dict) else summary.get("gc"),
         length_percentiles=percentiles,
         length_histogram=_histogram_or_none(length_bins_raw, length_bins_present),
