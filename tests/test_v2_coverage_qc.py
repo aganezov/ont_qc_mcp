@@ -12,7 +12,13 @@ import pytest
 from ont_qc_mcp.config import ToolPaths
 from ont_qc_mcp.regional_metrics import RegionalInterval
 from ont_qc_mcp.v2_contracts import NormalizedInterval
-from ont_qc_mcp.v2_coverage_qc import _plan_rows, _read_per_base_depths, _read_threshold_counts, coverage_qc
+from ont_qc_mcp.v2_coverage_qc import (
+    _plan_rows,
+    _read_median_depths,
+    _read_per_base_depths,
+    _read_threshold_counts,
+    coverage_qc,
+)
 from ont_qc_mcp.v2_execution import PipelineResult, RequestDeadline
 from ont_qc_mcp.v2_regions import NormalizedRegionSet
 from ont_qc_mcp.utils import CommandResult
@@ -136,6 +142,22 @@ def test_threshold_output_must_contain_each_planned_occurrence(tmp_path) -> None
         _read_threshold_counts(thresholds_path, rows, [1])
 
 
+def test_median_depths_follow_internal_row_ids_and_require_complete_valid_output(tmp_path) -> None:
+    rows = _plan_rows(REFERENCE_LENGTHS, REGIONS, None)
+    regions_path = tmp_path / "coverage.regions.bed.gz"
+    with gzip.open(regions_path, "wt") as output:
+        output.write("chr2\t2\t5\tregion_3\t0.00\n")
+        output.write("chr1\t3\t8\tregion_2\t0.00\n")
+        output.write("chr1\t0\t5\tregion_1\t1.00\n")
+
+    assert _read_median_depths(regions_path, rows) == [1.0, 0.0, 0.0]
+
+    with gzip.open(regions_path, "wt") as output:
+        output.write("chr1\t0\t5\tregion_1\tnan\n")
+    with pytest.raises(ValueError, match="nonnegative finite median"):
+        _read_median_depths(regions_path, rows)
+
+
 def _alignment_files(tmp_path: Path) -> Path:
     bam = tmp_path / "reads.bam"
     bam.write_bytes(b"BAM")
@@ -181,11 +203,17 @@ def _install_fake_mosdepth(monkeypatch, *, failure: BaseException | None = None)
 
         with gzip.open(prefix.with_suffix(".regions.bed.gz"), "wt") as output:
             for chrom, start, end, row_id in reversed(targets):
-                output.write(f"{chrom}\t{start}\t{end}\t{row_id}\t0.00\n")
+                region_depths = [
+                    depth
+                    for segment_start, segment_end, depth in segments[chrom]
+                    for _ in range(max(0, min(end, segment_end) - max(start, segment_start)))
+                ]
+                statistic = sorted(region_depths)[(len(region_depths) - 1) // 2] if "--use-median" in command else 0
+                output.write(f"{chrom}\t{start}\t{end}\t{row_id}\t{statistic:.2f}\n")
         if "--no-per-base" not in command:
             with gzip.open(prefix.with_suffix(".per-base.bed.gz"), "wt") as output:
-                for chrom, values in segments.items():
-                    for start, end, depth in values:
+                for chrom, per_base_segments in segments.items():
+                    for start, end, depth in per_base_segments:
                         output.write(f"{chrom}\t{start}\t{end}\t{depth}\n")
         if "--thresholds" in command:
             thresholds = [int(value) for value in command[command.index("--thresholds") + 1].split(",")]
@@ -264,6 +292,51 @@ def test_coverage_qc_all_four_modes(tmp_path, monkeypatch, request_payload, row_
     assert all(not directory.exists() for directory in state.directories)
 
 
+@pytest.mark.parametrize(
+    ("request_payload", "expected_medians"),
+    [
+        ({}, [0.0, 0.0]),
+        (
+            {"regions": [region.model_dump(exclude={"region_id"}) for region in REGIONS.requested]},
+            [1.0, 0.0, 0.0],
+        ),
+        ({"window_size": 4}, [1.0, 0.0, 0.0, 0.0, 0.0]),
+        (
+            {
+                "regions": [region.model_dump(exclude={"region_id"}) for region in REGIONS.requested],
+                "window_size": 4,
+            },
+            [1.0, 0.0, 0.0, 0.0, 0.0],
+        ),
+    ],
+)
+def test_median_depth_all_four_modes_preserves_exact_mean_and_breadth(
+    tmp_path, monkeypatch, request_payload, expected_medians
+) -> None:
+    bam = _alignment_files(tmp_path)
+    state = _install_fake_mosdepth(monkeypatch)
+    tools = ToolPaths(mosdepth="mosdepth", samtools="samtools")
+    mean = coverage_qc({"path": str(bam), "thresholds": [0, 1, 2], **request_payload}, tools=tools)
+    median = coverage_qc(
+        {
+            "path": str(bam),
+            "thresholds": [0, 1, 2],
+            "depth_statistic": "median",
+            **request_payload,
+        },
+        tools=tools,
+    )
+
+    assert median.effective_request.depth_statistic == "median"
+    assert [row.median_depth for row in median.rows] == expected_medians
+    assert [row.depth_sum for row in median.rows] == [row.depth_sum for row in mean.rows]
+    assert [row.mean_depth for row in median.rows] == [row.mean_depth for row in mean.rows]
+    assert [row.breadth for row in median.rows] == [row.breadth for row in mean.rows]
+    assert median.union_summary == mean.union_summary
+    assert "--use-median" not in state.commands[-2]
+    assert "--use-median" in state.commands[-1]
+
+
 def test_metric_subsets_and_native_selection_shape_the_command(tmp_path, monkeypatch) -> None:
     bam = _alignment_files(tmp_path)
     state = _install_fake_mosdepth(monkeypatch)
@@ -286,6 +359,7 @@ def test_metric_subsets_and_native_selection_shape_the_command(tmp_path, monkeyp
     assert breadth_command[breadth_command.index("--flag") + 1] == "260"
     assert breadth_command[breadth_command.index("--read-groups") + 1] == "RG1"
     assert all(row.depth_sum is None and row.mean_depth is None for row in breadth.rows)
+    assert all(row.median_depth is None for row in breadth.rows)
     assert breadth.union_summary.depth_sum is breadth.union_summary.mean_depth is None
     assert breadth.provenance[0].native_options_used is True
     assert "fast mode" in breadth.provenance[0].measurement_scope
@@ -341,6 +415,19 @@ def test_samtools_expression_is_rejected_before_input_or_native_execution(monkey
     monkeypatch.setattr(coverage, "run_pipeline", unexpected)
     with pytest.raises(ValueError, match="does not accept samtools-style filter expressions for mosdepth"):
         coverage_qc({"path": "missing.bam", "extra_args": {"mosdepth": ["--expr=mapq>10"]}})
+
+
+@pytest.mark.parametrize("native_option", ["--use-median", "-m"])
+def test_native_median_option_is_rejected_before_input_or_execution(monkeypatch, native_option) -> None:
+    from ont_qc_mcp import v2_coverage_qc as coverage
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError("input resolution or native execution should not start")
+
+    monkeypatch.setattr(coverage, "resolve_alignment_input", unexpected)
+    monkeypatch.setattr(coverage, "run_pipeline", unexpected)
+    with pytest.raises(ValueError, match="wrapper-owned"):
+        coverage_qc({"path": "missing.bam", "extra_args": {"mosdepth": [native_option]}})
 
 
 def test_mosdepth_uses_alignment_access_path_with_adjacent_symlink_index(tmp_path, monkeypatch) -> None:

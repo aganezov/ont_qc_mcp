@@ -14,6 +14,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
   requested-interval, whole-contig window, and requested-interval window rows; exact integer depth
   sums and native breadth counts; overlap-safe union summaries; mosdepth-native selection and mode
   provenance; and one request deadline with complete temporary-output cleanup.
+- Add a typed `mean` or `median` depth-statistic selector to the unregistered API v2 `coverage_qc`
+  backend. Median mode exposes pinned mosdepth row medians while preserving exact sums, means,
+  breadth, and overlap-safe union arithmetic.
 - Add the unregistered API v2 `read_qc` backend for FASTQ, BAM, and CRAM, with primary-record
   selection, union and ordered per-region grouping, complete stored-sequence measurement, explicit
   conversion exclusions, missing-QUAL rejection, opt-in nanoq distributions, and one shared request deadline.

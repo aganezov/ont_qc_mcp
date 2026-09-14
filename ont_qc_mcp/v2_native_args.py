@@ -247,7 +247,7 @@ NATIVE_ARGUMENT_POLICIES: Final[dict[str, NativeArgumentPolicy]] = {
             "--use-median",
             "--d4",
         },
-        short={"-b", "-c", "-f", "-F", "-i", "-n", "-Q", "-R", "-t"},
+        short={"-b", "-c", "-f", "-F", "-i", "-m", "-n", "-Q", "-R", "-t"},
         value_long={"--max-frag-len", "--min-frag-len"},
         value_short={"-l", "-u"},
         flag_long={"--fast-mode", "--fragment-mode"},

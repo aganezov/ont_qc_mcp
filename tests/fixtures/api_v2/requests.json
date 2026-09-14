@@ -6,7 +6,7 @@
   {"case": "alignment-optional-groups", "tool": "alignment_qc", "request": {"path": "reads.cram", "reference_path": "reference.fa", "regions": {"format": "samtools", "values": ["chr1:101-200"]}, "metrics": ["counts", "aligned_base_quality", "identity", "error_profile"]}},
   {"case": "alignment-per-region", "tool": "alignment_qc", "request": {"path": "reads.bam", "regions": {"format": "bed", "text": "chr1\t0\t10\ta\nchr1\t8\t20\tb\n"}, "group_by": "region"}},
   {"case": "coverage-whole-contigs", "tool": "coverage_qc", "request": {"path": "reads.bam"}},
-  {"case": "coverage-regions", "tool": "coverage_qc", "request": {"path": "reads.bam", "regions": [{"chrom": "chr1", "start": 0, "end": 10, "name": "target"}]}},
+  {"case": "coverage-regions", "tool": "coverage_qc", "request": {"path": "reads.bam", "regions": [{"chrom": "chr1", "start": 0, "end": 10, "name": "target"}], "depth_statistic": "median"}},
   {"case": "coverage-whole-windows", "tool": "coverage_qc", "request": {"path": "reads.bam", "window_size": 1000}},
   {"case": "coverage-region-windows", "tool": "coverage_qc", "request": {"path": "reads.bam", "regions": {"format": "bed", "path": "targets.bed"}, "window_size": 1000, "thresholds": [0, 1, 10, 20]}},
   {"case": "coverage-breadth-only", "tool": "coverage_qc", "request": {"path": "reads.bam", "metrics": ["breadth"], "thresholds": [1, 10, 20]}},
