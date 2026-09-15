@@ -1,4 +1,4 @@
-"""Pinned samtools evidence for the unregistered API v2 supporting adapters."""
+"""Pinned samtools evidence for the public API v2 supporting adapters."""
 
 from __future__ import annotations
 

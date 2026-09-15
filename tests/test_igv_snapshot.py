@@ -307,7 +307,7 @@ def test_igv_snapshot_bam_and_vcf(
 
 @pytest.mark.igv_integration
 @pytest.mark.flaky(reruns=2, reruns_delay=5)  # headless IGV render flakes transiently; retry, don't red-flag a PR
-def test_igv_snapshot_tool_mcp_protocol(
+def test_igv_snapshots_mcp_protocol(
     mcp_server_params,
     sample_bam_highdepth: Path,
     sample_reference: Path,
@@ -343,7 +343,7 @@ def test_igv_snapshot_tool_mcp_protocol(
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.call_tool(
-                    "igv_snapshot_tool",
+                    "igv_snapshots",
                     {
                         "genome": str(sample_reference),
                         "tracks": [str(sample_bam_highdepth)],
@@ -377,6 +377,6 @@ def test_igv_mcp_mock_without_container(
     for key in ("DOCKER", "APPTAINER", "SINGULARITY"):
         monkeypatch.setenv(key, "__disabled_runtime__")
     assert cli.detect_container_runtime(ToolPaths()) is None
-    test_igv_snapshot_tool_mcp_protocol(
+    test_igv_snapshots_mcp_protocol(
         request.getfixturevalue("mcp_server_params"), sample_bam_highdepth, sample_reference, tmp_path, monkeypatch
     )

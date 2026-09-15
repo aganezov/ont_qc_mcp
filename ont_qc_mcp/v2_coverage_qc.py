@@ -406,7 +406,7 @@ def coverage_qc(
     tools: ToolPaths | None = None,
     exec_cfg: ExecutionConfig | None = None,
 ) -> CoverageQCResponse:
-    """Execute one validated coverage request without registering the v2 catalog."""
+    """Execute one validated public coverage-QC request."""
     validated = request if isinstance(request, CoverageQCRequest) else CoverageQCRequest.model_validate(request)
     cfg = exec_cfg or ExecutionConfig()
     tool_paths = tools or ToolPaths()

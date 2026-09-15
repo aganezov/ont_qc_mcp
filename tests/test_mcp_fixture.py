@@ -45,7 +45,7 @@ def test_mcp_server_preserves_container_runtime(monkeypatch, request, tmp_path, 
         async with stdio_client(params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                result = await session.call_tool("env_status", {})
+                result = await session.call_tool("environment_status", {})
                 assert not result.is_error
                 payload = json.loads(cast(types.TextContent, result.content[0]).text)
                 assert payload["igv_runtime"] == expected

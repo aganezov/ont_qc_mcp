@@ -1,7 +1,6 @@
 """Boolean CLI flags reject implicit truthiness at the shared and MCP boundaries."""
 
 import json
-import sys
 from typing import cast
 
 import anyio
@@ -40,46 +39,30 @@ def test_boolean_flags_preserve_boolean_and_unset_values(tool, key, cli_name, va
 
 @pytest.mark.integration
 def test_boolean_validation_through_mcp(tmp_path, mcp_server_params):
-    # A controlled producer records command execution and emits a valid summary.
-    # The BAM contents are immaterial to this argument-validation regression.
-    bam = tmp_path / "input.bam"
-    bam.write_bytes(b"controlled input")
-    receipt = tmp_path / "args.json"
-    executable = tmp_path / "mosdepth"
-    executable.write_text(
-        f"#!{sys.executable}\n"
-        "import json, sys\n"
-        "from pathlib import Path\n"
-        f"Path({str(receipt)!r}).write_text(json.dumps(sys.argv[1:]))\n"
-        "Path(sys.argv[-2] + '.mosdepth.summary.txt').write_text(\n"
-        "    'chrom\\tlength\\tbases\\tmean\\tmin\\tmax\\n'\n"
-        "    'chrA\\t100\\t200\\t2\\t2\\t2\\n'\n"
-        "    'total\\t100\\t200\\t2\\t2\\t2\\n')\n"
-    )
-    executable.chmod(0o755)
-    params = mcp_server_params.model_copy(
-        update={"env": {**(mcp_server_params.env or {}), "MOSDEPTH": str(executable)}}
-    )
+    missing_bam = tmp_path / "missing.bam"
 
     async def check():
-        async with stdio_client(params) as (read, write):
+        async with stdio_client(mcp_server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                for value in [True, False, None, *INVALID_VALUES]:
-                    receipt.unlink(missing_ok=True)
+                for value in [True, False, *INVALID_VALUES]:
                     result = await session.call_tool(
-                        "coverage_stats_tool", {"path": str(bam), "flags": {"fast_mode": value}}
+                        "alignment_qc",
+                        {
+                            "path": str(missing_bam),
+                            "selection": {"include_unmapped": value, "exclude_flags": 1792},
+                        },
                     )
                     content = cast(types.TextContent, result.content[0]).text
                     payload = json.loads(content)
-                    if value is None or isinstance(value, bool):
-                        assert not result.is_error, content
-                        assert ("--fast-mode" in json.loads(receipt.read_text())) == (value is True)
-                        assert payload["coverage_by_contig"][0]["mean_depth"] == 2
+                    if isinstance(value, bool):
+                        assert result.is_error, content
+                        assert payload["kind"] == "execution_error"
                     else:
                         assert result.is_error, content
-                        assert payload["kind"] == "validation"
-                        assert "Flag fast_mode expects bool" in payload["message"]
-                        assert not receipt.exists()
+                        assert payload["kind"] == "validation_error"
+                        assert any(
+                            issue["location"] == ["selection", "include_unmapped"] for issue in payload["issues"]
+                        )
 
     anyio.run(check)

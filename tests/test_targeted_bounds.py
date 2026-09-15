@@ -189,19 +189,24 @@ def test_target_bounds_through_mcp(mcp_server_params, tmp_path):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 invalid = await session.call_tool(
-                    "targeted_coverage_tool", {"bam_path": str(bam), "location": "chr1:9-11"}
+                    "coverage_qc",
+                    {"path": str(bam), "regions": {"format": "samtools", "values": ["chr1:10-11"]}},
                 )
                 assert invalid.is_error, invalid.content
                 assert "exceeds" in cast(types.TextContent, invalid.content[0]).text
                 for start, end, depth, percent in [(0, 1, 1.0, 100.0), (9, 10, 1.0, 100.0), (0, 10, 0.2, 20.0)]:
                     valid = await session.call_tool(
-                        "targeted_coverage_tool", {"bam_path": str(bam), "location": f"chr1:{start}-{end}"}
+                        "coverage_qc",
+                        {
+                            "path": str(bam),
+                            "regions": {"format": "samtools", "values": [f"chr1:{start + 1}-{end}"]},
+                        },
                     )
                     assert not valid.is_error, valid.content
-                    reports = json.loads(cast(types.TextContent, valid.content[0]).text)
+                    reports = json.loads(cast(types.TextContent, valid.content[0]).text)["rows"]
                     assert len(reports) == 1
                     assert (reports[0]["start"], reports[0]["end"]) == (start, end)
                     assert reports[0]["mean_depth"] == pytest.approx(depth)
-                    assert reports[0]["pct_coverage_1x"] == pytest.approx(percent)
+                    assert reports[0]["breadth"][0]["fraction_at_or_above"] == pytest.approx(percent / 100)
 
     anyio.run(check_targets)

@@ -135,14 +135,17 @@ def test_real_mcp_reads_sn_and_coverage(mcp_server_params, tmp_path):
         async with stdio_client(mcp_server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                result = await session.call_tool("alignment_error_profile_tool", {"path": str(bam)})
+                result = await session.call_tool(
+                    "alignment_qc",
+                    {"path": str(bam), "metrics": ["error_profile"]},
+                )
                 assert not result.is_error, result.content
                 content = result.content[0]
                 assert isinstance(content, TextContent)
-                stats = json.loads(content.text)
-                assert stats["mismatch_rate"] == pytest.approx(0.023)
+                stats = json.loads(content.text)["results"][0]["error_profile"]
+                assert stats["nm_error_rate"] == pytest.approx(0.023)
+                assert stats["mismatch_rate"] is None
                 assert stats["coverage_histogram"] == [{"start": 20, "end": 20, "count": 50}]
-                assert stats["mismatch_by_cycle"] is None
                 assert stats["mismatch_counts_by_cycle"] is None
 
     anyio.run(check)

@@ -1,4 +1,4 @@
-"""Strict request adapters for the six unregistered API v2 supporting tools."""
+"""Strict request adapters for the six public API v2 supporting tools."""
 
 from __future__ import annotations
 

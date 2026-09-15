@@ -77,7 +77,7 @@ def test_mcp_filter_encoding_roundtrip(mcp_server_params, tmp_path, input_compre
     require_executable_tools(["chopper", "nanoq"])
     input_path = tmp_path / ("reads.fastq.gz" if input_compressed else "reads.fastq")
     input_path.write_bytes(gzip.compress(FASTQ.encode()) if input_compressed else FASTQ.encode())
-    arguments = {"path": str(input_path), "flags": {"minlength": minlength}}
+    arguments = {"path": str(input_path), "selection": {"minlength": minlength}}
     if output_name is not None:
         arguments["output_fastq"] = str(tmp_path / output_name)
 
@@ -85,7 +85,7 @@ def test_mcp_filter_encoding_roundtrip(mcp_server_params, tmp_path, input_compre
         async with stdio_client(mcp_server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                result = await session.call_tool("filter_reads_fastq_tool", arguments)
+                result = await session.call_tool("filter_reads", arguments)
                 assert not result.is_error, result.content
                 content = result.content[0]
                 assert isinstance(content, TextContent)
@@ -99,11 +99,11 @@ def test_mcp_filter_encoding_roundtrip(mcp_server_params, tmp_path, input_compre
                     else:
                         assert encoded.decode() == expected
                     if expected:
-                        qc = await session.call_tool("qc_reads_fastq_tool", {"path": str(output)})
+                        qc = await session.call_tool("read_qc", {"path": str(output)})
                         assert not qc.is_error, qc.content
                         qc_content = qc.content[0]
                         assert isinstance(qc_content, TextContent)
-                        stats = json.loads(qc_content.text)
+                        stats = json.loads(qc_content.text)["results"][0]["length"]
                         assert (stats["read_count"], stats["total_bases"]) == (1, 8)
                 finally:
                     if output_name is None:

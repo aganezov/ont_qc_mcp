@@ -99,17 +99,20 @@ def test_duplicate_target_names_through_mcp(mcp_server_params, tmp_path):
         async with stdio_client(mcp_server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                result = await session.call_tool("targeted_coverage_tool", {"bam_path": str(bam), "bed_path": str(bed)})
+                result = await session.call_tool(
+                    "coverage_qc", {"path": str(bam), "regions": {"format": "bed", "path": str(bed)}}
+                )
                 assert not result.is_error, result.content
-                reports = json.loads(cast(types.TextContent, result.content[0]).text)
+                reports = json.loads(cast(types.TextContent, result.content[0]).text)["rows"]
                 assert len(reports) == 3
-                by_name = {report["region_name"]: report for report in reports}
+                by_name = {report["name"]: report for report in reports}
                 assert set(by_name) == {"one", "two", "uncovered"}
                 for name, depth, pct in [("one", 1.0, 100.0), ("two", 1.0, 100.0), ("uncovered", 0.0, 0.0)]:
                     assert by_name[name]["mean_depth"] == pytest.approx(depth)
-                    assert by_name[name]["pct_coverage_1x"] == pytest.approx(pct)
-                    assert by_name[name]["pct_coverage_10x"] == pytest.approx(0.0)
-                    assert by_name[name]["pct_coverage_20x"] == pytest.approx(0.0)
+                    breadth = {item["threshold"]: item["fraction_at_or_above"] for item in by_name[name]["breadth"]}
+                    assert breadth[1] == pytest.approx(pct / 100)
+                    assert breadth[10] == pytest.approx(0.0)
+                    assert breadth[20] == pytest.approx(0.0)
                 assert (by_name["one"]["start"], by_name["one"]["end"]) == (0, 10)
                 assert (by_name["two"]["start"], by_name["two"]["end"]) == (0, 10)
 

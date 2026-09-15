@@ -7,30 +7,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ## [Unreleased]
 
 ### Changed
-- Migrate the local stdio adapter to MCP SDK 2.2, preserving existing tool schemas, input validation, resource contents, and numerical result payloads.
+- **Breaking:** replace the legacy 18-tool MCP surface with the ten-tool API v2 catalog: `read_qc`, `alignment_qc`, `coverage_qc`, `variant_qc`, `environment_status`, `header_info`, `bed_qc`, `run_summary`, `filter_reads`, and `igv_snapshots`. Requests now use strict typed selection, metrics, region-source, and native-argument fields; legacy aliases are not registered.
+- Replace the composite alignment-summary endpoint with an explicit `alignment_qc` plus `coverage_qc` recipe at `tool://recipes/alignment_qc`.
+- Migrate the local stdio adapter to MCP SDK 2.2 and validate public requests before worker admission.
+- Add `--reference` to the real-input MCP smoke helper and forward it to alignment and coverage calls for CRAM.
+
+### Fixed
+
+- Classify post-admission execution and result-validation failures as `execution_error` responses instead of request `validation_error` responses.
 
 ### Added
-- Add the unregistered API v2 `variant_qc` backend for whole-file, overlap-safe combined, and ordered
+- Add the API v2 `variant_qc` backend for whole-file, overlap-safe combined, and ordered
   per-region VCF/BCF populations, with typed bcftools expressions, validated native options, allele-count
   TS/TV semantics, existing-index/reference checks, provenance, one deadline, and temporary-region cleanup.
-- Add strict unregistered API v2 adapters for `environment_status`, `header_info`, `bed_qc`, `run_summary`,
+- Add strict API v2 adapters for `environment_status`, `header_info`, `bed_qc`, `run_summary`,
   `filter_reads`, and `igv_snapshots`, preserving current result meanings, Chopper's atomic output lifecycle,
-  and IGV's existing dynamic and prebuilt-batch modes without changing the public 18-tool catalog.
-- Add the unregistered API v2 `alignment_qc` backend with default selected-record counts and MAPQ,
+  and IGV's existing dynamic and prebuilt-batch modes.
+- Add the API v2 `alignment_qc` backend with default selected-record counts and MAPQ,
   optional CIGAR-aware aligned-base quality, cramino identity, and samtools NM/error sections; whole-file,
   overlap-safe combined, and ordered per-region populations; preserved native tags; requested-backend-only
   execution; and one deadline with no partial results or leaked temporary region files.
-- Add the unregistered API v2 `coverage_qc` backend for indexed BAM and CRAM inputs, with contig,
+- Add the API v2 `coverage_qc` backend for indexed BAM and CRAM inputs, with contig,
   requested-interval, whole-contig window, and requested-interval window rows; exact integer depth
   sums and native breadth counts; overlap-safe union summaries; mosdepth-native selection and mode
   provenance; and one request deadline with complete temporary-output cleanup.
-- Add a typed `mean` or `median` depth-statistic selector to the unregistered API v2 `coverage_qc`
+- Add a typed `mean` or `median` depth-statistic selector to the API v2 `coverage_qc`
   backend. Median mode exposes pinned mosdepth row medians while preserving exact sums, means,
   breadth, and overlap-safe union arithmetic.
-- Add the unregistered API v2 `read_qc` backend for FASTQ, BAM, and CRAM, with primary-record
+- Add the API v2 `read_qc` backend for FASTQ, BAM, and CRAM, with primary-record
   selection, union and ordered per-region grouping, complete stored-sequence measurement, explicit
   conversion exclusions, missing-QUAL rejection, opt-in nanoq distributions, and one shared request deadline.
-- Add shared, unregistered API v2 infrastructure for ordered region normalization and genomic unions, explicit
+- Add shared, API v2 infrastructure for ordered region normalization and genomic unions, explicit
   BAM/CRAM index and reference resolution, protected native argument arrays, samtools selection/FASTQ conversion
   plans, and one-deadline subprocess pipelines that drain every stage before reporting success.
 - Add `regional_alignment_stats_tool` for indexed BAM/CRAM interval batches, with explicit alignment-record counts, MAPQ missingness, and base-quality means for aligned bases inside each interval. Preserve repeated intervals, require existing indexes, and stream without alignment copies.

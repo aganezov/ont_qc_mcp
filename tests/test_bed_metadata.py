@@ -94,7 +94,7 @@ def test_metadata_keyword_contigs_through_mcp(mcp_server_params, tmp_path):
         async with stdio_client(mcp_server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                qc = await session.call_tool("qc_bed_tool", {"path": str(bed)})
+                qc = await session.call_tool("bed_qc", {"path": str(bed)})
                 assert not qc.is_error, qc.content
                 qc_report = json.loads(cast(types.TextContent, qc.content[0]).text)
                 assert qc_report["is_valid"]
@@ -102,18 +102,18 @@ def test_metadata_keyword_contigs_through_mcp(mcp_server_params, tmp_path):
                 assert qc_report["total_bases"] == 10 * len(CONTIGS)
 
                 coverage = await session.call_tool(
-                    "targeted_coverage_tool", {"bam_path": str(bam), "bed_path": str(bed)}
+                    "coverage_qc", {"path": str(bam), "regions": {"format": "bed", "path": str(bed)}}
                 )
                 assert not coverage.is_error, coverage.content
-                reports = json.loads(cast(types.TextContent, coverage.content[0]).text)
+                reports = json.loads(cast(types.TextContent, coverage.content[0]).text)["rows"]
                 assert len(reports) == len(CONTIGS)
                 by_chrom = {report["chrom"]: report for report in reports}
                 assert set(by_chrom) == set(CONTIGS)
                 for idx, chrom in enumerate(CONTIGS):
                     report = by_chrom[chrom]
-                    assert report["region_name"] == f"Target_{idx}"
+                    assert report["name"] == f"Target_{idx}"
                     assert (report["start"], report["end"]) == (0, 10)
                     assert report["mean_depth"] == pytest.approx(1.0)
-                    assert report["pct_coverage_1x"] == pytest.approx(100.0)
+                    assert report["breadth"][0]["fraction_at_or_above"] == pytest.approx(1.0)
 
     anyio.run(check_reports)

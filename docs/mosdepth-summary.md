@@ -1,52 +1,37 @@
-# Mosdepth coverage summaries
+# Coverage QC measurements
 
-`coverage_stats_tool` and the coverage section of `alignment_summary_tool` parse
-mosdepth's `.summary.txt` file. They return contig-level coverage. Supplying a
-window makes mosdepth produce additional region output, but these tools still
-return the contig summaries rather than individual windows.
+`coverage_qc` reports reference-domain depth and breadth from an indexed BAM or
+CRAM. It returns contig rows by default, requested interval rows when `regions`
+is supplied, and window rows when `window_size` is supplied. Coordinates are
+zero-based and half-open.
 
 | Field | Meaning |
 | --- | --- |
-| `coverage_by_contig` | Name, length, and mean depth for each contig reported in the summary. Whole-genome and region aggregate rows are excluded. |
-| `mean_depth` | Length-weighted mean of the reported contig means. The calculation uses mosdepth's printed means, which are rounded. |
-| `mean_depth_unweighted` | Arithmetic mean of the reported contig means, giving each contig equal weight. |
-| `low_coverage_regions` | Whole-contig intervals whose mean depth is strictly below `low_cov_threshold`. These are not local coverage gaps or failing windows. |
-| `median_depth`, per-contig `median_depth` | Unavailable and returned as null. |
-| `coverage_distribution` | Empty because this parser does not consume the distribution files. |
+| `reference_bases` | Exact number of reference positions in the row. |
+| `depth_sum` | Integer sum of depth over the row, present when `depth` is requested. |
+| `mean_depth` | `depth_sum / reference_bases`, without deriving the sum from rounded mosdepth means. |
+| `median_depth` | Pinned mosdepth lower-middle depth, present only for `depth_statistic: "median"`. Zero-depth bases are included. |
+| `breadth[].bases_at_or_above` | Native integer count of bases meeting a requested threshold. |
+| `breadth[].fraction_at_or_above` | Count divided by `reference_bases`, in the range 0 to 1. |
+| `union_summary` | Depth over the genomic union of requested intervals, so overlapping or repeated intervals are not double-counted. |
 
-For example, a 10 kb contig at 10x and a 30 kb contig at 1x give a length-weighted
-mean of 3.25x and an unweighted mean of 5.5x. With threshold 5, only the second
-contig is reported as low coverage, spanning `[0, 30000)`. The aggregate `total`
-row is not a genomic location.
+Region rows retain request order, repeated coordinates, names, and stable IDs.
+The union reference length is checked against the normalized genomic union.
+Whole-reference windows use IDs such as `chrom.window_N`; interval windows use
+`region_N.window_M` and tile independently from each requested interval's start.
 
-Mosdepth emits its whole-genome totals at the end of the summary. With `--by`,
-each contig row is followed by a corresponding `_region` summary, and a
-`total_region` row follows the final `total` row. The parser uses that structure,
-so real contigs named `total`, `total_region`, or ending in `_region` remain
-valid. It also distinguishes the actual header from contigs such as `chrom`
-and `chromosome1`. See the [mosdepth 0.3.14 implementation](https://github.com/brentp/mosdepth/blob/v0.3.14/mosdepth.nim).
+Depth requests read mosdepth's temporary integer run-length per-base output and
+require complete, nonoverlapping evidence for every represented contig. Pinned
+mosdepth can omit wholly zero-depth contigs, so an internal 1X threshold count
+must corroborate zero covered bases before the adapter supplies an all-zero row.
+Partial contigs, negative evidence, truncated summaries, and disagreements across
+native outputs fail the request. Breadth-only calls suppress per-base output.
 
-The wrapper requires the footer appropriate to the command it executed. The
-parser checks each aggregate's integer length and base counts against its own
-constituent rows. Region totals are checked separately because partial or
-overlapping targets can differ from whole-contig totals. Inconsistent reports
-raise an error identifying the input file; the parser does not attempt repairs.
+Caller-selected filters live under `selection`; additional safe native mosdepth
+arguments live under `extra_args.mosdepth`. Output-routing, region, threshold,
+median, and parser-owned switches are protected. Temporary BED and mosdepth files
+are removed after success, failure, timeout, or cancellation.
 
-Direct Python callers can supply `expected_region_mode=True` for region/window
-output or `False` for whole-contig output. The default `None` retains support for
-historical snippets without a footer, while validating any aggregates present.
-These checks validate layout and count consistency. They cannot distinguish a
-truncated report that happens to form another internally consistent report.
-
-The parser does not add contigs absent from the summary. For explicit BED,
-location, or gene intervals and coverage threshold percentages, use
-`targeted_coverage_tool`, which reads separate region and threshold files.
-
-The unregistered API v2 `coverage_qc` backend has a stricter numerical contract.
-It does not derive integer depth sums from the rounded means described above.
-When depth is requested, it reads mosdepth's temporary integer per-base runs and
-checks that they cover every reference base exactly once. Breadth uses native
-integer counts for positive thresholds. Mosdepth 0.3.14 reports zero for all
-thresholds on a contig with no alignment records, so v2 defines threshold zero as
-the complete nonnegative reference domain after validating the native row.
-Breadth-only requests still suppress per-base output.
+For alignment-record counts, MAPQ, identity, or error evidence, call
+`alignment_qc`. The public recipe at `tool://recipes/alignment_qc` shows the two
+calls needed when alignment and coverage reports must be collected together.

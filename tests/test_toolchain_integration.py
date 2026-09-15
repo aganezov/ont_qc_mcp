@@ -29,7 +29,7 @@ def test_mcp_uses_selected_toolchain(mcp_server_params):
         async with stdio_client(mcp_server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                result = await session.call_tool("env_status", {})
+                result = await session.call_tool("environment_status", {})
                 assert not result.is_error, result.content
                 status = json.loads(cast(types.TextContent, result.content[0]).text)
                 for tool in tools:
@@ -55,8 +55,8 @@ def test_long_reads_survive_filtering_and_qc(mcp_server_params, tmp_path):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 filtered = await session.call_tool(
-                    "filter_reads_fastq_tool",
-                    {"path": str(source), "output_fastq": str(output), "flags": {"minlength": 1000}},
+                    "filter_reads",
+                    {"path": str(source), "output_fastq": str(output), "selection": {"minlength": 1000}},
                 )
                 assert not filtered.is_error, filtered.content
                 lines = output.read_text().splitlines()
@@ -64,19 +64,19 @@ def test_long_reads_survive_filtering_and_qc(mcp_server_params, tmp_path):
                 actual = {lines[i][1:]: (lines[i + 1], lines[i + 3]) for i in range(0, len(lines), 4)}
                 assert actual == {name: reads[name] for name in ["r1", "r2"]}
 
-                result = await session.call_tool("qc_reads_fastq_tool", {"path": str(output)})
+                result = await session.call_tool("read_qc", {"path": str(output)})
                 assert not result.is_error, result.content
-                stats = json.loads(cast(types.TextContent, result.content[0]).text)
+                stats = json.loads(cast(types.TextContent, result.content[0]).text)["results"][0]["length"]
                 assert stats["read_count"] == 2
                 assert stats["total_bases"] == 1_200_001
-                assert stats["min_len"] == 200_000
-                assert stats["max_len"] == 1_000_001
+                assert stats["min_length"] == 200_000
+                assert stats["max_length"] == 1_000_001
 
     anyio.run(check)
 
 
 def test_cramino_read_and_histogram_counts(mcp_server_params, tmp_path):
-    require_executable_tools(["samtools", "cramino"])
+    require_executable_tools(["samtools", "cramino", "nanoq"])
     source = tmp_path / "reads.sam"
     source.write_text(
         "@HD\tVN:1.6\tSO:coordinate\n@SQ\tSN:chr1\tLN:10000\n"
@@ -92,20 +92,28 @@ def test_cramino_read_and_histogram_counts(mcp_server_params, tmp_path):
         async with stdio_client(mcp_server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                result = await session.call_tool("qc_alignment_tool", {"path": str(bam), "include_hist": True})
-                assert not result.is_error, result.content
-                stats = json.loads(cast(types.TextContent, result.content[0]).text)
-                assert stats["total_reads"] == 3
-                assert stats["mean_length"] == 2150
-                assert stats["median_length"] == 2100
-                assert stats["n50"] == 4300
-                assert stats["mean_identity"] == pytest.approx(99)
-                assert stats["median_identity"] == pytest.approx(99)
-                assert [(b["start"], b["end"], b["count"]) for b in stats["length_histogram"] if b["count"]] == [
+                reads = await session.call_tool(
+                    "read_qc",
+                    {"path": str(bam), "metrics": ["length", "length_distribution"]},
+                )
+                assert not reads.is_error, reads.content
+                stats = json.loads(cast(types.TextContent, reads.content[0]).text)["results"][0]
+                assert stats["length"]["read_count"] == 3
+                assert stats["length"]["mean_length"] == 2150
+                assert stats["length"]["median_length"] == 2100
+                assert stats["length"]["n50"] == 4300
+                assert [
+                    (b["start"], b["end"], b["count"]) for b in stats["length_distribution"]["histogram"] if b["count"]
+                ] == [
                     (0, 2000, 1),
                     (2000, 4000, 1),
                     (4000, 6000, 1),
                 ]
+
+                alignment = await session.call_tool("alignment_qc", {"path": str(bam), "metrics": ["identity"]})
+                assert not alignment.is_error, alignment.content
+                identity = json.loads(cast(types.TextContent, alignment.content[0]).text)["results"][0]["identity"]
+                assert identity["mean_identity"] == pytest.approx(0.99)
 
     anyio.run(check)
 

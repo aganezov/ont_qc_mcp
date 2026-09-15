@@ -84,16 +84,17 @@ def test_targeted_coverage_known_depth_through_mcp(mcp_server_params, tmp_path, 
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 response = await session.call_tool(
-                    "targeted_coverage_tool", {"bam_path": str(bam), "bed_path": str(bed)}
+                    "coverage_qc", {"path": str(bam), "regions": {"format": "bed", "path": str(bed)}}
                 )
                 assert not response.is_error, response.content
                 payload = json.loads(cast(types.TextContent, response.content[0]).text)
-                reports = {(report["start"], report["end"]): report for report in payload}
+                reports = {(report["start"], report["end"]): report for report in payload["rows"]}
                 assert len(reports) == len(rows)
                 for start, end, mean, percentages in rows:
                     report = reports[(start, end)]
                     assert report["mean_depth"] == pytest.approx(mean)
+                    breadth = {item["threshold"]: item["fraction_at_or_above"] for item in report["breadth"]}
                     for threshold, percentage in zip([1, 10, 20], percentages):
-                        assert report[f"pct_coverage_{threshold}x"] == pytest.approx(percentage)
+                        assert breadth[threshold] == pytest.approx(percentage / 100)
 
     anyio.run(check_reports)

@@ -1,9 +1,4 @@
-"""Unregistered request/response contracts for the proposed API v2 catalog.
-
-This module intentionally has no import path from :mod:`ont_qc_mcp.app_server`.
-Later implementation slices can bind these contracts to handlers without changing
-the currently advertised MCP catalog.
-"""
+"""Request and response contracts for the public API v2 catalog."""
 
 from __future__ import annotations
 
@@ -1040,7 +1035,7 @@ class ToolContract(ContractModel):
     name: str
     request_model: type[BaseModel]
     response_model: type[BaseModel]
-    status: Literal["unregistered"] = "unregistered"
+    status: Literal["registered"] = "registered"
 
     model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
 
@@ -1060,6 +1055,6 @@ API_V2_CATALOG: tuple[ToolContract, ...] = (
 
 
 def api_v2_contracts() -> dict[str, ToolContract]:
-    """Return the proposed catalog keyed by its exact public names."""
+    """Return the public catalog keyed by its exact names."""
 
     return {contract.name: contract for contract in API_V2_CATALOG}

@@ -67,6 +67,23 @@ def assert_known_result(item):
     assert item["supplementary_alignments"] == 1 and item["reverse_alignments"] == 1
 
 
+def assert_known_v2_result(item):
+    assert item["counts"] == {
+        "eligible_records": 5,
+        "mapped_records": 5,
+        "unmapped_records": 0,
+        "secondary_records": 0,
+        "supplementary_records": 1,
+    }
+    assert item["aligned_base_quality"]["aligned_query_bases"] == 15
+    assert item["aligned_base_quality"]["known_quality_bases"] == 13
+    assert item["aligned_base_quality"]["missing_quality_bases"] == 2
+    assert item["aligned_base_quality"]["mean_base_quality"] == pytest.approx(326 / 13)
+    assert item["mapping_quality"]["known_records"] == 4
+    assert item["mapping_quality"]["missing_records"] == 1
+    assert item["mapping_quality"]["mean_mapq"] == 37.5
+
+
 @pytest.mark.parametrize("file_type", ["bam", "cram"])
 def test_hand_counted_batched_evidence(regional_files, file_type):
     bam, cram, reference = regional_files
@@ -149,23 +166,33 @@ async def test_mcp_regional_discovery_validation_and_result(regional_files, mcp_
     async with stdio_client(mcp_server_params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
-            tool = next(t for t in (await session.list_tools()).tools if t.name == "regional_alignment_stats_tool")
-            assert tool.input_schema["properties"]["regions"]["maxItems"] == 1024
+            tool = next(t for t in (await session.list_tools()).tools if t.name == "alignment_qc")
+            assert tool.input_schema["title"] == "AlignmentQCRequest"
+            assert tool.input_schema["additionalProperties"] is False
             invalid_arguments: list[dict[str, Any]] = [
                 {"path": "absent.bam", "regions": [{"chrom": "chr1", "start": True, "end": 1}]},
-                {"path": "absent.bam", "regions": [], "min_mapq": 255},
-                {"path": "absent.bam", "regions": [selected_region()], "exclude_flags": True},
+                {"path": "absent.bam", "regions": [], "selection": {"min_mapq": 255}},
+                {"path": "absent.bam", "regions": [selected_region()], "selection": {"exclude_flags": True}},
             ]
             for args in invalid_arguments:
                 failed = await session.call_tool(tool.name, args)
                 assert failed.is_error
                 assert "File not found" not in cast(types.TextContent, failed.content[0]).text
-            result = await session.call_tool(tool.name, {"path": str(bam), "regions": [selected_region()]})
+            result = await session.call_tool(
+                tool.name,
+                {
+                    "path": str(bam),
+                    "regions": [selected_region()],
+                    "group_by": "region",
+                    "metrics": ["counts", "mapping_quality", "aligned_base_quality"],
+                },
+            )
             assert not result.is_error
             payload = json.loads(cast(types.TextContent, result.content[0]).text)
-            assert_known_result(payload["regions"][0])
-            assert payload["complete"] is True
-            assert payload["provenance"]["request_id"]
+            assert_known_v2_result(payload["results"][0])
+            assert payload["resolved_group_by"] == "region"
+            assert payload["results"][0]["region_name"] == "quality"
+            assert payload["provenance"]
 
 
 @pytest.mark.parametrize("quality,expected", [(8, 8), (9, None), (10, 10), (255, None)])
