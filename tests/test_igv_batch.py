@@ -156,6 +156,45 @@ def test_generated_snapshot_name_sanitizes_reference_path_separators(tmp_path: P
     assert "snapshot chr1_alternate_1_100.png" in output.read_text()
 
 
+def test_snapshot_names_are_unique_after_extension_normalization(tmp_path: Path) -> None:
+    output = tmp_path / "b"
+    generate_igv_batch(
+        genome="hg38",
+        tracks=["a.bam"],
+        regions=[
+            IgvRegion(chrom="chr1", start=1, end=2, name="foo"),
+            IgvRegion(chrom="chr1", start=2, end=3, name="foo.png"),
+        ],
+        output_path=output,
+    )
+    snapshots = [line for line in _read_lines(output) if line.startswith("snapshot ")]
+    assert snapshots == ["snapshot foo.png", "snapshot foo_2.png"]
+
+
+def test_repeated_derived_snapshot_names_are_disambiguated(tmp_path: Path) -> None:
+    output = tmp_path / "b"
+    region = IgvRegion(chrom="chr1", start=1, end=2)
+    generate_igv_batch(genome="hg38", tracks=["a.bam"], regions=[region, region], output_path=output)
+    snapshots = [line for line in _read_lines(output) if line.startswith("snapshot ")]
+    assert snapshots == ["snapshot chr1_1_2.png", "snapshot chr1_1_2_2.png"]
+
+
+def test_generated_suffixes_do_not_steal_requested_snapshot_names(tmp_path: Path) -> None:
+    output = tmp_path / "b"
+    generate_igv_batch(
+        genome="hg38",
+        tracks=["a.bam"],
+        regions=[
+            IgvRegion(chrom="chr1", start=1, end=2, name="foo"),
+            IgvRegion(chrom="chr1", start=2, end=3, name="foo"),
+            IgvRegion(chrom="chr1", start=3, end=4, name="foo_2"),
+        ],
+        output_path=output,
+    )
+    snapshots = [line for line in _read_lines(output) if line.startswith("snapshot ")]
+    assert snapshots == ["snapshot foo.png", "snapshot foo_3.png", "snapshot foo_2.png"]
+
+
 def test_injection_rejected_in_extra_commands(tmp_path: Path) -> None:
     region = IgvRegion(chrom="chr1", start=1, end=100)
     with pytest.raises(IgvBatchValidationError):

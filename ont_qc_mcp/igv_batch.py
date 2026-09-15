@@ -63,6 +63,27 @@ def _snapshot_name(region: IgvRegion, snapshot_format: str) -> str:
     return f"{name}.{snapshot_format}"
 
 
+def _unique_snapshot_names(regions: list[IgvRegion], snapshot_format: str) -> list[str]:
+    desired = [_snapshot_name(region, snapshot_format) for region in regions]
+    reserved = set(desired)
+    used: set[str] = set()
+    unique: list[str] = []
+    for name in desired:
+        if name not in used:
+            selected = name
+        else:
+            extension_start = name.rfind(".")
+            stem, extension = name[:extension_start], name[extension_start:]
+            suffix = 2
+            selected = f"{stem}_{suffix}{extension}"
+            while selected in reserved or selected in used:
+                suffix += 1
+                selected = f"{stem}_{suffix}{extension}"
+        used.add(selected)
+        unique.append(selected)
+    return unique
+
+
 def _expand_region(start: int, end: int, min_width: int, *, min_start: int | None = None) -> tuple[int, int]:
     width = end - start
     if min_width <= 0 or width >= min_width:
@@ -127,6 +148,7 @@ def _region_lines(
     snapshot_format: str,
     min_snapshot_width: int,
     regions_are_zero_based_half_open: bool = False,
+    snapshot_name: str | None = None,
 ) -> list[str]:
     start, end = _expand_region(
         region.start,
@@ -137,12 +159,12 @@ def _region_lines(
     if regions_are_zero_based_half_open:
         start += 1
     region_str = f"{_safe(region.chrom, 'region.chrom')}:{start}-{end}"
-    snapshot_name = _safe(_snapshot_name(region, snapshot_format), "region.name")
+    final_snapshot_name = _safe(snapshot_name or _snapshot_name(region, snapshot_format), "region.name")
 
     lines: list[str] = [f"goto {region_str}"]
     if region.extra_commands:
         lines.extend(_safe(cmd, "region.extra_commands") for cmd in region.extra_commands)
-    lines.append(f"snapshot {snapshot_name}")
+    lines.append(f"snapshot {final_snapshot_name}")
     return lines
 
 
@@ -187,13 +209,15 @@ def generate_igv_batch(
         extra_commands=extra_commands,
     )
 
-    for region in regions:
+    snapshot_names = _unique_snapshot_names(regions, snapshot_format)
+    for region, snapshot_name in zip(regions, snapshot_names, strict=True):
         lines.extend(
             _region_lines(
                 region,
                 snapshot_format=snapshot_format,
                 min_snapshot_width=min_snapshot_width,
                 regions_are_zero_based_half_open=regions_are_zero_based_half_open,
+                snapshot_name=snapshot_name,
             )
         )
 
