@@ -4,12 +4,12 @@ The `error_profile` section of `alignment_qc` parses selected-record output from
 
 | Field | Meaning |
 | --- | --- |
-| `mismatch_rate` | Retained compatibility name. The usual source is the SN `error rate`: the sum of NM tags divided by bases mapped according to CIGAR. NM can include indels, so this is not a substitution-only rate. A separately reported `mismatches per base` value takes precedence. |
+| `nm_error_rate` | The SN `error rate`: the sum of NM tags divided by bases mapped according to CIGAR. NM can include indels, so this is not a substitution-only rate. |
+| `mismatch_rate` | Populated only from a separately reported SN `mismatches per base` value. It does not fall back to `nm_error_rate`. |
 | `insertion_rate`, `deletion_rate` | Populated only from explicit corresponding per-base rate fields. Samtools 1.24 does not normally emit those fields, so they remain null. |
 | `coverage_histogram` | Reference-position counts by inclusive integer depth range. Each record has `start`, `end`, and `count`; `end: null` means no upper bound. These are the sites counted by samtools, not a whole-reference histogram that enumerates uncovered positions. |
 | `mismatch_counts_by_cycle` | MPC records containing an explicit one-based `cycle`, an `n_count`, and `mismatches_by_quality`. List index 0 is Q0, index 1 is Q1, and so on. Quality counts exclude N bases. No per-cycle denominator is provided, so these are counts, not rates. |
-| `mismatch_by_cycle` | Deprecated rate field, left null by the parser. Use `mismatch_counts_by_cycle` for MPC counts. |
-| `gc_coverage` | Retired for ONT QC; always null when parsed. Samtools GCD estimates are not direct mapped-depth measurements. |
+| `insert_size_histogram` | IS records represented as exact-value bins with equal `start` and `end`, plus the nonnegative integer `count`. The section is null when samtools emits no IS rows. |
 
 Missing sections remain null. Present zero-valued rows are retained. Coverage underflow `[<25]` is represented as `start: 0, end: 24`; this mathematical lower bound does not imply that samtools counted uncovered reference positions. Overflow `[19<]` is `start: 20, end: null`. The parser follows the printed range, which can differ from the requested coverage maximum when the step is greater than one.
 
@@ -26,9 +26,9 @@ The corresponding output excerpt is:
 
 ```json
 {
-  "mismatch_rate": 0.023,
+  "nm_error_rate": 0.023,
+  "mismatch_rate": null,
   "coverage_histogram": [{"start": 20, "end": 20, "count": 50}],
-  "mismatch_by_cycle": null,
   "mismatch_counts_by_cycle": null
 }
 ```
