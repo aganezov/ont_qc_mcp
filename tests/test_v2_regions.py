@@ -58,10 +58,10 @@ def test_external_region_source_replacement_during_normalization_is_rejected(
         request = CoverageQCRequest.model_validate(
             {"path": "reads.bam", "regions": {"format": "bed", "path": str(source)}}
         )
-        original = v2_regions._bed_intervals
+        original_bed_parser = v2_regions._bed_intervals
 
         def replace_after_read(*args, **kwargs):
-            intervals = original(*args, **kwargs)
+            intervals = original_bed_parser(*args, **kwargs)
             replacement = tmp_path / "replacement.bed"
             replacement.write_text("chr1\t1\t2\treplacement\n")
             replacement.replace(source)
@@ -77,10 +77,10 @@ def test_external_region_source_replacement_during_normalization_is_rejected(
                 "regions": {"format": "gff3", "path": str(source), "feature_type": "gene"},
             }
         )
-        original = v2_regions._all_gff_genes
+        original_gff_parser = v2_regions._all_gff_genes
 
         def replace_after_read(*args, **kwargs):
-            genes = original(*args, **kwargs)
+            genes = original_gff_parser(*args, **kwargs)
             replacement = tmp_path / "replacement.gff3"
             replacement.write_text("chr1\ttest\tgene\t2\t3\t.\t+\t.\tID=replacement\n")
             replacement.replace(source)
