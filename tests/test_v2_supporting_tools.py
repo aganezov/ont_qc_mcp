@@ -66,6 +66,7 @@ def test_supporting_adapters_validate_requests_before_calling_existing_cores(mon
         "reference_path": "reference.fa",
         "tools": tools,
         "exec_cfg": ANY,
+        "max_lines": None,
     }
 
     with pytest.raises(ValidationError):
@@ -191,6 +192,24 @@ def test_pure_python_supporting_tools_keep_existing_results(tmp_path: Path) -> N
     assert summary_result.total_reads == 2 and summary_result.total_yield == 12
     assert summary_result.yield_per_hour[0].window_start_hours == 1
     assert header_result.references[0].name == "chr1" and header_result.references[0].length == 10
+
+
+def test_header_info_reads_through_chrom_line_after_legacy_internal_cap(tmp_path: Path) -> None:
+    vcf = tmp_path / "large-header.vcf"
+    metadata = ["##fileformat=VCFv4.3", *(f"##source=entry-{index}" for index in range(2000))]
+    metadata.extend(
+        [
+            "##contig=<ID=chr1,length=10>",
+            "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsample-1",
+        ]
+    )
+    vcf.write_text("\n".join(metadata) + "\n")
+
+    result = header_info({"path": str(vcf)})
+
+    assert [(reference.name, reference.length) for reference in result.references] == [("chr1", 10)]
+    assert [sample.name for sample in result.samples] == ["sample-1"]
+    assert result.raw_header.endswith("\tFORMAT\tsample-1")
 
 
 def test_header_info_passes_reference_to_samtools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

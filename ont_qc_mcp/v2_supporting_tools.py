@@ -50,6 +50,7 @@ def header_info(
         reference_path=validated.reference_path,
         tools=tools or ToolPaths(),
         exec_cfg=exec_cfg or ExecutionConfig(),
+        max_lines=None,
     )
 
 
