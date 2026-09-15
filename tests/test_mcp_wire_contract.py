@@ -17,7 +17,6 @@ import pytest
 
 
 _ROOT = Path(__file__).resolve().parents[1]
-_CONTRACT = json.loads((_ROOT / "tests/fixtures/mcp_contract_v1.json").read_text())
 _MODERN = "2026-07-28"
 
 # Observe real entry/cleanup boundaries; do not replace validation, dispatch,
@@ -25,7 +24,7 @@ _MODERN = "2026-07-28"
 _SERVER = r"""
 import json, os, time
 from pathlib import Path
-from ont_qc_mcp import app_server as app, tools, utils
+from ont_qc_mcp import app_server as app, v2_execution, v2_read_qc
 
 def record(event, **fields):
     data = json.dumps(dict(event=event, time=time.monotonic(), **fields)) + '\n'
@@ -35,19 +34,20 @@ def record(event, **fields):
 
 original_run_sync = app.run_sync
 async def observed_run_sync(func, *args, **kwargs):
-    path = str(args[0]) if args else None
+    request = args[0] if args else None
+    path = str(getattr(request, 'path', request)) if request is not None else None
     record('worker_enter', function=func.__name__, path=path)
     try: return await original_run_sync(func, *args, **kwargs)
     finally: record('worker_finished', function=func.__name__, path=path)
 app.run_sync = observed_run_sync
 
-original_validate = tools._validate_input_file
+original_validate = v2_read_qc._validate_input_file
 def observed_validate(*args, **kwargs):
     record('validate_file', path=str(args[0]))
     return original_validate(*args, **kwargs)
-tools._validate_input_file = observed_validate
+v2_read_qc._validate_input_file = observed_validate
 
-original_cleanup = utils.cleanup_processes
+original_cleanup = v2_execution.cleanup_processes
 def observed_cleanup(processes):
     owned = [p for p in processes if p is not None]
     record('cleanup_start', pids=[p.pid for p in owned])
@@ -56,7 +56,7 @@ def observed_cleanup(processes):
         record('cleanup_finished', pids=[p.pid for p in owned],
                returncodes=[p.returncode for p in owned],
                pipes_closed=all(f is None or f.closed for p in owned for f in (p.stdin,p.stdout,p.stderr)))
-utils.cleanup_processes = observed_cleanup
+v2_execution.cleanup_processes = observed_cleanup
 app.main()
 """
 
@@ -281,49 +281,55 @@ def test_wire_catalog_results_and_resources(wire_server, tmp_path):
     client, events = wire_server
     tools = client.call("tools/list")["result"]["tools"]
     schemas = {tool["name"]: tool["inputSchema"] for tool in tools}
-    # The v1 fixture remains frozen. The new regional primitive is an explicit
-    # additive surface with its own discovery and numerical contract tests.
-    assert set(schemas) == set(_CONTRACT["tools"]) | {"regional_alignment_stats_tool"}
-    assert {name: schemas[name] for name in _CONTRACT["tools"]} == _CONTRACT["tools"]
+    from ont_qc_mcp.v2_contracts import api_v2_contracts
+
+    contracts = api_v2_contracts()
+    assert set(schemas) == set(contracts)
+    assert schemas == {
+        name: contract.request_model.model_json_schema(mode="validation") for name, contract in contracts.items()
+    }
     assert all("input_schema" not in tool for tool in tools)
-    for method, field, expected in [
-        ("resources/list", "resources", _CONTRACT["resources"]),
-        ("resources/templates/list", "resourceTemplates", _CONTRACT["templates"]),
-    ]:
-        actual = client.call(method)["result"][field]
-        if field == "resources":
-            added = [item for item in actual if item["uri"] == "tool://guidance/regional_alignment_stats_tool"]
-            assert len(added) == 1
-            actual = [item for item in actual if item not in added]
-        assert [{key: item[key] for key in expected[0]} for item in actual] == expected
-    resource = client.call("resources/read", {"uri": "tool://flags/nanoq"})["result"]["contents"][0]
-    assert resource["uri"] == "tool://flags/nanoq" and resource["mimeType"] == "application/json"
-    assert json.loads(resource["text"])["tool"] == "nanoq"
+    resources = client.call("resources/list")["result"]["resources"]
+    assert {item["uri"] for item in resources} == {
+        *(f"tool://guidance/{name}" for name in contracts),
+        "tool://recipes/alignment_qc",
+    }
+    templates = client.call("resources/templates/list")["result"]["resourceTemplates"]
+    assert {item["uriTemplate"] for item in templates} == {
+        "tool://guidance/{tool}",
+        "tool://recipes/{tool}",
+    }
+    recipe = client.call("resources/read", {"uri": "tool://recipes/alignment_qc"})["result"]["contents"][0]
+    assert recipe["uri"] == "tool://recipes/alignment_qc" and recipe["mimeType"] == "application/json"
+    calls = json.loads(recipe["text"])["recipes"]["alignment_and_coverage"]["calls"]
+    assert [call["tool"] for call in calls] == ["alignment_qc", "coverage_qc"]
 
     summary = tmp_path / "summary.txt"
     summary.write_text("sequence_length_template\tstart_time\n4\t3600\n8\t3600\n")
-    payload = _tool_payload(client.tool("sequencing_summary_tool", {"path": str(summary)}))
+    payload = _tool_payload(client.tool("run_summary", {"path": str(summary)}))
     assert payload["total_reads"] == 2 and payload["total_yield"] == 12
     assert payload["run_duration_hours"] == 0
     assert payload["yield_per_hour"] == [{"window_start_hours": 1.0, "yield_bp": 12, "read_count": 2}]
-    assert isinstance(payload["provenance"]["request_id"], str)
 
     valid_fastq = tmp_path / "valid.fastq"
     valid_fastq.write_text("@r\nACGT\n+\nIIII\n")
-    valid = _tool_payload(client.tool("qc_reads_fastq_tool", {"path": str(valid_fastq), "flags": {"min_len": None}}))
-    assert valid["read_count"] == 1 and valid["total_bases"] == 4
+    valid = _tool_payload(client.tool("read_qc", {"path": str(valid_fastq)}))
+    assert valid["results"][0]["length"]["read_count"] == 1
+    assert valid["results"][0]["length"]["total_bases"] == 4
 
-    missing = _tool_payload(client.tool("sequencing_summary_tool", {"path": str(tmp_path / "missing.txt")}), error=True)
-    assert missing["kind"] == "not_found" and missing["tool"] == "sequencing_summary_tool"
-    assert set(missing) == {"kind", "message", "tool", "details", "request_id"}
+    missing = _tool_payload(client.tool("run_summary", {"path": str(tmp_path / "missing.txt")}), error=True)
+    assert missing["kind"] == "execution_error" and missing["tool"] == "run_summary"
+    assert missing["stage"] == "input_validation" and missing["partial_result_returned"] is False
     fastq = tmp_path / "failure.fastq"
     fastq.write_text("@r\nACGT\n+\nIIII\n")
     invalid_flag = _tool_payload(
-        client.tool("qc_reads_fastq_tool", {"path": str(fastq), "flags": {"min_len": True}}), error=True
+        client.tool("read_qc", {"path": str(fastq), "metrics": ["length", "length"]}), error=True
     )
-    assert invalid_flag["kind"] == "validation" and "got bool" in invalid_flag["message"]
-    failed = _tool_payload(client.tool("qc_reads_fastq_tool", {"path": str(fastq)}), error=True)
-    assert failed["kind"] == "runtime" and "controlled nanoq failure" in failed["message"]
+    assert invalid_flag["kind"] == "validation_error"
+    assert "duplicates" in invalid_flag["issues"][0]["message"]
+    failed = _tool_payload(client.tool("read_qc", {"path": str(fastq)}), error=True)
+    assert failed["kind"] == "execution_error" and failed["backend"] == "nanoq"
+    assert failed["exit_code"] == 2 and "controlled nanoq failure" in failed["message"]
     assert client.call("tools/list")["result"]["tools"]
 
 
@@ -331,38 +337,44 @@ def test_wire_schema_rejects_before_worker_or_filesystem(wire_server, tmp_path):
     client, events = wire_server
     output = tmp_path / "must-not-exist"
     cases = [
-        ("qc_reads_fastq_tool", {}),
-        ("qc_reads_fastq_tool", {"path": 123}),
-        ("qc_reads_fastq_tool", {"path": "absent.fastq", "flags": None}),
-        ("qc_alignment_tool", {"path": "absent.bam", "include_hist": "false"}),
-        ("coverage_stats_tool", {"path": "absent.bam", "window": True}),
-        ("coverage_stats_tool", {"path": "absent.bam", "window": None}),
-        ("coverage_stats_tool", {"path": "absent.bam", "low_cov_threshold": False}),
-        ("igv_snapshot_tool", {"batch_file": "absent.batch", "output_dir": str(output), "snapshot_format": "jpeg"}),
+        ("read_qc", {}),
+        ("read_qc", {"path": 123}),
+        ("read_qc", {"path": "absent.fastq", "flags": None}),
+        ("alignment_qc", {"path": "absent.bam", "include_hist": "false"}),
+        ("coverage_qc", {"path": "absent.bam", "window_size": True}),
+        ("coverage_qc", {"path": "absent.bam", "window_size": 0}),
+        ("coverage_qc", {"path": "absent.bam", "group_by": "region"}),
+        ("igv_snapshots", {"batch_file": "absent.batch", "output_dir": str(output), "snapshot_format": "jpeg"}),
         (
-            "igv_snapshot_tool",
+            "igv_snapshots",
             {
                 "genome": "hg38",
-                "tracks": [],
+                "tracks": ["reads.bam"],
                 "regions": [{"chrom": "chr1", "start": True, "end": 20}],
                 "output_dir": str(output),
             },
         ),
         (
-            "igv_snapshot_tool",
-            {"genome": "hg38", "tracks": [], "regions": [{"chrom": "chr1", "start": 0}], "output_dir": str(output)},
+            "igv_snapshots",
+            {
+                "genome": "hg38",
+                "tracks": ["reads.bam"],
+                "regions": [{"chrom": "chr1", "start": 0}],
+                "output_dir": str(output),
+            },
         ),
-        ("targeted_coverage_tool", {"bam_path": "absent.bam", "location": "chr1:0-10", "bed_path": "absent.bed"}),
+        ("variant_qc", {"path": "absent.vcf.gz", "group_by": "region"}),
     ]
     for name, arguments in cases:
         reply = client.tool(name, arguments)
         assert reply["result"]["isError"] is True, reply
-        assert reply["result"]["content"][0]["text"].startswith("Input validation error:"), reply
+        payload = json.loads(reply["result"]["content"][0]["text"])
+        assert payload["kind"] == "validation_error" and payload["issues"], reply
         assert not _events(events), f"Invalid {name} entered a worker or filesystem validation"
         assert not output.exists()
     # A valid call after the rejection exercises this same connection and observer.
-    missing = _tool_payload(client.tool("qc_reads_fastq_tool", {"path": str(tmp_path / "missing.fastq")}), error=True)
-    assert missing["kind"] == "not_found"
+    missing = _tool_payload(client.tool("read_qc", {"path": str(tmp_path / "missing.fastq")}), error=True)
+    assert missing["kind"] == "execution_error" and missing["stage"] == "input_validation"
     assert {e["event"] for e in _events(events)} >= {"worker_enter", "validate_file"}
 
 
@@ -372,7 +384,16 @@ def test_wire_cancellation_keeps_capacity_until_process_cleanup(wire_server, tmp
     client, events = wire_server
     blocked = tmp_path / "blocked.fastq"
     blocked.write_text("@r\nACGT\n+\nIIII\n")
-    first_id = client.request("tools/call", {"name": "qc_reads_fastq_tool", "arguments": {"path": str(blocked)}})
+    first_id = client.request(
+        "tools/call",
+        {
+            "name": "read_qc",
+            "arguments": {
+                "path": str(blocked),
+                "metrics": ["length", "read_quality", "length_distribution", "quality_distribution"],
+            },
+        },
+    )
     first = _wait(
         lambda: next((e for e in _events(events) if e["event"] == "producer_started"), None), "producer start"
     )
@@ -390,9 +411,9 @@ def test_wire_cancellation_keeps_capacity_until_process_cleanup(wire_server, tmp
         client.notify("notifications/cancelled", {"requestId": first_id, "reason": "wire regression test"})
         followup = tmp_path / "followup.fastq"
         followup.write_text("@next\nACGT\n+\nIIII\n")
-        second_id = client.request("tools/call", {"name": "qc_reads_fastq_tool", "arguments": {"path": str(followup)}})
+        second_id = client.request("tools/call", {"name": "read_qc", "arguments": {"path": str(followup)}})
         payload = _tool_payload(client.response(second_id))
-        assert payload["read_count"] == 1
+        assert payload["results"][0]["length"]["read_count"] == 1
         cleaned = _wait(
             lambda: next(
                 (e for e in _events(events) if e["event"] == "cleanup_finished" and first["pid"] in e["pids"]), None

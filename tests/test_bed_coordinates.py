@@ -79,7 +79,7 @@ def test_bed_coordinate_syntax_through_mcp(mcp_server_params, tmp_path):
         async with stdio_client(mcp_server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                result = await session.call_tool("qc_bed_tool", {"path": str(bed)})
+                result = await session.call_tool("bed_qc", {"path": str(bed)})
                 assert not result.is_error, result.content
                 report = json.loads(cast(types.TextContent, result.content[0]).text)
                 assert not report["is_valid"]

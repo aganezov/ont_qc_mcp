@@ -383,7 +383,7 @@ def read_qc(
     tools: ToolPaths | None = None,
     exec_cfg: ExecutionConfig | None = None,
 ) -> ReadQCResponse:
-    """Execute one validated read-QC request without registering the v2 catalog."""
+    """Execute one validated public read-QC request."""
     validated = request if isinstance(request, ReadQCRequest) else ReadQCRequest.model_validate(request)
     cfg = exec_cfg or ExecutionConfig()
     tool_paths = tools or ToolPaths()

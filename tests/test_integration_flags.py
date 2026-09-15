@@ -89,19 +89,21 @@ def test_resources_exposed():
 
     resources = asyncio.run(srv.list_resources())
     uris = {str(r.uri) for r in resources}
-    assert "tool://flags/nanoq" in uris
-    assert "tool://recipes/nanoq" in uris
+    assert "tool://guidance/read_qc" in uris
+    assert "tool://recipes/alignment_qc" in uris
+    assert not any(uri.startswith("tool://flags/") for uri in uris)
 
 
-def test_read_resource_flags_and_recipes():
+def test_read_resource_guidance_and_recipes():
     from ont_qc_mcp import app_server as srv
 
-    flag_contents = asyncio.run(srv.read_resource("tool://flags/nanoq"))
-    flag_payload = json.loads(flag_contents[0].text)
-    assert flag_payload["tool"] == "nanoq"
-    assert flag_payload["flags"]
+    guidance_contents = asyncio.run(srv.read_resource("tool://guidance/read_qc"))
+    guidance_payload = json.loads(guidance_contents[0].text)
+    assert guidance_payload["tool"] == "read_qc"
+    assert guidance_payload["request_schema"]["additionalProperties"] is False
 
-    recipe_contents = asyncio.run(srv.read_resource("tool://recipes/nanoq"))
+    recipe_contents = asyncio.run(srv.read_resource("tool://recipes/alignment_qc"))
     recipe_payload = json.loads(recipe_contents[0].text)
-    assert recipe_payload["tool"] == "nanoq"
-    assert "strict_qc" in recipe_payload["recipes"]
+    assert recipe_payload["tool"] == "alignment_qc"
+    calls = recipe_payload["recipes"]["alignment_and_coverage"]["calls"]
+    assert [call["tool"] for call in calls] == ["alignment_qc", "coverage_qc"]

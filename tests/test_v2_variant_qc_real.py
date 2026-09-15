@@ -1,4 +1,4 @@
-"""Direct bcftools comparisons for the unregistered API v2 variant backend."""
+"""Direct bcftools comparisons for the public API v2 variant backend."""
 
 from __future__ import annotations
 

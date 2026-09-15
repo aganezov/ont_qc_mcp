@@ -40,16 +40,20 @@ def test_gene_coverage_converts_gff_coordinates(
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 response = await session.call_tool(
-                    "targeted_coverage_tool",
-                    {"bam_path": str(bam), "gene_name": "Target", "annotation_path": str(gff)},
+                    "coverage_qc",
+                    {
+                        "path": str(bam),
+                        "regions": {"format": "gff3", "path": str(gff), "feature_type": "gene", "ids": ["Target"]},
+                    },
                 )
                 assert not response.is_error, response.content
-                reports = json.loads(cast(types.TextContent, response.content[0]).text)
+                reports = json.loads(cast(types.TextContent, response.content[0]).text)["rows"]
                 assert len(reports) == 1
                 report = reports[0]
                 assert (report["chrom"], report["start"], report["end"]) == ("chr1", start - 1, end)
                 assert report["mean_depth"] == pytest.approx(expected_depth)
+                breadth = {item["threshold"]: item["fraction_at_or_above"] for item in report["breadth"]}
                 for threshold, percentage in zip([1, 10, 20], expected_percentages):
-                    assert report[f"pct_coverage_{threshold}x"] == pytest.approx(percentage)
+                    assert breadth[threshold] == pytest.approx(percentage / 100)
 
     anyio.run(check_report)

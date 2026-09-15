@@ -97,31 +97,26 @@ def _build_calls(
     fastq: Path | None,
     bam: Path | None,
     include_error_profile: bool,
-    run_summary: bool,
 ) -> list[ToolCall]:
-    calls: list[ToolCall] = [ToolCall("env_status")]
+    calls: list[ToolCall] = [ToolCall("environment_status")]
 
     if fastq:
-        calls.extend(
-            [
-                ToolCall("qc_reads_fastq_tool", {"path": str(fastq)}),
-                ToolCall("read_length_distribution_fastq_tool", {"path": str(fastq)}),
-                ToolCall("qscore_distribution_fastq_tool", {"path": str(fastq)}),
-            ]
+        calls.append(
+            ToolCall(
+                "read_qc",
+                {
+                    "path": str(fastq),
+                    "metrics": ["length", "read_quality", "length_distribution", "quality_distribution"],
+                },
+            )
         )
 
     if bam:
-        calls.append(ToolCall("qc_alignment_tool", {"path": str(bam)}))
-        calls.append(ToolCall("coverage_stats_tool", {"path": str(bam)}))
+        metrics = ["counts", "mapping_quality"]
         if include_error_profile:
-            calls.append(ToolCall("alignment_error_profile_tool", {"path": str(bam)}))
-        if run_summary:
-            calls.append(
-                ToolCall(
-                    "alignment_summary_tool",
-                    {"path": str(bam), "include_error_profile": include_error_profile},
-                )
-            )
+            metrics.append("error_profile")
+        calls.append(ToolCall("alignment_qc", {"path": str(bam), "metrics": metrics}))
+        calls.append(ToolCall("coverage_qc", {"path": str(bam)}))
 
     return calls
 
@@ -135,12 +130,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--include-error-profile",
         action="store_true",
-        help="Also call alignment_error_profile_tool and include_error_profile in alignment_summary_tool",
-    )
-    parser.add_argument(
-        "--no-summary",
-        action="store_true",
-        help="Skip alignment_summary_tool (still runs qc_alignment_tool and coverage_stats_tool when --bam is present)",
+        help="Include the error_profile section in alignment_qc",
     )
     return parser.parse_args()
 
@@ -176,7 +166,6 @@ def main() -> int:
         fastq=fastq,
         bam=bam,
         include_error_profile=bool(args.include_error_profile),
-        run_summary=not bool(args.no_summary),
     )
     outputs = anyio.run(_call_tools, server_params, calls)
 

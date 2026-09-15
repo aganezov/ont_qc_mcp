@@ -1,4 +1,4 @@
-"""Direct mosdepth comparisons for the unregistered API v2 coverage backend."""
+"""Direct mosdepth comparisons for the public API v2 coverage backend."""
 
 from __future__ import annotations
 

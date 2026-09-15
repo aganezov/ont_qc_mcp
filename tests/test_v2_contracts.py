@@ -1,4 +1,4 @@
-"""Contract tests for the unregistered API v2 skeleton."""
+"""Contract tests for the registered API v2 catalog."""
 
 from __future__ import annotations
 
@@ -52,7 +52,7 @@ def load_fixture(name: str) -> list[dict[str, object]]:
     return cast(list[dict[str, object]], json.loads((FIXTURES / name).read_text(encoding="utf-8")))
 
 
-def test_catalog_has_the_accepted_names_and_real_server_is_unchanged() -> None:
+def test_catalog_has_the_accepted_names() -> None:
     expected = {
         "read_qc",
         "alignment_qc",
@@ -68,15 +68,13 @@ def test_catalog_has_the_accepted_names_and_real_server_is_unchanged() -> None:
     contracts = api_v2_contracts()
     assert set(contracts) == expected
     assert len(API_V2_CATALOG) == len(expected)
-    assert all(contract.status == "unregistered" for contract in contracts.values())
+    assert all(contract.status == "registered" for contract in contracts.values())
 
 
 @pytest.mark.asyncio
-async def test_catalog_skeleton_does_not_advertise_v2_tools() -> None:
+async def test_server_advertises_only_the_v2_catalog() -> None:
     advertised = {tool.name for tool in await list_tools()}
-    assert len(advertised) == 18
-    assert advertised.isdisjoint(api_v2_contracts())
-    assert "qc_reads_fastq_tool" in advertised
+    assert advertised == set(api_v2_contracts())
 
 
 @pytest.mark.parametrize("entry", load_fixture("requests.json"), ids=lambda entry: str(entry["case"]))

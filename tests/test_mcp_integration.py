@@ -1,622 +1,169 @@
-"""
-Integration tests for the MCP server using the stdio client.
+"""End-to-end MCP SDK checks for the public API v2 catalog."""
 
-These tests spawn the server as a subprocess and communicate via MCP protocol.
-"""
+from __future__ import annotations
 
 import json
-import importlib
-import os
-import signal
-import sys
-import time
-import ont_qc_mcp
 from typing import cast
 
 import anyio
-import pytest
 import mcp_types as types
+import pytest
 from mcp.client.session import ClientSession
 from mcp.client.stdio import stdio_client
 
 from conftest import require_executable_tools
+from ont_qc_mcp.v2_contracts import api_v2_contracts
 
-
-REQUIRED_TOOLS = ["nanoq", "chopper", "cramino", "mosdepth", "samtools"]
 pytestmark = pytest.mark.integration
 
 
-def _text_content(content: types.ContentBlock) -> types.TextContent:
+def _text(content: types.ContentBlock) -> types.TextContent:
     return cast(types.TextContent, content)
 
 
-def _text_resource(content: types.ResourceContents) -> types.TextResourceContents:
+def _resource(content: types.ResourceContents) -> types.TextResourceContents:
     return cast(types.TextResourceContents, content)
 
 
-def test_initialize_and_list_tools(mcp_server_params):
-    """Test that we can connect and list available tools."""
-
-    async def _test():
+def test_initialize_lists_exact_public_catalog(mcp_server_params) -> None:
+    async def check() -> None:
         async with stdio_client(mcp_server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                result = await session.list_tools()
-                tool_names = {tool.name for tool in result.tools}
-                assert "env_status" in tool_names
-                assert "qc_alignment_tool" in tool_names
-                assert "qc_reads_fastq_tool" in tool_names
-                assert "header_metadata_tool" in tool_names
-
-    anyio.run(_test)
-
-
-def test_targeted_guidance_includes_sequential_tools(mcp_server_params):
-    params = mcp_server_params.model_copy(
-        update={
-            "env": {
-                **(mcp_server_params.env or {}),
-                "MCP_TIMEOUT_SAMTOOLS": "7",
-                "MCP_TIMEOUT_MOSDEPTH": "11",
-                "MCP_THREADS_SAMTOOLS": "5",
-                "MCP_THREADS_MOSDEPTH": "2",
-            }
-        }
-    )
-
-    async def check_guidance():
-        async with stdio_client(params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 listed = await session.list_tools()
-                description = next(tool.description for tool in listed.tools if tool.name == "targeted_coverage_tool")
-                assert description is not None
-                assert "samtools" in description and "mosdepth" in description
-                assert "timeout≈18s" in description
-                resource = await session.read_resource("tool://guidance/targeted_coverage_tool")
-                guidance = json.loads(_text_resource(resource.contents[0]).text)
-                assert "samtools" in guidance["io_hint"] and "mosdepth" in guidance["io_hint"]
-                assert guidance["defaults"] == {"threads": 5, "timeout_seconds": 18}
+                assert {tool.name for tool in listed.tools} == set(api_v2_contracts())
 
-    anyio.run(check_guidance)
+    anyio.run(check)
 
 
-def test_tool_schemas_define_required_params(mcp_server_params):
-    """Test that tool schemas properly define required parameters."""
-
-    async def _test():
+def test_schemas_and_alignment_coverage_recipe(mcp_server_params) -> None:
+    async def check() -> None:
         async with stdio_client(mcp_server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                result = await session.list_tools()
+                listed = {tool.name: tool for tool in (await session.list_tools()).tools}
+                for name, contract in api_v2_contracts().items():
+                    assert listed[name].input_schema == contract.request_model.model_json_schema(mode="validation")
+                resource = await session.read_resource("tool://recipes/alignment_qc")
+                payload = json.loads(_resource(resource.contents[0]).text)
+                calls = payload["recipes"]["alignment_and_coverage"]["calls"]
+                assert [call["tool"] for call in calls] == ["alignment_qc", "coverage_qc"]
 
-                tools_by_name = {tool.name: tool for tool in result.tools}
-
-                # env_status has no required params
-                env_schema = tools_by_name["env_status"].input_schema
-                assert env_schema.get("required") is None or env_schema.get("required") == []
-
-                # qc_alignment_tool requires path
-                qc_align_schema = tools_by_name["qc_alignment_tool"].input_schema
-                assert "path" in qc_align_schema.get("required", [])
-                assert "path" in qc_align_schema["properties"]
-                assert "include_hist" in qc_align_schema["properties"]
-                assert "use_scaled" not in qc_align_schema["properties"]
-
-                # alignment_summary_tool requires path and has many optional params
-                summary_schema = tools_by_name["alignment_summary_tool"].input_schema
-                assert "path" in summary_schema.get("required", [])
-                assert "include_coverage" in summary_schema["properties"]
-                assert "coverage_window" in summary_schema["properties"]
-
-    anyio.run(_test)
+    anyio.run(check)
 
 
-def test_list_and_read_resources(mcp_server_params):
-    """Test resource listing and reading."""
-
-    async def _test():
+def test_environment_status(mcp_server_params) -> None:
+    async def check() -> None:
         async with stdio_client(mcp_server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-
-                resources = await session.list_resources()
-                uris = {str(res.uri) for res in resources.resources}
-                assert "tool://flags/nanoq" in uris
-                assert "tool://recipes/nanoq" in uris
-
-                flags = await session.read_resource("tool://flags/nanoq")
-                flag_payload = json.loads(_text_resource(flags.contents[0]).text)
-                assert flag_payload["tool"] == "nanoq"
-                assert flag_payload["flags"]
-
-                recipes = await session.read_resource("tool://recipes/nanoq")
-                recipe_payload = json.loads(_text_resource(recipes.contents[0]).text)
-                assert recipe_payload["tool"] == "nanoq"
-                assert recipe_payload["recipes"]
-
-    anyio.run(_test)
-
-
-def test_env_status_tool(mcp_server_params):
-    """Test calling the env_status tool."""
-
-    async def _test():
-        async with stdio_client(mcp_server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-
-                result = await session.call_tool("env_status")
-                assert not result.is_error, f"Tool error: {result.content}"
-                payload = json.loads(_text_content(result.content[0]).text)
-                assert "available" in payload
+                result = await session.call_tool("environment_status", {})
+                assert not result.is_error
+                payload = json.loads(_text(result.content[0]).text)
                 assert isinstance(payload["available"], dict)
+                assert isinstance(payload["resolved_paths"], dict)
 
-    anyio.run(_test)
-
-
-def test_alignment_workflow_smoke(mcp_server_params, sample_bam):
-    """Simulate a minimal alignment workflow using real tools if available."""
-
-    require_executable_tools(REQUIRED_TOOLS)
-
-    async def _test():
-        async with stdio_client(mcp_server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-
-                qc = await session.call_tool("qc_alignment_tool", {"path": str(sample_bam)})
-                assert not qc.is_error, f"qc_alignment_tool failed: {_text_content(qc.content[0]).text}"
-                qc_payload = json.loads(_text_content(qc.content[0]).text)
-                assert qc_payload["length_histogram"], "Expected length_histogram from cramino"
-                assert qc_payload.get("total_reads", 0) > 0
-                assert qc_payload.get("mean_identity") is not None
-
-                coverage = await session.call_tool("coverage_stats_tool", {"path": str(sample_bam)})
-                assert not coverage.is_error
-
-                coverage_data = json.loads(_text_content(coverage.content[0]).text)
-                assert coverage_data
-
-    anyio.run(_test)
+    anyio.run(check)
 
 
-def test_header_metadata_tool_vcf(mcp_server_params, tmp_path):
-    """Header metadata tool should parse VCF headers without external CLIs."""
-    header_text = "\n".join(
-        [
-            "##fileformat=VCFv4.3",
-            "##source=test-suite",
-            "##contig=<ID=chr1,length=5000>",
-            '##INFO=<ID=DP,Number=1,Type=Integer,Description="Depth">',
-            "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsample1",
-        ]
-    )
-    vcf_path = tmp_path / "mini.vcf"
-    vcf_path.write_text(header_text)
-
-    async def _test():
-        async with stdio_client(mcp_server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                result = await session.call_tool("header_metadata_tool", {"path": str(vcf_path), "file_type": "vcf"})
-                assert not result.is_error
-                assert result.content
-                payload = json.loads(_text_content(result.content[1]).text)
-                assert payload["format"] == "vcf"
-                assert payload["samples"][0]["name"] == "sample1"
-
-    anyio.run(_test)
-
-
-def test_header_metadata_tool_real_vcf(mcp_server_params, sample_vcf):
-    """Header metadata tool should parse the real gzipped VCF fixture."""
-
-    async def _test():
-        async with stdio_client(mcp_server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                result = await session.call_tool("header_metadata_tool", {"path": str(sample_vcf), "file_type": "vcf"})
-                assert not result.is_error
-                assert result.content
-                payload = json.loads(_text_content(result.content[1]).text)
-                assert payload["format"] == "vcf"
-                assert payload["samples"]
-                assert payload["references"]
-
-    anyio.run(_test)
-
-
-def test_qc_reads_tool_real_fastq(mcp_server_params, sample_fastq):
-    """qc_reads_fastq_tool should operate on the real FASTQ fixture."""
-
+def test_read_qc_fastq(mcp_server_params, sample_fastq) -> None:
     require_executable_tools(["nanoq"])
 
-    async def _test():
-        async with stdio_client(mcp_server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                result = await session.call_tool("qc_reads_fastq_tool", {"path": str(sample_fastq)})
-                assert not result.is_error
-                payload = json.loads(_text_content(result.content[0]).text)
-                assert payload["file"]
-                assert payload["read_count"] > 0
-                assert payload.get("mean_len", 0) > 0
-
-    anyio.run(_test)
-
-
-def test_read_length_distribution_tool_real_fastq(mcp_server_params, sample_fastq):
-    """read_length_distribution_fastq_tool should operate on the real FASTQ fixture."""
-
-    require_executable_tools(["nanoq"])
-
-    async def _test():
-        async with stdio_client(mcp_server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                result = await session.call_tool("read_length_distribution_fastq_tool", {"path": str(sample_fastq)})
-                assert not result.is_error
-                payload = json.loads(_text_content(result.content[0]).text)
-                assert payload["percentiles"]
-                assert payload["histogram"] is not None
-
-    anyio.run(_test)
-
-
-def test_qscore_distribution_tool_real_fastq(mcp_server_params, sample_fastq):
-    """qscore_distribution_fastq_tool should operate on the real FASTQ fixture."""
-
-    require_executable_tools(["nanoq"])
-
-    async def _test():
-        async with stdio_client(mcp_server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                result = await session.call_tool("qscore_distribution_fastq_tool", {"path": str(sample_fastq)})
-                assert not result.is_error
-                payload = json.loads(_text_content(result.content[0]).text)
-                assert payload["histogram"] is not None
-
-    anyio.run(_test)
-
-
-def test_read_length_distribution_bam_tool(mcp_server_params, sample_bam):
-    """read_length_distribution_bam_tool should stream BAM -> nanoq and return histogram."""
-
-    require_executable_tools(["samtools", "nanoq"])
-
-    async def _test():
-        async with stdio_client(mcp_server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                result = await session.call_tool("read_length_distribution_bam_tool", {"path": str(sample_bam)})
-                assert not result.is_error
-                payload = json.loads(_text_content(result.content[0]).text)
-                assert payload["file"]
-                assert payload["percentiles"] is not None
-                assert payload["histogram"] is not None
-
-    anyio.run(_test)
-
-
-def test_qscore_distribution_bam_tool(mcp_server_params, sample_bam):
-    """qscore_distribution_bam_tool should stream BAM -> nanoq and return qscore histogram."""
-
-    require_executable_tools(["samtools", "nanoq"])
-
-    async def _test():
-        async with stdio_client(mcp_server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                result = await session.call_tool("qscore_distribution_bam_tool", {"path": str(sample_bam)})
-                assert not result.is_error
-                payload = json.loads(_text_content(result.content[0]).text)
-                assert payload["histogram"] is not None
-
-    anyio.run(_test)
-
-
-def test_nanoq_aux_histograms_fastq_and_bam(mcp_server_params, sample_fastq, sample_bam):
-    """When MCP_NANOQ_AUX_STATS=1, nanoq-derived histograms/percentiles should be populated."""
-
-    require_executable_tools(["nanoq", "samtools"])
-    base_env: dict[str, str] = dict(getattr(mcp_server_params, "env", None) or {})
-    base_env.update(
-        {
-            "MCP_NANOQ_AUX_STATS": "1",
-            "MCP_NANOQ_LENGTH_BIN_WIDTH": "2000",
-            "MCP_NANOQ_QSCORE_BIN_WIDTH": "1",
-            "MCP_NANOQ_PERCENTILES_EXACT_MAX_READS": "1000000",
-        }
-    )
-    server_params = mcp_server_params.model_copy(
-        update={
-            "env": base_env,
-        }
-    )
-
-    async def _test():
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-
-                lengths_fastq = await session.call_tool(
-                    "read_length_distribution_fastq_tool",
-                    {"path": str(sample_fastq)},
-                )
-                assert not lengths_fastq.is_error
-                lengths_payload = json.loads(_text_content(lengths_fastq.content[0]).text)
-                assert lengths_payload["histogram"], "Expected nanoq aux length histogram for FASTQ"
-                assert lengths_payload["percentiles"]["p50"] is not None
-
-                qscores_fastq = await session.call_tool("qscore_distribution_fastq_tool", {"path": str(sample_fastq)})
-                assert not qscores_fastq.is_error
-                qscore_payload = json.loads(_text_content(qscores_fastq.content[0]).text)
-                assert qscore_payload["histogram"], "Expected nanoq aux qscore histogram for FASTQ"
-
-                lengths_bam = await session.call_tool("read_length_distribution_bam_tool", {"path": str(sample_bam)})
-                assert not lengths_bam.is_error
-                lengths_bam_payload = json.loads(_text_content(lengths_bam.content[0]).text)
-                assert lengths_bam_payload["histogram"], "Expected nanoq aux length histogram for BAM"
-                assert lengths_bam_payload["percentiles"]["p50"] is not None
-
-                qscores_bam = await session.call_tool("qscore_distribution_bam_tool", {"path": str(sample_bam)})
-                assert not qscores_bam.is_error
-                qscore_bam_payload = json.loads(_text_content(qscores_bam.content[0]).text)
-                assert qscore_bam_payload["histogram"], "Expected nanoq aux qscore histogram for BAM"
-
-    anyio.run(_test)
-
-
-def test_filter_reads_tool_real_fastq(mcp_server_params, sample_fastq, tmp_path):
-    """filter_reads_fastq_tool should process the real FASTQ fixture and produce output."""
-
-    require_executable_tools(["chopper"])
-
-    output_fastq = tmp_path / "filtered.fastq"
-
-    async def _test():
+    async def check() -> None:
         async with stdio_client(mcp_server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.call_tool(
-                    "filter_reads_fastq_tool", {"path": str(sample_fastq), "output_fastq": str(output_fastq)}
+                    "read_qc",
+                    {
+                        "path": str(sample_fastq),
+                        "metrics": ["length", "read_quality", "length_distribution", "quality_distribution"],
+                    },
                 )
-                assert not result.is_error
-                payload = json.loads(_text_content(result.content[0]).text)
-                assert payload["command"]
-                assert output_fastq.exists()
+                assert not result.is_error, _text(result.content[0]).text
+                payload = json.loads(_text(result.content[0]).text)
+                group = payload["results"][0]
+                assert group["length"]["read_count"] > 0
+                assert group["length_distribution"]["histogram"]
+                assert group["quality_distribution"]["histogram"]
 
-    anyio.run(_test)
+    anyio.run(check)
 
 
-def test_header_metadata_tool_real_bam(mcp_server_params, sample_bam):
-    """Header metadata tool should parse BAM headers."""
+def test_alignment_and_coverage_recipe_calls(mcp_server_params, sample_bam) -> None:
+    require_executable_tools(["samtools", "cramino", "mosdepth"])
 
-    require_executable_tools(["samtools"])
-
-    async def _test():
+    async def check() -> None:
         async with stdio_client(mcp_server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                result = await session.call_tool("header_metadata_tool", {"path": str(sample_bam), "file_type": "bam"})
-                assert not result.is_error
-                payload = json.loads(_text_content(result.content[1]).text)
-                assert payload["format"] == "bam"
+                alignment = await session.call_tool("alignment_qc", {"path": str(sample_bam)})
+                assert not alignment.is_error, _text(alignment.content[0]).text
+                alignment_payload = json.loads(_text(alignment.content[0]).text)
+                assert alignment_payload["results"][0]["counts"]["eligible_records"] >= 0
+
+                coverage = await session.call_tool("coverage_qc", {"path": str(sample_bam)})
+                assert not coverage.is_error, _text(coverage.content[0]).text
+                coverage_payload = json.loads(_text(coverage.content[0]).text)
+                assert coverage_payload["rows"]
+                assert coverage_payload["union_summary"]["reference_bases"] > 0
+
+    anyio.run(check)
+
+
+@pytest.mark.parametrize("kind", ["bam", "vcf"])
+def test_header_info(mcp_server_params, sample_bam, sample_vcf, kind: str) -> None:
+    if kind == "bam":
+        require_executable_tools(["samtools"])
+    path = sample_bam if kind == "bam" else sample_vcf
+
+    async def check() -> None:
+        async with stdio_client(mcp_server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool("header_info", {"path": str(path)})
+                assert not result.is_error, _text(result.content[0]).text
+                payload = json.loads(_text(result.content[0]).text)
+                assert payload["format"] == kind
                 assert payload["references"]
-                assert payload["programs"] is not None
 
-    anyio.run(_test)
+    anyio.run(check)
 
 
-def test_alignment_error_profile_tool_real_bam(mcp_server_params, sample_bam):
-    """alignment_error_profile_tool should run samtools stats on the real BAM."""
+def test_filter_reads_then_read_qc(mcp_server_params, sample_fastq, tmp_path) -> None:
+    require_executable_tools(["chopper", "nanoq"])
+    output = tmp_path / "filtered.fastq.gz"
 
-    require_executable_tools(["samtools"])
-
-    async def _test():
+    async def check() -> None:
         async with stdio_client(mcp_server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                result = await session.call_tool("alignment_error_profile_tool", {"path": str(sample_bam)})
-                assert not result.is_error
-                payload = json.loads(_text_content(result.content[0]).text)
-                assert "mismatch_rate" in payload
-                assert "gc_coverage" in payload
-                assert payload["gc_coverage"] is None
-
-    anyio.run(_test)
-
-
-def test_alignment_summary_tool_real_bam(mcp_server_params, sample_bam):
-    """alignment_summary_tool should aggregate cramino + mosdepth on real BAM."""
-
-    require_executable_tools(REQUIRED_TOOLS)
-
-    async def _test():
-        async with stdio_client(mcp_server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                result = await session.call_tool("alignment_summary_tool", {"path": str(sample_bam)})
-                assert not result.is_error
-                payload = json.loads(_text_content(result.content[0]).text)
-                assert payload["alignment"]
-                assert payload["coverage"]
-                assert payload["alignment"].get("total_reads", 0) > 0
-
-    anyio.run(_test)
-
-
-def test_alignment_summary_tool_highdepth_bam(mcp_server_params, sample_bam_highdepth):
-    """alignment_summary_tool should show non-zero coverage on the high-depth synthetic BAM."""
-
-    require_executable_tools(REQUIRED_TOOLS)
-
-    async def _test():
-        async with stdio_client(mcp_server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                result = await session.call_tool("alignment_summary_tool", {"path": str(sample_bam_highdepth)})
-                assert not result.is_error
-                payload = json.loads(_text_content(result.content[0]).text)
-                assert payload["coverage"]["mean_depth"] > 0
-                assert payload["alignment"].get("total_reads", 0) >= 50
-
-    anyio.run(_test)
-
-
-def test_missing_fastq_returns_not_found_error(mcp_server_params, tmp_path):
-    """FASTQ tools should surface not_found errors for missing paths."""
-
-    missing_fastq = tmp_path / "does_not_exist.fastq"
-
-    async def _test():
-        async with stdio_client(mcp_server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                result = await session.call_tool("qc_reads_fastq_tool", {"path": str(missing_fastq)})
-                assert result.is_error
-                assert result.content
-                assert "not_found" in _text_content(result.content[0]).text
-
-    anyio.run(_test)
-
-
-def test_invalid_flags_return_validation_error(mcp_server_params, sample_fastq):
-    """Invalid flag types should be returned as validation errors."""
-
-    async def _test():
-        async with stdio_client(mcp_server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                result = await session.call_tool(
-                    "qc_reads_fastq_tool", {"path": str(sample_fastq), "flags": {"threads": "bad"}}
+                filtered = await session.call_tool(
+                    "filter_reads",
+                    {
+                        "path": str(sample_fastq),
+                        "output_fastq": str(output),
+                        "selection": {"minlength": 1},
+                    },
                 )
-                assert result.is_error
-                assert result.content
-                assert "validation" in _text_content(result.content[0]).text
+                assert not filtered.is_error, _text(filtered.content[0]).text
+                assert output.is_file()
+                qc = await session.call_tool("read_qc", {"path": str(output)})
+                assert not qc.is_error, _text(qc.content[0]).text
+                assert json.loads(_text(qc.content[0]).text)["results"][0]["length"]["read_count"] > 0
 
-    anyio.run(_test)
-
-
-def test_bam_streaming_timeout_surface_runtime_error(mcp_server_params, tmp_path):
-    """Require both child startups, a real timeout diagnostic, and child exit."""
-    scripts = []
-    for name in ("samtools", "nanoq"):
-        script = tmp_path / f"{name}.py"
-        script.write_text(
-            f"#!{sys.executable}\nimport os, signal\nfrom pathlib import Path\n"
-            "Path(__file__).with_suffix('.started').write_text(str(os.getpid()))\n"
-            "signal.pause()\n"
-        )
-        script.chmod(0o755)
-        scripts.append(script)
-
-    base_env: dict[str, str] = dict(getattr(mcp_server_params, "env", None) or {})
-    base_env.update(
-        {
-            "SAMTOOLS": str(scripts[0]),
-            "NANOQ": str(scripts[1]),
-            "MCP_TIMEOUT_SAMTOOLS": "2",
-            "MCP_TIMEOUT_NANOQ": "2",
-        }
-    )
-    server_params = mcp_server_params.model_copy(update={"env": base_env})
-    dummy_bam = tmp_path / "dummy.bam"
-    dummy_bam.write_text("bam")
-
-    def alive(pid):
-        try:
-            os.kill(pid, 0)
-            return True
-        except ProcessLookupError:
-            return False
-
-    async def _test():
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                result = await session.call_tool("read_length_distribution_bam_tool", {"path": str(dummy_bam)})
-                assert result.is_error
-                payload = json.loads(_text_content(result.content[0]).text)
-                assert payload["kind"] == "runtime"
-                assert "Timeout while running samtools|nanoq pipeline" in payload["message"]
-                assert "likely hung at both" in payload["message"]
-                for script in scripts:
-                    marker = script.with_suffix(".started")
-                    assert marker.exists(), f"Child never started: {script}"
-                    pid = int(marker.read_text())
-                    deadline = time.monotonic() + 5
-                    while alive(pid) and time.monotonic() < deadline:
-                        await anyio.sleep(0.01)
-                    assert not alive(pid), f"Timeout left child {pid} alive or unreaped"
-
-    try:
-        anyio.run(_test)
-    finally:
-        # Independent test cleanup also runs if a mutation breaks wrapper teardown.
-        for script in scripts:
-            marker = script.with_suffix(".started")
-            if marker.exists():
-                try:
-                    os.kill(int(marker.read_text()), signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
+    anyio.run(check)
 
 
-def test_bam_streaming_missing_executable_is_not_timeout(mcp_server_params, tmp_path):
-    env = dict(mcp_server_params.env or {})
-    env["SAMTOOLS"] = str(tmp_path / "missing-samtools")
-    server_params = mcp_server_params.model_copy(update={"env": env})
-    bam = tmp_path / "dummy.bam"
-    bam.write_text("bam")
-
-    async def _test():
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                result = await session.call_tool("read_length_distribution_bam_tool", {"path": str(bam)})
-                assert result.is_error
-                payload = json.loads(_text_content(result.content[0]).text)
-                assert payload["kind"] == "not_found"
-                assert "missing-samtools" in payload["message"]
-                assert "Timeout" not in payload["message"]
-
-    anyio.run(_test)
-
-
-def test_alignment_summary_serial_with_concurrency_1(monkeypatch):
-    """Ensure MCP_MAX_CONCURRENCY=1 serializes calls without deadlock."""
-    monkeypatch.setenv("MCP_MAX_CONCURRENCY", "1")
-    srv = importlib.reload(ont_qc_mcp.app_server)
-
-    async def _run():
-        results: list[types.CallToolResult] = []
-
-        async def call_tool():
-            res = await srv.dispatch_tool("env_status", {})
-            results.append(res)
-
-        async with anyio.create_task_group() as tg:
-            tg.start_soon(call_tool)
-            tg.start_soon(call_tool)
-
-        return results
-
-    outputs = anyio.run(_run)
-    assert len(outputs) == 2
-    assert all(not r.is_error for r in outputs)
-
-
-def test_removed_alignment_toggle_is_rejected(mcp_server_params):
-    async def _test():
+def test_unknown_legacy_alias_is_rejected(mcp_server_params) -> None:
+    async def check() -> None:
         async with stdio_client(mcp_server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                for name in ("qc_alignment_tool", "alignment_summary_tool"):
-                    result = await session.call_tool(name, {"path": "unused.bam", "use_scaled": True})
-                    assert result.is_error
-                    assert "use_scaled" in _text_content(result.content[0]).text
+                result = await session.call_tool("alignment_summary_tool", {"path": "unused.bam"})
+                assert result.is_error
+                payload = json.loads(_text(result.content[0]).text)
+                assert payload["kind"] == "validation_error"
+                assert "Unknown tool" in payload["issues"][0]["message"]
 
-    anyio.run(_test)
+    anyio.run(check)

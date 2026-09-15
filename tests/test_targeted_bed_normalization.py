@@ -46,11 +46,13 @@ def test_normalized_targets_through_mcp(mcp_server_params, tmp_path, content):
         async with stdio_client(mcp_server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                result = await session.call_tool("targeted_coverage_tool", {"bam_path": str(bam), "bed_path": str(bed)})
+                result = await session.call_tool(
+                    "coverage_qc", {"path": str(bam), "regions": {"format": "bed", "path": str(bed)}}
+                )
                 assert not result.is_error, result.content
-                reports = json.loads(cast(types.TextContent, result.content[0]).text)
+                reports = json.loads(cast(types.TextContent, result.content[0]).text)["rows"]
                 assert [(r["chrom"], r["start"], r["end"]) for r in reports] == [("chr1", 0, 1), ("chr1", 9, 10)]
-                assert all(r["mean_depth"] == 1.0 and r["pct_coverage_1x"] == 100.0 for r in reports)
+                assert all(r["mean_depth"] == 1.0 and r["breadth"][0]["fraction_at_or_above"] == 1.0 for r in reports)
 
     try:
         anyio.run(check_targets)

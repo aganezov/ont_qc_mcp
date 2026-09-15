@@ -406,7 +406,7 @@ def alignment_qc(
     tools: ToolPaths | None = None,
     exec_cfg: ExecutionConfig | None = None,
 ) -> AlignmentQCResponse:
-    """Execute one alignment-QC request without registering the v2 catalog."""
+    """Execute one validated public alignment-QC request."""
     validated = request if isinstance(request, AlignmentQCRequest) else AlignmentQCRequest.model_validate(request)
     cfg = exec_cfg or ExecutionConfig()
     tool_paths = tools or ToolPaths()

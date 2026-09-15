@@ -3,8 +3,10 @@
 import asyncio
 import json
 from pathlib import Path
+from typing import cast
 from unittest.mock import Mock
 
+import mcp_types as types
 import pytest
 
 from ont_qc_mcp import app_server, regional
@@ -148,17 +150,26 @@ def test_missing_index_never_runs_command(fake_region, monkeypatch):
 async def test_adapter_retains_explicit_configuration_and_result(monkeypatch):
     result = {"complete": True, "regions": [{"mean_base_quality": 20}]}
     runner = Mock(return_value=result)
-    monkeypatch.setattr(app_server, "regional_alignment_stats", runner)
-    content = await app_server.regional_alignment_stats_tool(
-        "reads.bam", REGIONS, min_mapq=10, exclude_flags=3844, reference_path="ref.fa"
+    monkeypatch.setattr(app_server, "execute_alignment_qc", runner)
+    response = await app_server.dispatch_tool(
+        "alignment_qc",
+        {
+            "path": "reads.bam",
+            "regions": REGIONS,
+            "reference_path": "ref.fa",
+            "selection": {"min_mapq": 10, "exclude_flags": 3844},
+            "metrics": ["aligned_base_quality"],
+            "group_by": "region",
+        },
     )
-    payload = json.loads(content[0].text)
+    assert not response.is_error
+    payload = json.loads(cast(types.TextContent, response.content[0]).text)
     assert payload["complete"] is True and payload["regions"] == result["regions"]
+    request = runner.call_args.args[0]
     assert runner.call_args.kwargs["exec_cfg"] is app_server.EXEC_CFG
-    assert runner.call_args.kwargs["min_mapq"] == 10
-    assert runner.call_args.kwargs["exclude_flags"] == 3844
-    assert runner.call_args.kwargs["reference_path"] == "ref.fa"
-    assert payload["provenance"]["effective_timeout"] == app_server.EXEC_CFG.timeout_for("samtools")
+    assert request.selection.min_mapq == 10
+    assert request.selection.exclude_flags == 3844
+    assert request.reference_path == "ref.fa"
 
 
 def test_disguised_compressed_reference_rejected_before_commands(fake_region, monkeypatch):

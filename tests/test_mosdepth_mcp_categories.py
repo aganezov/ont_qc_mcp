@@ -18,7 +18,7 @@ pytestmark = pytest.mark.integration
 
 @pytest.fixture(params=["ordinary", "colliding_names"])
 def coverage_category_bam(tmp_path, request):
-    require_executable_tools(["samtools", "mosdepth", "cramino"])
+    require_executable_tools(["samtools", "mosdepth"])
     if request.param == "ordinary":
         contigs = [("chrA", 10000, 10), ("chrB", 30000, 1)]
     else:
@@ -37,7 +37,7 @@ def coverage_category_bam(tmp_path, request):
     return bam, contigs
 
 
-@pytest.mark.parametrize("mode", ["whole", "window", "by_alias", "summary"])
+@pytest.mark.parametrize("mode", ["whole", "window"])
 def test_mosdepth_categories_through_mcp(mcp_server_params, coverage_category_bam, mode):
     bam, contigs = coverage_category_bam
 
@@ -45,37 +45,19 @@ def test_mosdepth_categories_through_mcp(mcp_server_params, coverage_category_ba
         async with stdio_client(mcp_server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                arguments = {"path": str(bam), "low_cov_threshold": 5}
-                tool_name = "coverage_stats_tool"
+                arguments: dict[str, object] = {"path": str(bam)}
                 if mode == "window":
-                    arguments["window"] = 400
-                elif mode == "by_alias":
-                    arguments["flags"] = {"by": 400}
-                elif mode == "summary":
-                    tool_name = "alignment_summary_tool"
-                    arguments = {
-                        "path": str(bam),
-                        "include_hist": False,
-                        "coverage_window": 400,
-                        "coverage_low_cov_threshold": 5,
-                    }
-                result = await session.call_tool(tool_name, arguments)
+                    arguments["window_size"] = 400
+                result = await session.call_tool("coverage_qc", arguments)
                 assert not result.is_error, result.content
                 payload = json.loads(cast(types.TextContent, result.content[0]).text)
-                if mode == "summary":
-                    payload = payload["coverage"]
-                assert [
-                    (row["contig"], row["length"], row["mean_depth"]) for row in payload["coverage_by_contig"]
-                ] == contigs
-                assert payload["mean_depth_unweighted"] == pytest.approx(
-                    sum(depth for _, _, depth in contigs) / len(contigs)
-                )
-                assert payload["mean_depth"] == pytest.approx(
+                assert payload["resolved_group_by"] == ("window" if mode == "window" else "contig")
+                assert {row["chrom"] for row in payload["rows"]} == {name for name, _, _ in contigs}
+                assert payload["union_summary"]["mean_depth"] == pytest.approx(
                     sum(length * depth for _, length, depth in contigs) / sum(length for _, length, _ in contigs)
                 )
-                assert [
-                    (row["contig"], row["start"], row["end"], row["mean_depth"])
-                    for row in payload["low_coverage_regions"]
-                ] == [(name, 0, length, depth) for name, length, depth in contigs if depth < 5]
+                for row in payload["rows"]:
+                    expected_depth = next(depth for name, _, depth in contigs if name == row["chrom"])
+                    assert row["mean_depth"] == pytest.approx(expected_depth)
 
     anyio.run(check)

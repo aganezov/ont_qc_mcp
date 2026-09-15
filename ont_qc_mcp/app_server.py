@@ -1,73 +1,71 @@
+import asyncio
 import json
 import logging
 import os
-import asyncio
-import sys
 import time
 import uuid
+from collections.abc import Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Callable
+from typing import Awaitable, Callable
 
 import anyio
-from importlib import metadata
-import mcp_types as types
-from mcp.server.lowlevel import Server
-from mcp.server.context import ServerRequestContext
 import jsonschema
+import mcp_types as types
+from mcp.server.context import ServerRequestContext
+from mcp.server.lowlevel import Server
+from pydantic import BaseModel, ValidationError
 
 from .cli_wrappers import FlagValidationError
 from .config import ExecutionConfig, ToolPaths
-from .flag_schemas import TOOL_FLAGS, get_tool_flags, get_tool_recipes
-from .tools import (
-    alignment_error_profile,
-    alignment_summary,
-    coverage_stats,
-    env_check,
-    filter_reads,
-    qc_alignment,
-    qc_bed,
-    qc_reads,
-    qc_variants,
-    header_metadata_lookup,
-    get_nanoq_cache_stats,
-    qscore_distribution,
-    qscore_distribution_bam,
-    read_length_distribution,
-    read_length_distribution_bam,
-    generate_igv_snapshots,
-    serialize_model,
-    sequencing_summary,
-    targeted_coverage,
-)
-from .regional import MAX_REGIONS, regional_alignment_stats
-from .regional_metrics import RegionalInterval
 from .stdio_compat import stdio_server_compat
 from .threadpool import get_executor, run_sync
+from .v2_alignment_qc import alignment_qc as execute_alignment_qc
+from .v2_contracts import (
+    AlignmentQCRequest,
+    BedQCRequest,
+    CoverageQCRequest,
+    EnvironmentStatusRequest,
+    ExecutionErrorResponse,
+    FilterReadsRequest,
+    HeaderInfoRequest,
+    IgvSnapshotsRequest,
+    ReadQCRequest,
+    RunSummaryRequest,
+    ToolContract,
+    ValidationErrorResponse,
+    ValidationIssue,
+    VariantQCRequest,
+    api_v2_contracts,
+)
+from .v2_coverage_qc import coverage_qc as execute_coverage_qc
+from .v2_execution import PipelineOutputLimitError, PipelineStageError
+from .v2_read_qc import read_qc as execute_read_qc
+from .v2_supporting_tools import (
+    bed_qc as execute_bed_qc,
+    environment_status as execute_environment_status,
+    filter_reads as execute_filter_reads,
+    header_info as execute_header_info,
+    igv_snapshots as execute_igv_snapshots,
+    run_summary as execute_run_summary,
+)
+from .v2_variant_qc import variant_qc as execute_variant_qc
 
 EXEC_CFG = ExecutionConfig()
 logger = logging.getLogger(__name__)
 _USE_JSON_LOG = os.getenv("MCP_LOG_FORMAT", "0").lower() in {"1", "true", "json", "structured"}
-_ENABLE_CACHE_STATS = os.getenv("MCP_CACHE_STATS", "0").lower() not in {"", "0", "false", "False"}
-_INCLUDE_PROVENANCE_VERBOSE = os.getenv("MCP_INCLUDE_PROVENANCE", "0").lower() not in {"", "0", "false", "False"}
 _REQUEST_ID: ContextVar[str] = ContextVar("request_id", default="")
-_REQUEST_START: ContextVar[float] = ContextVar("request_start", default=0.0)
 _TOOL_PATHS: ToolPaths | None = None
 _CONCURRENCY_SEM = anyio.Semaphore(EXEC_CFG.max_concurrent_operations) if EXEC_CFG.max_concurrent_operations else None
 _CONFIG_SCOPE_NOTE = {
     "env_read_at_startup": True,
-    "per_call_overrides": "Use tool arguments/flags per call; igv_snapshot_tool supports output_dir.",
+    "per_call_overrides": "Use typed request fields and namespaced extra_args; igv_snapshots supports output_dir.",
     "multi_client_note": "Different defaults require separate server instances.",
 }
 
 
 def _use_compat_stdio() -> bool:
-    """
-    Select the server stdio transport.
-
-    - MCP_STDIO_TRANSPORT=anyio  (default): use mcp.server.stdio.stdio_server()
-    - MCP_STDIO_TRANSPORT=compat           : use ont_qc_mcp.stdio_compat.stdio_server_compat()
-    """
+    """Select the server stdio transport."""
     value = os.getenv("MCP_STDIO_TRANSPORT", "anyio").strip().lower()
     if value in {"compat", "asyncio", "pipe"}:
         return True
@@ -85,915 +83,274 @@ def _tool_paths() -> ToolPaths:
     return _TOOL_PATHS
 
 
-def _log_event(level: int, message: str, **fields) -> None:
+def _log_event(level: int, message: str, **fields: object) -> None:
     request_id = _REQUEST_ID.get()
     if request_id:
         fields.setdefault("request_id", request_id)
     if _USE_JSON_LOG:
         logger.log(level, json.dumps({"event": message, **fields}, ensure_ascii=False))
     else:
-        extras = " ".join(f"{k}={v}" for k, v in fields.items() if v is not None)
+        extras = " ".join(f"{key}={value}" for key, value in fields.items() if value is not None)
         prefix = f"[{request_id}] " if request_id else ""
         suffix = f" | {extras}" if extras else ""
         logger.log(level, "%s%s%s", prefix, message, suffix)
 
 
-def _build_provenance(tool_name: str | None = None) -> dict[str, object]:
-    provenance: dict[str, object] = {
-        "threads_default": EXEC_CFG.default_threads,
-        "per_tool_timeouts": EXEC_CFG.per_tool_timeouts,
-        "request_id": _REQUEST_ID.get() or None,
-        "concurrency_limit": EXEC_CFG.max_concurrent_operations,
-    }
-    start = _REQUEST_START.get()
-    if start:
-        provenance["duration_seconds"] = round(time.monotonic() - start, 3)
-    if tool_name:
-        provenance["effective_threads"] = EXEC_CFG.threads_for(tool_name)
-        provenance["effective_timeout"] = EXEC_CFG.timeout_for(tool_name)
-    if _INCLUDE_PROVENANCE_VERBOSE:
-        pkg_version = None
-        try:
-            pkg_version = metadata.version("ont_qc_mcp")
-        except metadata.PackageNotFoundError:
-            pkg_version = None
-        provenance.update(
-            {
-                "resolved_paths": _tool_paths().resolved(),
-                "python_version": sys.version.split()[0],
-                "package_version": pkg_version,
-            }
-        )
-    return provenance
+def _json_content(payload: BaseModel | dict[str, object] | list[object]) -> list[types.ContentBlock]:
+    value = payload.model_dump(mode="json") if isinstance(payload, BaseModel) else payload
+    return [types.TextContent(type="text", text=json.dumps(value, ensure_ascii=False, indent=2))]
 
 
-def _json_content(payload, tool_name: str | None = None) -> list[types.TextContent]:
-    if isinstance(payload, dict):
-        payload = {**payload, "provenance": _build_provenance(tool_name)}
-    return [types.TextContent(type="text", text=json.dumps(payload, ensure_ascii=False, indent=2))]
+async def read_qc_tool(request: ReadQCRequest) -> list[types.ContentBlock]:
+    response = await run_sync(execute_read_qc, request, tools=_tool_paths(), exec_cfg=EXEC_CFG)
+    return _json_content(response)
 
 
-async def env_status() -> list[types.TextContent]:
-    """Check availability of required CLI tools."""
-    status = env_check(_tool_paths())
-    return _json_content(serialize_model(status), tool_name="env_status")
+async def alignment_qc_tool(request: AlignmentQCRequest) -> list[types.ContentBlock]:
+    response = await run_sync(execute_alignment_qc, request, tools=_tool_paths(), exec_cfg=EXEC_CFG)
+    return _json_content(response)
 
 
-async def qc_alignment_tool(
-    path: str,
-    include_hist: bool = True,
-    flags: dict | None = None,
-) -> list[types.TextContent]:
-    """Run cramino stats on a BAM/CRAM alignment."""
-    stats = await run_sync(
-        qc_alignment,
-        path,
-        tools=_tool_paths(),
-        include_hist=include_hist,
-        flags=flags,
-    )
-    return _json_content(serialize_model(stats), tool_name="cramino")
+async def coverage_qc_tool(request: CoverageQCRequest) -> list[types.ContentBlock]:
+    response = await run_sync(execute_coverage_qc, request, tools=_tool_paths(), exec_cfg=EXEC_CFG)
+    return _json_content(response)
 
 
-async def qc_reads_tool(path: str, flags: dict | None = None) -> list[types.TextContent]:
-    """Run nanoq stats on a FASTQ file."""
-    stats = await run_sync(qc_reads, path, tools=_tool_paths(), flags=flags)
-    return _json_content(serialize_model(stats), tool_name="nanoq")
+async def variant_qc_tool(request: VariantQCRequest) -> list[types.ContentBlock]:
+    response = await run_sync(execute_variant_qc, request, tools=_tool_paths(), exec_cfg=EXEC_CFG)
+    return _json_content(response)
 
 
-async def filter_reads_tool(
-    path: str,
-    output_fastq: str | None = None,
-    flags: dict | None = None,
-) -> list[types.TextContent]:
-    """Filter/trim reads with chopper."""
-    report = await run_sync(filter_reads, path, tools=_tool_paths(), output_fastq=output_fastq, flags=flags)
-    return _json_content(serialize_model(report), tool_name="chopper")
+async def environment_status_tool(request: EnvironmentStatusRequest) -> list[types.ContentBlock]:
+    response = await run_sync(execute_environment_status, request, tools=_tool_paths())
+    return _json_content(response)
 
 
-async def read_length_distribution_tool(path: str, flags: dict | None = None) -> list[types.TextContent]:
-    """Return length percentiles/histogram from nanoq."""
-    report = await run_sync(read_length_distribution, path, tools=_tool_paths(), flags=flags)
-    return _json_content(serialize_model(report), tool_name="nanoq")
+async def header_info_tool(request: HeaderInfoRequest) -> list[types.ContentBlock]:
+    response = await run_sync(execute_header_info, request, tools=_tool_paths(), exec_cfg=EXEC_CFG)
+    return _json_content(response)
 
 
-async def qscore_distribution_tool(path: str, flags: dict | None = None) -> list[types.TextContent]:
-    """Return q-score distribution/histogram from nanoq."""
-    report = await run_sync(qscore_distribution, path, tools=_tool_paths(), flags=flags)
-    return _json_content(serialize_model(report), tool_name="nanoq")
+async def bed_qc_tool(request: BedQCRequest) -> list[types.ContentBlock]:
+    response = await run_sync(execute_bed_qc, request, tools=_tool_paths(), exec_cfg=EXEC_CFG)
+    return _json_content(response)
 
 
-async def read_length_distribution_bam_tool(path: str, flags: dict | None = None) -> list[types.TextContent]:
-    """Return length percentiles/histogram from BAM/CRAM via streaming nanoq."""
-    report = await read_length_distribution_bam(path, tools=_tool_paths(), flags=flags)
-    return _json_content(serialize_model(report), tool_name="nanoq")
+async def run_summary_tool(request: RunSummaryRequest) -> list[types.ContentBlock]:
+    response = await run_sync(execute_run_summary, request, tools=_tool_paths(), exec_cfg=EXEC_CFG)
+    return _json_content(response)
 
 
-async def qscore_distribution_bam_tool(path: str, flags: dict | None = None) -> list[types.TextContent]:
-    """Return q-score distribution/histogram from BAM/CRAM via streaming nanoq."""
-    report = await qscore_distribution_bam(path, tools=_tool_paths(), flags=flags)
-    return _json_content(serialize_model(report), tool_name="nanoq")
+async def filter_reads_tool(request: FilterReadsRequest) -> list[types.ContentBlock]:
+    response = await run_sync(execute_filter_reads, request, tools=_tool_paths(), exec_cfg=EXEC_CFG)
+    return _json_content(response)
 
 
-async def coverage_stats_tool(
-    path: str,
-    window: int | None = None,
-    low_cov_threshold: float | None = None,
-    flags: dict | None = None,
-) -> list[types.TextContent]:
-    """Compute coverage with mosdepth."""
-    report = await run_sync(
-        coverage_stats,
-        path,
-        tools=_tool_paths(),
-        window=window,
-        low_cov_threshold=low_cov_threshold,
-        flags=flags,
-    )
-    return _json_content(serialize_model(report), tool_name="mosdepth")
-
-
-async def igv_snapshot_tool(
-    genome: str | None = None,
-    tracks: list[str] | None = None,
-    regions: list[dict] | str | None = None,
-    output_dir: str | None = None,
-    batch_file: str | None = None,
-    compact: str = "squish",
-    color_by: str | None = None,
-    group_by: str | None = None,
-    snapshot_format: str = "png",
-    min_snapshot_width: int = 0,
-    extra_commands: list[str] | None = None,
-    extra_preferences: dict[str, str] | None = None,
-    small_indels_show: bool = False,
-    small_indels_threshold: int = 100,
-    allele_threshold: float = 0.2,
-) -> list[types.TextContent]:
-    """Generate IGV snapshots via containerized IGV."""
-    result = await run_sync(
-        generate_igv_snapshots,
-        genome=genome,
-        tracks=tracks or [],
-        regions=regions or [],
-        output_dir=output_dir,
-        batch_file=batch_file,
-        compact=compact,
-        color_by=color_by,
-        group_by=group_by,
-        snapshot_format=snapshot_format,  # type: ignore[arg-type]
-        min_snapshot_width=min_snapshot_width,
-        extra_commands=extra_commands,
-        extra_preferences=extra_preferences,
-        small_indels_show=small_indels_show,
-        small_indels_threshold=small_indels_threshold,
-        allele_threshold=allele_threshold,
-        tools=_tool_paths(),
-        exec_cfg=EXEC_CFG,
-    )
-    return _json_content(serialize_model(result), tool_name="igv_snapshot_tool")
-
-
-async def alignment_error_profile_tool(path: str, flags: dict | None = None) -> list[types.TextContent]:
-    """Parse error profile from samtools stats."""
-    report = await run_sync(alignment_error_profile, path, tools=_tool_paths(), flags=flags)
-    return _json_content(serialize_model(report), tool_name="samtools")
-
-
-async def alignment_summary_tool(
-    path: str,
-    include_coverage: bool = True,
-    include_hist: bool = True,
-    include_error_profile: bool = False,
-    coverage_window: int | None = None,
-    coverage_low_cov_threshold: float | None = None,
-    coverage_flags: dict | None = None,
-    cramino_flags: dict | None = None,
-    error_profile_flags: dict | None = None,
-) -> list[types.TextContent]:
-    """Aggregate cramino stats + mosdepth + samtools error profile."""
-    report = await run_sync(
-        alignment_summary,
-        path,
-        include_coverage=include_coverage,
-        include_hist=include_hist,
-        include_error_profile=include_error_profile,
-        coverage_window=coverage_window,
-        coverage_low_cov_threshold=coverage_low_cov_threshold,
-        coverage_flags=coverage_flags,
-        cramino_flags=cramino_flags,
-        error_profile_flags=error_profile_flags,
-        tools=_tool_paths(),
-    )
-    return _json_content(serialize_model(report), tool_name="alignment_summary_tool")
-
-
-async def header_metadata_tool(
-    path: str,
-    file_type: str | None = None,
-    flags: dict | None = None,
-    max_lines: int | None = None,
-) -> list[types.TextContent]:
-    """Extract header metadata from BAM/CRAM/VCF and return JSON + summary."""
-    meta = await run_sync(
-        header_metadata_lookup,
-        path,
-        file_type=file_type,
-        flags=flags,
-        tools=_tool_paths(),
-        max_lines=max_lines,
-    )
-    payload = serialize_model(meta)
-    payload["provenance"] = _build_provenance("header_metadata_tool")
-    summary = meta.summary or ""
-    return [
-        types.TextContent(type="text", text=summary),
-        types.TextContent(type="text", text=json.dumps(payload, ensure_ascii=False, indent=2)),
-    ]
-
-
-async def qc_bed_tool(path: str) -> list[types.TextContent]:
-    """Validate and QC a BED file."""
-    report = await run_sync(qc_bed, path, tools=_tool_paths(), exec_cfg=EXEC_CFG)
-    return _json_content(serialize_model(report), tool_name="qc_bed_tool")
-
-
-async def sequencing_summary_tool(path: str) -> list[types.TextContent]:
-    """Parse ONT sequencing summary file and compute statistics."""
-    stats = await run_sync(sequencing_summary, path, tools=_tool_paths(), exec_cfg=EXEC_CFG)
-    return _json_content(serialize_model(stats), tool_name="sequencing_summary_tool")
-
-
-async def qc_variants_tool(
-    path: str,
-    include_snps: bool = True,
-    include_indels: bool = True,
-    flags: dict | None = None,
-) -> list[types.TextContent]:
-    """Run VCF QC using bcftools stats."""
-    stats = await run_sync(
-        qc_variants,
-        path,
-        include_snps=include_snps,
-        include_indels=include_indels,
-        tools=_tool_paths(),
-        flags=flags,
-        exec_cfg=EXEC_CFG,
-    )
-    return _json_content(serialize_model(stats), tool_name="bcftools")
-
-
-async def targeted_coverage_tool(
-    bam_path: str,
-    gene_name: str | None = None,
-    location: str | None = None,
-    annotation_path: str | None = None,
-    bed_path: str | None = None,
-) -> list[types.TextContent]:
-    """Compute targeted coverage for specified genomic regions using mosdepth."""
-    reports = await run_sync(
-        targeted_coverage,
-        bam_path=bam_path,
-        gene_name=gene_name,
-        location=location,
-        annotation_path=annotation_path,
-        bed_path=bed_path,
-        tools=_tool_paths(),
-        exec_cfg=EXEC_CFG,
-    )
-    # Serialize list of reports directly (no wrapper object)
-    payload = [serialize_model(report) for report in reports]
-    return _json_content(payload, tool_name="mosdepth")
-
-
-async def regional_alignment_stats_tool(
-    path: str,
-    regions: list[dict],
-    reference_path: str | None = None,
-    exclude_flags: int = 1796,
-    min_mapq: int = 0,
-) -> list[types.TextContent]:
-    """Collect alignment counts, MAPQ and in-interval base qualities in one indexed pass."""
-    result = await run_sync(
-        regional_alignment_stats,
-        path,
-        regions,
-        reference_path=reference_path,
-        exclude_flags=exclude_flags,
-        min_mapq=min_mapq,
-        tools=_tool_paths(),
-        exec_cfg=EXEC_CFG,
-    )
-    return _json_content(result, tool_name="samtools")
+async def igv_snapshots_tool(request: IgvSnapshotsRequest) -> list[types.ContentBlock]:
+    response = await run_sync(execute_igv_snapshots, request, tools=_tool_paths(), exec_cfg=EXEC_CFG)
+    return _json_content(response)
 
 
 @dataclass(frozen=True)
 class ToolSpec:
     name: str
     description: str
-    handler: Callable
-    schema: dict
+    handler: Callable[..., Awaitable[Sequence[types.ContentBlock]]]
+    schema: dict[str, object]
     metadata: dict[str, object]
 
 
-# Common schema fragments
-_PATH_PROP = {"type": "string", "description": "Path to the input file"}
-_FLAGS_PROP = {"type": "object", "description": "Optional CLI flags to pass to the underlying tool"}
-
-
-def _max_threads(*vals: int | None) -> int:
-    candidates = [v for v in vals if v is not None]
+def _max_threads(*values: int | None) -> int:
+    candidates = [value for value in values if value is not None]
     return max(candidates) if candidates else 0
 
 
-_SUMMARY_TIMEOUT = max(
-    EXEC_CFG.timeout_for("cramino"),
-    EXEC_CFG.timeout_for("mosdepth"),
-    EXEC_CFG.timeout_for("samtools"),
-)
-_SUMMARY_THREADS = _max_threads(
-    EXEC_CFG.threads_for("cramino"),
-    EXEC_CFG.threads_for("mosdepth"),
-    EXEC_CFG.threads_for("samtools"),
-)
-
-_TOOL_SPECS = [
-    ToolSpec(
-        name="env_status",
-        description="Check availability of required CLI tools",
-        handler=env_status,
-        schema={"type": "object", "properties": {}},
-        metadata={
-            "runtime_hint": "instant (<1s)",
-            "io_hint": "No inputs; checks PATH for required CLI tools",
-            "timeout_seconds": 30,
-        },
-    ),
-    ToolSpec(
-        name="qc_alignment_tool",
-        description="Run cramino stats on a BAM/CRAM alignment",
-        handler=qc_alignment_tool,
-        schema={
-            "type": "object",
-            "properties": {
-                "path": {**_PATH_PROP, "description": "Path to BAM/CRAM alignment file"},
-                "include_hist": {
-                    "type": "boolean",
-                    "description": "Include read-length and alignment-accuracy bins with read counts and base totals",
-                    "default": True,
-                },
-                "flags": _FLAGS_PROP,
-            },
-            "required": ["path"],
-        },
-        metadata={
-            "runtime_hint": "medium (≈1-3 min for 1-5 GB BAM/CRAM)",
-            "io_hint": "Reads BAM/CRAM; optional histograms",
-            "default_threads": EXEC_CFG.threads_for("cramino"),
-            "timeout_seconds": EXEC_CFG.timeout_for("cramino"),
-            "when_to_use": "Alignment-level stats via cramino; use when you need read-length/identity summaries.",
-        },
-    ),
-    ToolSpec(
-        name="qc_reads_fastq_tool",
-        description="Run nanoq stats on a FASTQ file",
-        handler=qc_reads_tool,
-        schema={
-            "type": "object",
-            "properties": {"path": {**_PATH_PROP, "description": "Path to FASTQ file"}, "flags": _FLAGS_PROP},
-            "required": ["path"],
-        },
-        metadata={
-            "runtime_hint": "fast-medium (tens of seconds for 1-2 GB FASTQ)",
-            "io_hint": "Reads FASTQ; returns read-level QC metrics",
-            "default_threads": EXEC_CFG.threads_for("nanoq"),
-            "timeout_seconds": EXEC_CFG.timeout_for("nanoq"),
-            "when_to_use": "Quick QC for raw reads with nanoq; combine with recipes for strict/lenient QC.",
-        },
-    ),
-    ToolSpec(
-        name="filter_reads_fastq_tool",
-        description="Filter/trim FASTQ reads with chopper",
-        handler=filter_reads_tool,
-        schema={
-            "type": "object",
-            "properties": {
-                "path": {**_PATH_PROP, "description": "Path to input FASTQ file"},
-                "output_fastq": {
-                    "type": "string",
-                    "description": (
-                        "Filtered FASTQ path; names ending .gz (case-insensitive) write gzip. "
-                        "BGZF and other recognized compression suffixes are unsupported. "
-                        "Omit for temporary plain FASTQ output."
-                    ),
-                },
-                "flags": _FLAGS_PROP,
-            },
-            "required": ["path"],
-        },
-        metadata={
-            "runtime_hint": "medium (minutes for multi-GB FASTQ, depends on flags)",
-            "io_hint": "Reads FASTQ, writes plain or gzip FASTQ; returns command, params, and output_fastq",
-            "default_threads": EXEC_CFG.threads_for("chopper"),
-            "timeout_seconds": EXEC_CFG.timeout_for("chopper"),
-            "when_to_use": (
-                "Trim/filter ONT reads with chopper; specify output_fastq if persistence is needed. "
-                "Run qc_reads_fastq_tool on the output for read statistics."
-            ),
-        },
-    ),
-    ToolSpec(
-        name="read_length_distribution_fastq_tool",
-        description="FASTQ: length percentiles/histogram via nanoq",
-        handler=read_length_distribution_tool,
-        schema={
-            "type": "object",
-            "properties": {"path": {**_PATH_PROP, "description": "Path to FASTQ file"}, "flags": _FLAGS_PROP},
-            "required": ["path"],
-        },
-        metadata={
-            "runtime_hint": "fast-medium (reuses nanoq stats; tens of seconds)",
-            "io_hint": "Reads FASTQ; returns percentiles + histogram",
-            "default_threads": EXEC_CFG.threads_for("nanoq"),
-            "timeout_seconds": EXEC_CFG.timeout_for("nanoq"),
-            "when_to_use": "Get length percentiles/histogram without full QC payload.",
-        },
-    ),
-    ToolSpec(
-        name="read_length_distribution_bam_tool",
-        description="BAM/CRAM: length percentiles/histogram via samtools fastq -> nanoq streaming",
-        handler=read_length_distribution_bam_tool,
-        schema={
-            "type": "object",
-            "properties": {
-                "path": {**_PATH_PROP, "description": "Path to BAM/CRAM alignment file"},
-                "flags": _FLAGS_PROP,
-            },
-            "required": ["path"],
-        },
-        metadata={
-            "runtime_hint": "medium (streams BAM/CRAM through samtools fastq + nanoq)",
-            "io_hint": "Streams BAM/CRAM to FASTQ; returns percentiles + histogram",
-            "default_threads": EXEC_CFG.threads_for("nanoq"),
-            "timeout_seconds": max(EXEC_CFG.timeout_for("samtools"), EXEC_CFG.timeout_for("nanoq")),
-            "when_to_use": "Length percentiles/histogram from BAM/CRAM when FASTQ is not available.",
-        },
-    ),
-    ToolSpec(
-        name="qscore_distribution_fastq_tool",
-        description="FASTQ: q-score histogram via nanoq",
-        handler=qscore_distribution_tool,
-        schema={
-            "type": "object",
-            "properties": {"path": {**_PATH_PROP, "description": "Path to FASTQ file"}, "flags": _FLAGS_PROP},
-            "required": ["path"],
-        },
-        metadata={
-            "runtime_hint": "fast-medium (reuses nanoq stats; tens of seconds)",
-            "io_hint": "Reads FASTQ; returns q-score histogram",
-            "default_threads": EXEC_CFG.threads_for("nanoq"),
-            "timeout_seconds": EXEC_CFG.timeout_for("nanoq"),
-            "when_to_use": "Retrieve q-score distribution quickly; same cost as qc_reads.",
-        },
-    ),
-    ToolSpec(
-        name="qscore_distribution_bam_tool",
-        description="BAM/CRAM: q-score histogram via samtools fastq -> nanoq streaming",
-        handler=qscore_distribution_bam_tool,
-        schema={
-            "type": "object",
-            "properties": {
-                "path": {**_PATH_PROP, "description": "Path to BAM/CRAM alignment file"},
-                "flags": _FLAGS_PROP,
-            },
-            "required": ["path"],
-        },
-        metadata={
-            "runtime_hint": "medium (streams BAM/CRAM through samtools fastq + nanoq)",
-            "io_hint": "Streams BAM/CRAM to FASTQ; returns q-score histogram",
-            "default_threads": EXEC_CFG.threads_for("nanoq"),
-            "timeout_seconds": max(EXEC_CFG.timeout_for("samtools"), EXEC_CFG.timeout_for("nanoq")),
-            "when_to_use": "Q-score distribution from BAM/CRAM when FASTQ is not available.",
-        },
-    ),
-    ToolSpec(
-        name="coverage_stats_tool",
-        description=(
-            "Compute coverage with mosdepth (BAM/CRAM). Parses summary.txt only; ignores per-base/quantized outputs."
+_CONTRACTS = api_v2_contracts()
+_REQUEST_MODELS: dict[str, type[BaseModel]] = {name: contract.request_model for name, contract in _CONTRACTS.items()}
+_HANDLERS: dict[str, Callable[..., Awaitable[Sequence[types.ContentBlock]]]] = {
+    "read_qc": read_qc_tool,
+    "alignment_qc": alignment_qc_tool,
+    "coverage_qc": coverage_qc_tool,
+    "variant_qc": variant_qc_tool,
+    "environment_status": environment_status_tool,
+    "header_info": header_info_tool,
+    "bed_qc": bed_qc_tool,
+    "run_summary": run_summary_tool,
+    "filter_reads": filter_reads_tool,
+    "igv_snapshots": igv_snapshots_tool,
+}
+_DESCRIPTIONS = {
+    "read_qc": "Read length and quality QC for FASTQ or selected complete sequences from BAM/CRAM",
+    "alignment_qc": "Selected-record alignment counts, MAPQ, aligned-base quality, identity, and error metrics",
+    "coverage_qc": "Indexed BAM/CRAM depth and breadth for contigs, requested intervals, or windows",
+    "variant_qc": "BCF/VCF general, SNP, and indel QC with optional regional grouping",
+    "environment_status": "Check availability and resolved paths for the required native tools",
+    "header_info": "Extract BAM/CRAM/SAM/VCF header metadata",
+    "bed_qc": "Validate BED structure and summarize accepted intervals",
+    "run_summary": "Summarize an ONT sequencing-summary TSV",
+    "filter_reads": "Filter or trim FASTQ reads with atomic output publication",
+    "igv_snapshots": "Generate IGV snapshots from zero-based half-open regions or a caller batch file",
+}
+_METADATA: dict[str, dict[str, object]] = {
+    "read_qc": {
+        "runtime_hint": "fast to heavy; depends on input format, selected records, and requested distributions",
+        "io_hint": "Reads FASTQ directly or streams selected BAM/CRAM records through samtools and nanoq",
+        "default_threads": _max_threads(EXEC_CFG.threads_for("samtools"), EXEC_CFG.threads_for("nanoq")),
+        "timeout_seconds": max(EXEC_CFG.timeout_for("samtools"), EXEC_CFG.timeout_for("nanoq")),
+        "when_to_use": (
+            "Use for whole stored-read length and quality evidence; regional BAM/CRAM selection keeps "
+            "complete sequences."
         ),
-        handler=coverage_stats_tool,
-        schema={
-            "type": "object",
-            "properties": {
-                "path": {**_PATH_PROP, "description": "Path to BAM/CRAM alignment file"},
-                "window": {"type": "integer", "description": "Window size for coverage calculation"},
-                "low_cov_threshold": {
-                    "type": "number",
-                    "description": "Mark contigs with mean depth below this threshold",
-                },
-                "flags": _FLAGS_PROP,
-            },
-            "required": ["path"],
-        },
-        metadata={
-            "runtime_hint": "medium-heavy (minutes; depends on BAM/CRAM size and window)",
-            "io_hint": "Reads BAM/CRAM; writes temporary outputs only",
-            "default_threads": EXEC_CFG.threads_for("mosdepth"),
-            "timeout_seconds": EXEC_CFG.timeout_for("mosdepth"),
-            "when_to_use": (
-                "Depth-of-coverage summaries via mosdepth (summary.txt only); "
-                "tune window/quantize/fast-mode to control cost."
-            ),
-        },
-    ),
-    ToolSpec(
-        name="igv_snapshot_tool",
-        description=(
-            "Generate IGV screenshots at specified genomic regions. Supports arbitrary IGV commands via "
-            "extra_commands and extra_preferences for full flexibility."
+    },
+    "alignment_qc": {
+        "runtime_hint": "medium to heavy; only requested metric backends run",
+        "io_hint": "Reads BAM/CRAM; regional calls require an existing index",
+        "default_threads": _max_threads(EXEC_CFG.threads_for("samtools"), EXEC_CFG.threads_for("cramino")),
+        "timeout_seconds": max(EXEC_CFG.timeout_for("samtools"), EXEC_CFG.timeout_for("cramino")),
+        "when_to_use": (
+            "Use for alignment-record and aligned-base evidence. Call coverage_qc separately for reference depth."
         ),
-        handler=igv_snapshot_tool,
-        schema={
-            "type": "object",
-            "properties": {
-                "batch_file": {
-                    "type": "string",
-                    "description": "Path to pre-made IGV batch file (bypasses all other options)",
-                },
-                "genome": {"type": "string", "description": "Reference genome (hg38, hg19, or path to .fa)"},
-                "tracks": {"type": "array", "items": {"type": "string"}, "description": "Paths to track files"},
-                "regions": {
-                    "oneOf": [
-                        {"type": "string", "description": "Path to BED file"},
-                        {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "chrom": {"type": "string"},
-                                    "start": {"type": "integer"},
-                                    "end": {"type": "integer"},
-                                    "name": {
-                                        "type": "string",
-                                        "description": "Snapshot filename (without extension)",
-                                    },
-                                    "extra_commands": {
-                                        "type": "array",
-                                        "items": {"type": "string"},
-                                        "description": (
-                                            "IGV commands to run before this snapshot (e.g., 'sort BASE', "
-                                            "'viewaspairs')"
-                                        ),
-                                    },
-                                },
-                                "required": ["chrom", "start", "end"],
-                            },
-                        },
-                    ]
-                },
-                "compact": {"type": "string", "enum": ["expand", "collapse", "squish"], "default": "squish"},
-                "color_by": {
-                    "type": "string",
-                    "description": "IGV colorBy option (e.g., 'BASE_MODIFICATION_C', 'READ_STRAND')",
-                },
-                "group_by": {"type": "string", "description": "IGV group option (e.g., 'TAG HP', 'STRAND')"},
-                "snapshot_format": {"type": "string", "enum": ["png", "svg"], "default": "png"},
-                "output_dir": {"type": "string", "description": "Output directory for snapshots"},
-                "min_snapshot_width": {
-                    "type": "integer",
-                    "default": 0,
-                    "description": "Minimum region width in bp",
-                },
-                "small_indels_show": {"type": "boolean", "default": False},
-                "small_indels_threshold": {"type": "integer", "default": 100},
-                "allele_threshold": {"type": "number", "default": 0.2},
-                "extra_commands": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": (
-                        "Global IGV commands added after track loading (e.g., 'maxPanelHeight 500', 'sort STRAND')"
-                    ),
-                },
-                "extra_preferences": {
-                    "type": "object",
-                    "additionalProperties": {"type": "string"},
-                    "description": (
-                        "Raw IGV preferences as key-value pairs "
-                        "(e.g., {'SAM.SHOW_SOFT_CLIPPED': 'TRUE', 'SAM.FILTER_DUPLICATES': 'TRUE'})"
-                    ),
-                },
-            },
-            "oneOf": [{"required": ["batch_file"]}, {"required": ["genome", "tracks", "regions"]}],
-        },
-        metadata={
-            "runtime_hint": "slow (30s-5min depending on region count)",
-            "io_hint": "Reads BAM/VCF tracks, writes PNG/SVG images",
-            "timeout_seconds": EXEC_CFG.timeout_for("igv"),
-            "when_to_use": (
-                "Generate publication-quality IGV screenshots. Use extra_commands/extra_preferences for advanced IGV "
-                "options not explicitly exposed."
-            ),
-        },
-    ),
-    ToolSpec(
-        name="alignment_error_profile_tool",
-        description="Parse NM-derived error rate and coverage distribution from samtools stats (BAM/CRAM)",
-        handler=alignment_error_profile_tool,
-        schema={
-            "type": "object",
-            "properties": {
-                "path": {**_PATH_PROP, "description": "Path to BAM/CRAM alignment file"},
-                "flags": _FLAGS_PROP,
-            },
-            "required": ["path"],
-        },
-        metadata={
-            "runtime_hint": "medium (1-3 min; scales with BAM/CRAM size)",
-            "io_hint": "Reads BAM/CRAM; uses samtools stats",
-            "default_threads": EXEC_CFG.threads_for("samtools"),
-            "timeout_seconds": EXEC_CFG.timeout_for("samtools"),
-            "when_to_use": (
-                "NM-derived error rate and coverage distribution from samtools stats; opt-in to avoid extra cost."
-            ),
-        },
-    ),
-    ToolSpec(
-        name="alignment_summary_tool",
-        description="Aggregate cramino + mosdepth + samtools stats (BAM/CRAM)",
-        handler=alignment_summary_tool,
-        schema={
-            "type": "object",
-            "properties": {
-                "path": {**_PATH_PROP, "description": "Path to BAM/CRAM alignment file"},
-                "include_coverage": {"type": "boolean", "description": "Include coverage stats", "default": True},
-                "include_hist": {
-                    "type": "boolean",
-                    "description": "Include read-length and alignment-accuracy bins with read counts and base totals",
-                    "default": True,
-                },
-                "include_error_profile": {
-                    "type": "boolean",
-                    "description": "Include samtools stats error profile",
-                    "default": False,
-                },
-                "coverage_window": {"type": "integer", "description": "Window size for coverage calculation"},
-                "coverage_low_cov_threshold": {
-                    "type": "number",
-                    "description": "Mark contigs with mean depth below this threshold",
-                },
-                "coverage_flags": {"type": "object", "description": "Flags for mosdepth coverage tool"},
-                "cramino_flags": {"type": "object", "description": "Flags for cramino alignment tool"},
-                "error_profile_flags": {"type": "object", "description": "Flags for samtools stats error profile"},
-            },
-            "required": ["path"],
-        },
-        metadata={
-            "runtime_hint": "composite (bounded by cramino + mosdepth + samtools)",
-            "io_hint": "Reads BAM/CRAM; aggregates multiple tools",
-            "default_threads": _SUMMARY_THREADS,
-            "timeout_seconds": _SUMMARY_TIMEOUT,
-            "when_to_use": ("One-shot QC combining alignment, coverage, and optional error profile (opt-in)."),
-        },
-    ),
-    ToolSpec(
-        name="header_metadata_tool",
-        description="Extract BAM/CRAM/VCF header metadata",
-        handler=header_metadata_tool,
-        schema={
-            "type": "object",
-            "properties": {
-                "path": {**_PATH_PROP, "description": "Path to BAM/CRAM/VCF file"},
-                "file_type": {
-                    "type": "string",
-                    "enum": ["bam", "cram", "sam", "vcf"],
-                    "description": "Override detected file type",
-                },
-                "flags": {
-                    "type": "object",
-                    "description": "Optional flags for samtools when reading BAM/CRAM headers",
-                },
-                "max_lines": {
-                    "type": "integer",
-                    "description": "Maximum number of VCF header lines to read (guards huge headers)",
-                    "minimum": 1,
-                    "default": 2000,
-                },
-            },
-            "required": ["path"],
-        },
-        metadata={
-            "runtime_hint": "fast (header-only; seconds)",
-            "io_hint": "Reads header via samtools (BAM/CRAM) or text (VCF)",
-            "default_threads": EXEC_CFG.threads_for("samtools"),
-            "timeout_seconds": EXEC_CFG.timeout_for("samtools"),
-            "when_to_use": "Summarize contigs/samples/programs without full QC run.",
-        },
-    ),
-    ToolSpec(
-        name="qc_bed_tool",
-        description="Validate and QC a BED file",
-        handler=qc_bed_tool,
-        schema={
-            "type": "object",
-            "properties": {
-                "path": {**_PATH_PROP, "description": "Path to BED file"},
-            },
-            "required": ["path"],
-        },
-        metadata={
-            "runtime_hint": "fast (pure Python; seconds)",
-            "io_hint": "Reads BED file; validates coordinates and reports issues",
-            "timeout_seconds": 30,
-            "when_to_use": (
-                "Validate BED file format and coordinates before using for targeted coverage or other analyses."
-            ),
-        },
-    ),
-    ToolSpec(
-        name="sequencing_summary_tool",
-        description="Parse ONT sequencing summary file and compute statistics",
-        handler=sequencing_summary_tool,
-        schema={
-            "type": "object",
-            "properties": {
-                "path": {**_PATH_PROP, "description": "Path to ONT sequencing summary TSV file"},
-            },
-            "required": ["path"],
-        },
-        metadata={
-            "runtime_hint": "fast-medium (pure Python; tens of seconds for large summaries)",
-            "io_hint": "Reads sequencing summary TSV; computes yield, N50, Q-scores, yield per hour",
-            "timeout_seconds": 120,
-            "when_to_use": (
-                "Extract run-level statistics from ONT sequencing summary files "
-                "(yield, N50, Q-scores, yield per hour windows)."
-            ),
-        },
-    ),
-    ToolSpec(
-        name="qc_variants_tool",
-        description="Run VCF QC using bcftools stats",
-        handler=qc_variants_tool,
-        schema={
-            "type": "object",
-            "properties": {
-                "path": {**_PATH_PROP, "description": "Path to VCF/BCF file"},
-                "include_snps": {
-                    "type": "boolean",
-                    "description": "Include SNP statistics (count, TS/TV ratio)",
-                    "default": True,
-                },
-                "include_indels": {
-                    "type": "boolean",
-                    "description": "Include indel statistics (count)",
-                    "default": True,
-                },
-                "flags": _FLAGS_PROP,
-            },
-            "required": ["path"],
-        },
-        metadata={
-            "runtime_hint": "medium (1-5 min; scales with VCF size)",
-            "io_hint": "Reads VCF/BCF; uses bcftools stats",
-            "default_threads": EXEC_CFG.threads_for("bcftools"),
-            "timeout_seconds": EXEC_CFG.timeout_for("bcftools"),
-            "when_to_use": "Variant-level QC statistics from VCF files (SNP/indel counts, TS/TV ratio, singletons).",
-        },
-    ),
-    ToolSpec(
-        name="targeted_coverage_tool",
-        description="Validate target intervals with samtools, then compute coverage with mosdepth",
-        handler=targeted_coverage_tool,
-        schema={
-            "type": "object",
-            "properties": {
-                "bam_path": {**_PATH_PROP, "description": "Path to BAM/CRAM alignment file"},
-                "gene_name": {
-                    "type": "string",
-                    "description": "Gene name to look up in annotation (requires annotation_path)",
-                },
-                "location": {
-                    "type": "string",
-                    "description": "0-based, end-exclusive location 'chr:start-end' (e.g., 'chr1:1000-2000')",
-                },
-                "annotation_path": {
-                    "type": "string",
-                    "description": "Path to GFF3 annotation file (required when gene_name is provided)",
-                },
-                "bed_path": {
-                    "type": "string",
-                    "description": "Path to BED file with target regions",
-                },
-            },
-            "required": ["bam_path"],
-            "oneOf": [
-                {"required": ["gene_name", "annotation_path"]},
-                {"required": ["location"]},
-                {"required": ["bed_path"]},
+    },
+    "coverage_qc": {
+        "runtime_hint": "medium to heavy; depends on alignment size and requested row count",
+        "io_hint": "Reads indexed BAM/CRAM and creates bounded temporary mosdepth outputs",
+        "default_threads": EXEC_CFG.threads_for("mosdepth"),
+        "timeout_seconds": EXEC_CFG.timeout_for("mosdepth"),
+        "when_to_use": "Use for reference-domain depth and threshold breadth across contigs, intervals, or windows.",
+    },
+    "variant_qc": {
+        "runtime_hint": "medium; scales with VCF/BCF size and grouped regions",
+        "io_hint": "Reads VCF/BCF with bcftools; regional calls require an existing index",
+        "default_threads": EXEC_CFG.threads_for("bcftools"),
+        "timeout_seconds": EXEC_CFG.timeout_for("bcftools"),
+        "when_to_use": "Use for general, SNP, and indel record summaries with explicit overlap selection.",
+    },
+    "environment_status": {
+        "runtime_hint": "instant (<1s)",
+        "io_hint": "No input files; resolves native executables and the IGV runtime",
+        "timeout_seconds": 30,
+        "when_to_use": "Use before a workflow to identify missing native tools.",
+    },
+    "header_info": {
+        "runtime_hint": "fast; header only",
+        "io_hint": "Reads alignment headers through samtools or VCF headers as text/BGZF",
+        "default_threads": EXEC_CFG.threads_for("samtools"),
+        "timeout_seconds": EXEC_CFG.timeout_for("samtools"),
+        "when_to_use": "Use to inspect contigs, samples, and program metadata without a full QC scan.",
+    },
+    "bed_qc": {
+        "runtime_hint": "fast; pure Python",
+        "io_hint": "Reads one BED file without changing it",
+        "timeout_seconds": 30,
+        "when_to_use": "Use before supplying a BED region source to numerical or IGV tools.",
+    },
+    "run_summary": {
+        "runtime_hint": "fast to medium; pure Python",
+        "io_hint": "Reads one ONT sequencing-summary TSV",
+        "timeout_seconds": 120,
+        "when_to_use": "Use for run yield, N50, Q-score, and anchored one-hour yield windows.",
+    },
+    "filter_reads": {
+        "runtime_hint": "medium; depends on FASTQ size and selection",
+        "io_hint": "Reads FASTQ and atomically publishes plain or gzip FASTQ output",
+        "default_threads": EXEC_CFG.threads_for("chopper"),
+        "timeout_seconds": EXEC_CFG.timeout_for("chopper"),
+        "when_to_use": "Use for explicit FASTQ transformation; run read_qc on the resulting file when QC is needed.",
+    },
+    "igv_snapshots": {
+        "runtime_hint": "slow (about 30s to 5min depending on region count)",
+        "io_hint": "Reads reference/tracks and writes PNG or SVG snapshots",
+        "timeout_seconds": EXEC_CFG.timeout_for("igv"),
+        "when_to_use": "Use for visual inspection after numerical QC identifies loci of interest.",
+    },
+}
+_PUBLIC_RECIPES: dict[str, dict[str, object]] = {
+    "alignment_qc": {
+        "alignment_and_coverage": {
+            "description": "Replacement for the retired composite alignment summary",
+            "calls": [
+                {"tool": "alignment_qc", "arguments": {"path": "<alignment.bam>"}},
+                {"tool": "coverage_qc", "arguments": {"path": "<alignment.bam>"}},
             ],
-        },
-        metadata={
-            "runtime_hint": "medium (minutes; depends on BAM size and region count)",
-            "io_hint": "Reads BAM/CRAM + BED/GFF3; uses samtools view -H, then mosdepth with --by and --thresholds",
-            "default_threads": _max_threads(EXEC_CFG.threads_for("samtools"), EXEC_CFG.threads_for("mosdepth")),
-            "timeout_seconds": EXEC_CFG.timeout_for("samtools") + EXEC_CFG.timeout_for("mosdepth"),
-            "when_to_use": (
-                "Compute mean depth for specific genomic regions. Supports three input modes: "
-                "1) gene_name + annotation_path (looks up gene coordinates in GFF3), "
-                "2) location string (e.g., 'chr1:1000-2000'), "
-                "3) bed_path (uses BED file directly)."
+            "note": (
+                "Pass the same regions, reference_path, and compatible selection intent explicitly when both reports "
+                "must describe the same domain."
             ),
-        },
-    ),
-    ToolSpec(
-        name="regional_alignment_stats_tool",
-        description=(
-            "Indexed BAM/CRAM evidence for one or more 0-based, half-open intervals: retained alignment counts, "
-            "MAPQ, and stored base qualities for M, = or X query bases inside each interval. Means are arithmetic "
-            "Phred averages with explicit missing-value denominators, not observed accuracy. Counts are alignment "
-            "records, not unique reads. Duplicate/overlapping requests remain separate; "
-            "do not sum them as unique totals. "
-            "Default mask 1796 excludes unmapped, secondary, QC-failed and duplicate records; supplementary records "
-            "remain included. Mapped-only eligibility always applies. "
-            "MAPQ255 is unavailable, retained only at min_mapq=0. "
-            "Requires an existing alignment index; CRAM also requires an explicit uncompressed local FASTA and .fai. "
-            "Creates only a small temporary BED. A failed or incomplete scan returns an error, never partial metrics. "
-            "Contigs beginning with # are unsupported by BED selection. An aligned one-base record with SAM QUAL * "
-            "is rejected because SAM cannot distinguish Q9 from missing quality in that case."
-        ),
-        handler=regional_alignment_stats_tool,
-        schema={
-            "type": "object",
-            "additionalProperties": False,
-            "properties": {
-                "path": {**_PATH_PROP, "description": "Local indexed BAM/CRAM path"},
-                "regions": {
-                    "type": "array",
-                    "minItems": 1,
-                    "maxItems": MAX_REGIONS,
-                    "description": "Ordered intervals, preserving duplicate coordinates and optional names",
-                    "items": RegionalInterval.model_json_schema(),
-                },
-                "reference_path": {
-                    "type": "string",
-                    "description": "Uncompressed local .fa/.fasta/.fna with existing .fai; required for CRAM",
-                },
-                "exclude_flags": {"type": "integer", "minimum": 0, "maximum": 65535, "default": 1796},
-                "min_mapq": {"type": "integer", "minimum": 0, "maximum": 254, "default": 0},
-            },
-            "required": ["path", "regions"],
-        },
-        metadata={
-            "runtime_hint": "depends on selected indexed blocks, region count and local depth",
-            "io_hint": (
-                "Reads headers and indexed regional records; one temporary BED, "
-                "no alignment copies or automatic indexes"
-            ),
-            "default_threads": EXEC_CFG.threads_for("samtools"),
-            "timeout_seconds": EXEC_CFG.timeout_for("samtools"),
-        },
-    ),
-]
+        }
+    }
+}
 
+
+def _build_spec(contract: ToolContract) -> ToolSpec:
+    return ToolSpec(
+        name=contract.name,
+        description=_DESCRIPTIONS[contract.name],
+        handler=_HANDLERS[contract.name],
+        schema=contract.request_model.model_json_schema(mode="validation"),
+        metadata=_METADATA[contract.name],
+    )
+
+
+_TOOL_SPECS = [_build_spec(contract) for contract in _CONTRACTS.values()]
 TOOL_SPECS: dict[str, ToolSpec] = {spec.name: spec for spec in _TOOL_SPECS}
 
 
 def _tool_description(spec: ToolSpec) -> str:
-    meta = spec.metadata or {}
-    base_desc = spec.description
-
     parts = []
-    if runtime := meta.get("runtime_hint"):
+    if runtime := spec.metadata.get("runtime_hint"):
         parts.append(f"runtime {runtime}")
-    if threads := meta.get("default_threads"):
+    if threads := spec.metadata.get("default_threads"):
         parts.append(f"default threads={threads}")
-    if timeout := meta.get("timeout_seconds"):
+    if timeout := spec.metadata.get("timeout_seconds"):
         parts.append(f"timeout≈{timeout}s")
     suffix = "; ".join(parts)
-    return f"{base_desc} ({suffix})" if suffix else base_desc
+    return f"{spec.description} ({suffix})" if suffix else spec.description
 
 
 def _tool_meta(_spec: ToolSpec) -> dict[str, object]:
     return {"config_scope": _CONFIG_SCOPE_NOTE}
 
 
-def _error_result(
-    kind: str, message: str, tool: str | None = None, details: dict | None = None
+def _validation_result(tool: str, error: ValidationError | ValueError | FlagValidationError) -> types.CallToolResult:
+    if isinstance(error, ValidationError):
+        issues = []
+        for entry in error.errors(include_url=False, include_context=False, include_input=False):
+            message = str(entry["msg"])
+            if message.startswith("Value error, "):
+                message = message.removeprefix("Value error, ")
+            issues.append(
+                ValidationIssue(
+                    location=[value if isinstance(value, (str, int)) else str(value) for value in entry["loc"]],
+                    message=message,
+                    code=str(entry["type"]),
+                )
+            )
+    else:
+        issues = [ValidationIssue(location=[], message=str(error), code="value_error")]
+    payload = ValidationErrorResponse(tool=tool, message="Request validation failed", issues=issues)
+    return types.CallToolResult(content=_json_content(payload), is_error=True)
+
+
+def _execution_result(
+    tool: str,
+    error: BaseException,
+    *,
+    stage: str | None = None,
+    backend: str | None = None,
+    exit_code: int | None = None,
+    timed_out: bool = False,
 ) -> types.CallToolResult:
-    """Return a structured MCP error payload."""
-    request_id = _REQUEST_ID.get()
-    payload = {
-        "kind": kind,
-        "message": message,
-        "tool": tool,
-        "details": details or {},
-    }
-    if request_id:
-        payload["request_id"] = request_id
-    return types.CallToolResult(
-        content=[types.TextContent(type="text", text=json.dumps(payload, ensure_ascii=False, indent=2))],
-        is_error=True,
+    resolved_stage = stage or str(getattr(error, "stage", "execution"))
+    payload = ExecutionErrorResponse(
+        tool=tool,
+        stage=resolved_stage,
+        message=str(error),
+        backend=backend or resolved_stage,
+        exit_code=exit_code,
+        timed_out=timed_out,
+        cancelled=False,
     )
+    return types.CallToolResult(content=_json_content(payload), is_error=True)
 
 
 async def list_tools() -> list[types.Tool]:
@@ -1011,171 +368,145 @@ async def list_tools() -> list[types.Tool]:
 async def dispatch_tool(name: str, arguments: dict | None) -> types.CallToolResult:
     spec = TOOL_SPECS.get(name)
     if spec is None:
-        return _error_result("validation", f"Unknown tool: {name}", tool=name)
+        return _validation_result(name, ValueError(f"Unknown tool: {name}"))
+
+    request_model = _REQUEST_MODELS.get(name)
+    try:
+        validated = request_model.model_validate(arguments or {}) if request_model is not None else None
+    except ValidationError as error:
+        return _validation_result(name, error)
 
     request_id = str(uuid.uuid4())[:8]
-    _REQUEST_ID.set(request_id)
-    _REQUEST_START.set(time.monotonic())
-    threads_hint = EXEC_CFG.threads_for(name)
-    timeout_hint = EXEC_CFG.timeout_for(name)
-
+    request_token = _REQUEST_ID.set(request_id)
+    started = time.monotonic()
     _log_event(
         logging.INFO,
         "tool_call_start",
         tool=name,
         args=arguments,
-        threads=threads_hint,
-        timeout=timeout_hint,
         concurrency_limit=EXEC_CFG.max_concurrent_operations,
     )
-
     try:
         if _CONCURRENCY_SEM:
             async with _CONCURRENCY_SEM:
-                result = await spec.handler(**(arguments or {}))
+                if request_model is not None:
+                    result = await spec.handler(request=validated)
+                else:
+                    result = await spec.handler(**(arguments or {}))
         else:
-            result = await spec.handler(**(arguments or {}))
-    except FlagValidationError as exc:
-        _log_event(logging.WARNING, "validation_error", tool=name, error=str(exc))
-        return _error_result("validation", str(exc), tool=name)
-    except FileNotFoundError as exc:
-        _log_event(logging.WARNING, "not_found", tool=name, error=str(exc))
-        return _error_result("not_found", str(exc), tool=name)
-    except ValueError as exc:
-        _log_event(logging.WARNING, "validation_error", tool=name, error=str(exc))
-        return _error_result("validation", str(exc), tool=name)
-    except TypeError as exc:
-        _log_event(logging.WARNING, "type_error", tool=name, error=str(exc))
-        return _error_result("validation", f"Invalid arguments for {name}: {exc}", tool=name)
-    except Exception as exc:  # pragma: no cover
-        _log_event(logging.ERROR, "runtime_error", tool=name, error=str(exc))
-        return _error_result("runtime", str(exc), tool=name)
+            if request_model is not None:
+                result = await spec.handler(request=validated)
+            else:
+                result = await spec.handler(**(arguments or {}))
+    except ValidationError as error:
+        _log_event(logging.WARNING, "validation_error", tool=name, error=str(error))
+        return _validation_result(name, error)
+    except (FlagValidationError, ValueError) as error:
+        _log_event(logging.WARNING, "validation_error", tool=name, error=str(error))
+        return _validation_result(name, error)
+    except PipelineStageError as error:
+        _log_event(logging.ERROR, "execution_error", tool=name, stage=error.stage, error=str(error))
+        return _execution_result(
+            name,
+            error,
+            stage=error.stage,
+            backend=error.stage,
+            exit_code=error.result.returncode,
+        )
+    except PipelineOutputLimitError as error:
+        _log_event(logging.ERROR, "execution_error", tool=name, stage=error.stage, error=str(error))
+        return _execution_result(name, error, stage=error.stage, backend=error.stage)
+    except TimeoutError as error:
+        _log_event(logging.ERROR, "execution_timeout", tool=name, error=str(error))
+        return _execution_result(name, error, timed_out=True)
+    except FileNotFoundError as error:
+        _log_event(logging.WARNING, "input_not_found", tool=name, error=str(error))
+        return _execution_result(name, error, stage="input_validation", backend="server")
+    except Exception as error:  # pragma: no cover - exercised through wire subprocesses
+        _log_event(logging.ERROR, "execution_error", tool=name, error=str(error))
+        return _execution_result(name, error)
     finally:
-        duration_ms = round((time.monotonic() - _REQUEST_START.get()) * 1000, 2)
+        duration_ms = round((time.monotonic() - started) * 1000, 2)
         _log_event(logging.INFO, "tool_call_finished", tool=name, duration_ms=duration_ms)
+        _REQUEST_ID.reset(request_token)
 
     if isinstance(result, types.CallToolResult):
         return result
-
-    return types.CallToolResult(content=result, is_error=False)
+    return types.CallToolResult(content=list(result), is_error=False)
 
 
 async def list_resource_templates() -> list[types.ResourceTemplate]:
     templates = [
         types.ResourceTemplate(
-            name="tool-flags",
-            uri_template="tool://flags/{tool}",
-            description="Flag schemas for supported CLI tools",
-            mime_type="application/json",
-        ),
-        types.ResourceTemplate(
             name="tool-recipes",
             uri_template="tool://recipes/{tool}",
-            description="Flag recipes/presets for supported CLI tools",
+            description="Public API v2 workflow recipes",
             mime_type="application/json",
         ),
         types.ResourceTemplate(
             name="tool-guidance",
             uri_template="tool://guidance/{tool}",
-            description="Runtime guidance and defaults for supported tools",
+            description="Runtime guidance and defaults for public API v2 tools",
             mime_type="application/json",
         ),
     ]
-    if _ENABLE_CACHE_STATS:
-        templates.append(
-            types.ResourceTemplate(
-                name="cache-stats",
-                uri_template="tool://stats/cache",
-                description="Cache hit/miss/eviction counters for streaming nanoq",
-                mime_type="application/json",
-            )
-        )
     return templates
 
 
 async def list_resources() -> list[types.Resource]:
-    resources: list[types.Resource] = []
-    for tool in TOOL_FLAGS.keys():
-        resources.append(
-            types.Resource(
-                name=f"{tool} flags",
-                uri=f"tool://flags/{tool}",
-                description=f"{tool} flag schema",
-                mime_type="application/json",
-            )
+    resources = [
+        types.Resource(
+            name=f"{tool_name} guidance",
+            uri=f"tool://guidance/{tool_name}",
+            description="Runtime guidance, defaults, and request schema",
+            mime_type="application/json",
         )
-        if get_tool_recipes(tool):
-            resources.append(
-                types.Resource(
-                    name=f"{tool} recipes",
-                    uri=f"tool://recipes/{tool}",
-                    description=f"{tool} flag recipes",
-                    mime_type="application/json",
-                )
-            )
-    for tool_name in TOOL_SPECS.keys():
-        resources.append(
-            types.Resource(
-                name=f"{tool_name} guidance",
-                uri=f"tool://guidance/{tool_name}",
-                description="Runtime guidance and defaults for tool selection",
-                mime_type="application/json",
-            )
+        for tool_name in TOOL_SPECS
+    ]
+    resources.extend(
+        types.Resource(
+            name=f"{tool_name} recipes",
+            uri=f"tool://recipes/{tool_name}",
+            description="Public API v2 workflow recipes",
+            mime_type="application/json",
         )
-    if _ENABLE_CACHE_STATS:
-        resources.append(
-            types.Resource(
-                name="nanoq cache stats",
-                uri="tool://stats/cache",
-                description="Cache hit/miss/eviction counters for nanoq",
-                mime_type="application/json",
-            )
-        )
+        for tool_name in _PUBLIC_RECIPES
+    )
     return resources
 
 
 async def read_resource(uri: str) -> list[types.TextResourceContents]:
     uri_str = str(uri)
-    if uri_str.startswith("tool://flags/"):
-        tool = uri_str.split("tool://flags/", 1)[1]
-        payload = json.dumps({"tool": tool, "flags": [flag.model_dump() for flag in get_tool_flags(tool)]}, indent=2)
-        return [types.TextResourceContents(uri=uri_str, text=payload, mime_type="application/json")]
-
     if uri_str.startswith("tool://recipes/"):
-        tool = uri_str.split("tool://recipes/", 1)[1]
-        payload = json.dumps({"tool": tool, "recipes": get_tool_recipes(tool)}, indent=2)
+        tool = uri_str.removeprefix("tool://recipes/")
+        recipes = _PUBLIC_RECIPES.get(tool)
+        if recipes is None:
+            raise FileNotFoundError(f"Unknown resource URI: {uri_str}")
+        payload = json.dumps({"tool": tool, "recipes": recipes}, indent=2)
         return [types.TextResourceContents(uri=uri_str, text=payload, mime_type="application/json")]
 
     if uri_str.startswith("tool://guidance/"):
-        tool = uri_str.split("tool://guidance/", 1)[1]
+        tool = uri_str.removeprefix("tool://guidance/")
         spec = TOOL_SPECS.get(tool)
         if spec is None:
             raise FileNotFoundError(f"Unknown resource URI: {uri_str}")
-        meta = spec.metadata or {}
         payload = json.dumps(
             {
                 "tool": tool,
                 "description": spec.description,
-                "runtime_hint": meta.get("runtime_hint"),
-                "io_hint": meta.get("io_hint"),
+                "runtime_hint": spec.metadata.get("runtime_hint"),
+                "io_hint": spec.metadata.get("io_hint"),
                 "defaults": {
-                    "threads": meta.get("default_threads"),
-                    "timeout_seconds": meta.get("timeout_seconds"),
+                    "threads": spec.metadata.get("default_threads"),
+                    "timeout_seconds": spec.metadata.get("timeout_seconds"),
                 },
                 "config_scope": _CONFIG_SCOPE_NOTE,
-                "when_to_use": meta.get("when_to_use"),
-                "schema_uri": f"tool://flags/{tool}" if tool in TOOL_FLAGS else None,
-                "recipes_uri": f"tool://recipes/{tool}" if get_tool_recipes(tool) else None,
+                "when_to_use": spec.metadata.get("when_to_use"),
+                "request_schema": spec.schema,
+                "recipes_uri": f"tool://recipes/{tool}" if tool in _PUBLIC_RECIPES else None,
             },
             indent=2,
         )
-        return [types.TextResourceContents(uri=uri_str, text=payload, mime_type="application/json")]
-
-    if uri_str == "tool://stats/cache":
-        if not _ENABLE_CACHE_STATS:
-            raise FileNotFoundError(f"Unknown resource URI: {uri_str}")
-        stats = get_nanoq_cache_stats()
-        payload = json.dumps({"nanoq_cache": stats}, indent=2)
         return [types.TextResourceContents(uri=uri_str, text=payload, mime_type="application/json")]
 
     raise FileNotFoundError(f"Unknown resource URI: {uri_str}")
@@ -1188,17 +519,12 @@ async def _on_list_tools(
 
 
 async def _on_call_tool(ctx: ServerRequestContext, params: types.CallToolRequestParams) -> types.CallToolResult:
-    # SDK 2's low-level server does not validate advertised input schemas.
-    # Preserve SDK 1's validation and error presentation before dispatch.
     spec = TOOL_SPECS.get(params.name)
-    if spec is not None:
+    if spec is not None and params.name not in _REQUEST_MODELS:
         try:
             jsonschema.validate(instance=params.arguments or {}, schema=spec.schema)
-        except jsonschema.ValidationError as exc:
-            return types.CallToolResult(
-                content=[types.TextContent(type="text", text=f"Input validation error: {exc.message}")],
-                is_error=True,
-            )
+        except jsonschema.ValidationError as error:
+            return _validation_result(params.name, ValueError(error.message))
     return await dispatch_tool(params.name, params.arguments)
 
 
@@ -1230,21 +556,19 @@ server = Server(
 )
 
 
-async def _async_main():
+async def _async_main() -> None:
     asyncio.get_running_loop().set_default_executor(get_executor())
     if _use_compat_stdio():
         async with stdio_server_compat() as (read, write):
-            init_options = server.create_initialization_options()
-            await server.run(read, write, init_options, raise_exceptions=True)
+            await server.run(read, write, server.create_initialization_options(), raise_exceptions=True)
     else:
         from mcp.server.stdio import stdio_server
 
         async with stdio_server() as (read, write):
-            init_options = server.create_initialization_options()
-            await server.run(read, write, init_options, raise_exceptions=True)
+            await server.run(read, write, server.create_initialization_options(), raise_exceptions=True)
 
 
-def main():
+def main() -> None:
     anyio.run(_async_main)
 
 

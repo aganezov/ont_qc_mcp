@@ -335,7 +335,7 @@ def variant_qc(
     tools: ToolPaths | None = None,
     exec_cfg: ExecutionConfig | None = None,
 ) -> VariantQCResponse:
-    """Execute one validated variant-QC request without registering the v2 catalog."""
+    """Execute one validated public variant-QC request."""
     validated = request if isinstance(request, VariantQCRequest) else VariantQCRequest.model_validate(request)
     cfg = exec_cfg or ExecutionConfig()
     tool_paths = tools or ToolPaths()

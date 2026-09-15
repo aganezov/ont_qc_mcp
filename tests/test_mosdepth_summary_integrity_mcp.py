@@ -4,7 +4,7 @@ import json
 import shutil
 import subprocess
 import sys
-from typing import Any, cast
+from typing import cast
 
 import anyio
 import pytest
@@ -18,10 +18,10 @@ from conftest import require_executable_tools
 pytestmark = pytest.mark.integration
 
 
-@pytest.mark.parametrize("mode", ["whole", "window", "by_alias", "disabled_window", "summary"])
+@pytest.mark.parametrize("mode", ["whole", "window"])
 @pytest.mark.parametrize("truncate", [False, True], ids=["intact", "missing-footers"])
 def test_summary_integrity_through_mcp(tmp_path, mcp_server_params, mode, truncate):
-    require_executable_tools(["samtools", "mosdepth", "cramino"])
+    require_executable_tools(["samtools", "mosdepth"])
     sam = tmp_path / "reads.sam"
     bam = tmp_path / "reads.bam"
     sam.write_text(
@@ -57,21 +57,13 @@ def test_summary_integrity_through_mcp(tmp_path, mcp_server_params, mode, trunca
         async with stdio_client(params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                arguments: dict[str, Any] = {"path": str(bam)}
-                tool_name = "coverage_stats_tool"
+                arguments: dict[str, object] = {"path": str(bam)}
                 if mode == "window":
-                    arguments["window"] = 400
-                elif mode == "by_alias":
-                    arguments["flags"] = {"by": 400}
-                elif mode == "disabled_window":
-                    arguments.update(window=400, flags={"window": None})
-                elif mode == "summary":
-                    tool_name = "alignment_summary_tool"
-                    arguments.update(coverage_window=400, include_hist=False)
-                result = await session.call_tool(tool_name, arguments)
+                    arguments["window_size"] = 400
+                result = await session.call_tool("coverage_qc", arguments)
                 proof = json.loads(receipt.read_text())
                 assert proof["returncode"] == 0
-                assert ("--by" in proof["args"]) == (mode in {"window", "by_alias", "summary"})
+                assert ("--by" in proof["args"]) == (mode == "window")
                 assert (proof["original"] != proof["delivered"]) == truncate
                 content = cast(types.TextContent, result.content[0]).text
                 if truncate:
@@ -81,10 +73,6 @@ def test_summary_integrity_through_mcp(tmp_path, mcp_server_params, mode, trunca
                 else:
                     assert not result.is_error, content
                     payload = json.loads(content)
-                    if mode == "summary":
-                        payload = payload["coverage"]
-                    assert [(row["contig"], row["mean_depth"]) for row in payload["coverage_by_contig"]] == [
-                        ("chrA", 2)
-                    ]
+                    assert {(row["chrom"], row["mean_depth"]) for row in payload["rows"]} == {("chrA", 2)}
 
     anyio.run(check)

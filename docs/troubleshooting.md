@@ -1,7 +1,7 @@
 # Troubleshooting
 
 ## CLI not found
-- Run `env_status` or `scripts/with-env.sh env` to verify PATH.
+- Run `environment_status` or `scripts/with-env.sh env` to verify PATH.
 - Set tool overrides: `NANOQ`, `CHOPPER`, `CRAMINO`, `MOSDEPTH`, `SAMTOOLS`.
 
 ## Timeouts
@@ -18,8 +18,8 @@
 - Use BAM/CRAM streaming tools to avoid temp FASTQ.
 
 ## Errors from MCP calls
-- Errors are returned as JSON `{kind, message, tool, details}`.
-- Check stderr snippets in the message; enable verbose provenance with `MCP_INCLUDE_PROVENANCE=1`.
+- Validation errors are JSON `{kind, tool, message, issues}`; execution errors add `stage`, `backend`, timeout/cancellation state, and `partial_result_returned: false`.
+- Check the failed stage and message. Successful numerical responses always include backend provenance.
 
 ## MCP subprocess hangs (stdio)
 - If MCP handshake works but tool calls hang in a restricted environment, try:
