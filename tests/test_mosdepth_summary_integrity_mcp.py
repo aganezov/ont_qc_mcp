@@ -1,4 +1,4 @@
-"""Reject incomplete output after an otherwise successful real mosdepth run."""
+"""Reject incomplete v2 evidence after an otherwise successful real mosdepth run."""
 
 import json
 import shutil
@@ -19,7 +19,7 @@ pytestmark = pytest.mark.integration
 
 
 @pytest.mark.parametrize("mode", ["whole", "window"])
-@pytest.mark.parametrize("truncate", [False, True], ids=["intact", "missing-footers"])
+@pytest.mark.parametrize("truncate", [False, True], ids=["intact", "missing-positive-contig"])
 def test_summary_integrity_through_mcp(tmp_path, mcp_server_params, mode, truncate):
     require_executable_tools(["samtools", "mosdepth"])
     sam = tmp_path / "reads.sam"
@@ -36,18 +36,20 @@ def test_summary_integrity_through_mcp(tmp_path, mcp_server_params, mode, trunca
     receipt = tmp_path / "mosdepth-receipt.json"
     shim.write_text(
         f"#!{sys.executable}\n"
-        "import json, subprocess, sys\n"
+        "import gzip, json, subprocess, sys\n"
         "from pathlib import Path\n"
         f"result = subprocess.run([{real_mosdepth!r}, *sys.argv[1:]])\n"
         "if result.returncode == 0 and '--version' not in sys.argv:\n"
-        "    summary = Path(sys.argv[-2] + '.mosdepth.summary.txt')\n"
-        "    text = summary.read_text()\n"
+        "    per_base = Path(sys.argv[-2] + '.per-base.bed.gz')\n"
+        "    with gzip.open(per_base, 'rt') as stream:\n"
+        "        text = stream.read()\n"
         "    rows = text.splitlines()\n"
         f"    if {truncate!r}:\n"
-        "        rows = rows[:-(2 if '--by' in sys.argv else 1)]\n"
-        "        summary.write_text('\\n'.join(rows) + '\\n')\n"
+        "        rows = [row for row in rows if not row.startswith('chrA\\t')]\n"
+        "        with gzip.open(per_base, 'wt') as stream:\n"
+        "            stream.write('\\n'.join(rows) + ('\\n' if rows else ''))\n"
         f"    Path({str(receipt)!r}).write_text(json.dumps({{'returncode': result.returncode, "
-        "'args': sys.argv[1:], 'original': text, 'delivered': summary.read_text()}))\n"
+        "'args': sys.argv[1:], 'original': text, 'delivered_rows': rows}))\n"
         "sys.exit(result.returncode)\n"
     )
     shim.chmod(0o755)
@@ -63,13 +65,13 @@ def test_summary_integrity_through_mcp(tmp_path, mcp_server_params, mode, trunca
                 result = await session.call_tool("coverage_qc", arguments)
                 proof = json.loads(receipt.read_text())
                 assert proof["returncode"] == 0
-                assert ("--by" in proof["args"]) == (mode == "window")
-                assert (proof["original"] != proof["delivered"]) == truncate
+                assert "--by" in proof["args"]
+                assert bool(proof["original"]) is True
+                assert (proof["delivered_rows"] == []) == truncate
                 content = cast(types.TextContent, result.content[0]).text
                 if truncate:
                     assert result.is_error, content
-                    assert "Malformed mosdepth summary" in content
-                    assert str(bam) in content
+                    assert "missing or inconsistent with positive-depth evidence" in content
                 else:
                     assert not result.is_error, content
                     payload = json.loads(content)
