@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - **Breaking:** replace the legacy 18-tool MCP surface with the ten-tool API v2 catalog: `read_qc`, `alignment_qc`, `coverage_qc`, `variant_qc`, `environment_status`, `header_info`, `bed_qc`, `run_summary`, `filter_reads`, and `igv_snapshots`. Requests now use strict typed selection, metrics, region-source, and native-argument fields; legacy aliases are not registered.
 - Replace the composite alignment-summary endpoint with an explicit `alignment_qc` plus `coverage_qc` recipe at `tool://recipes/alignment_qc`.
 - Migrate the local stdio adapter to MCP SDK 2.2 and validate public requests before worker admission.
+- Add `--reference` to the real-input MCP smoke helper and forward it to alignment and coverage calls for CRAM.
 
 ### Added
 - Add the API v2 `variant_qc` backend for whole-file, overlap-safe combined, and ordered

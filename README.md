@@ -170,7 +170,7 @@ uv uses the committed `uv.lock` for a reproducible env. Plain pip works too:
 - Run the MCP server: `python -m ont_qc_mcp.app_server` (or `ont-qc-mcp` entrypoint)
 - Unit tests only: `scripts/with-env.sh pytest`
 - Full test suite with external CLIs on PATH: `scripts/with-env.sh pytest -m integration` (after CLIs are installed)
-- Smoke-check real files via MCP (writes JSON to stdout or `--out`): `scripts/with-env.sh python scripts/mcp_smoke_real.py --dir /path/to/test_dir`
+- Smoke-check real files via MCP (writes JSON to stdout or `--out`): `scripts/with-env.sh python scripts/mcp_smoke_real.py --dir /path/to/test_dir`. Add `--reference ref.fa` for CRAM input; the FASTA must be uncompressed and indexed.
 - Inspect contract examples and run real-file smoke calls: see `docs/tool-output-examples.md`
 
 ## Notes

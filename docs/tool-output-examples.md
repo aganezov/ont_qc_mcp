@@ -23,4 +23,5 @@ scripts/with-env.sh python scripts/mcp_smoke_real.py --dir /path/to/test_dir
 
 The smoke script calls `environment_status`, `read_qc` for a discovered FASTQ,
 and both `alignment_qc` and `coverage_qc` for a discovered BAM or CRAM. Add
-`--include-error-profile` to request the optional alignment error section.
+`--include-error-profile` to request the optional alignment error section. CRAM
+calls require `--reference` with an indexed, uncompressed FASTA.

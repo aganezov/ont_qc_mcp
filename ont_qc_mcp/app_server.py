@@ -398,12 +398,15 @@ async def dispatch_tool(name: str, arguments: dict | None) -> types.CallToolResu
                 result = await spec.handler(request=validated)
             else:
                 result = await spec.handler(**(arguments or {}))
+    except FlagValidationError as error:
+        _log_event(logging.WARNING, "validation_error", tool=name, error=str(error))
+        return _validation_result(name, error)
     except ValidationError as error:
-        _log_event(logging.WARNING, "validation_error", tool=name, error=str(error))
-        return _validation_result(name, error)
-    except (FlagValidationError, ValueError) as error:
-        _log_event(logging.WARNING, "validation_error", tool=name, error=str(error))
-        return _validation_result(name, error)
+        _log_event(logging.ERROR, "result_validation_error", tool=name, error=str(error))
+        return _execution_result(name, error, stage="result_validation", backend="server")
+    except ValueError as error:
+        _log_event(logging.ERROR, "execution_validation_error", tool=name, error=str(error))
+        return _execution_result(name, error, stage="execution_validation", backend="server")
     except PipelineStageError as error:
         _log_event(logging.ERROR, "execution_error", tool=name, stage=error.stage, error=str(error))
         return _execution_result(

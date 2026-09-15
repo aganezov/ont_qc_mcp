@@ -14,10 +14,12 @@ from ont_qc_mcp.v2_contracts import (
     BedQCRequest,
     CoverageQCRequest,
     EnvironmentStatusRequest,
+    ExecutionErrorResponse,
     FilterReadsRequest,
     HeaderInfoRequest,
     IgvSnapshotsRequest,
     ReadQCRequest,
+    ReadQCResponse,
     RunSummaryRequest,
     ValidationErrorResponse,
     VariantQCRequest,
@@ -106,6 +108,33 @@ async def test_strict_request_validation_happens_before_worker_entry(
     assert result.is_error
     ValidationErrorResponse.model_validate(_payload(result))
     assert not entered
+
+
+@pytest.mark.asyncio
+async def test_post_admission_value_error_is_an_execution_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def failed_run_sync(*args, **kwargs):
+        raise ValueError("Mosdepth per-base output is inconsistent")
+
+    monkeypatch.setattr(app_server, "run_sync", failed_run_sync)
+    result = await app_server.dispatch_tool("coverage_qc", {"path": "reads.bam"})
+    assert result.is_error
+    payload = ExecutionErrorResponse.model_validate(_payload(result))
+    assert payload.stage == "execution_validation"
+    assert payload.backend == "server"
+    assert "per-base output is inconsistent" in payload.message
+
+
+@pytest.mark.asyncio
+async def test_invalid_backend_response_model_is_an_execution_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def failed_run_sync(*args, **kwargs):
+        ReadQCResponse.model_validate({})
+
+    monkeypatch.setattr(app_server, "run_sync", failed_run_sync)
+    result = await app_server.dispatch_tool("read_qc", {"path": "reads.fastq"})
+    assert result.is_error
+    payload = ExecutionErrorResponse.model_validate(_payload(result))
+    assert payload.stage == "result_validation"
+    assert payload.backend == "server"
 
 
 @pytest.mark.asyncio

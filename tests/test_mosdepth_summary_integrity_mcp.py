@@ -71,7 +71,10 @@ def test_summary_integrity_through_mcp(tmp_path, mcp_server_params, mode, trunca
                 content = cast(types.TextContent, result.content[0]).text
                 if truncate:
                     assert result.is_error, content
-                    assert "missing or inconsistent with positive-depth evidence" in content
+                    payload = json.loads(content)
+                    assert payload["kind"] == "execution_error"
+                    assert payload["stage"] == "execution_validation"
+                    assert "missing or inconsistent with positive-depth evidence" in payload["message"]
                 else:
                     assert not result.is_error, content
                     payload = json.loads(content)

@@ -5,6 +5,7 @@ Run a small set of MCP tool calls against real input files.
 Examples:
   scripts/with-env.sh python scripts/mcp_smoke_real.py --dir /path/to/test_dir
   scripts/with-env.sh python scripts/mcp_smoke_real.py --fastq reads.fq.gz --bam aln.bam --out out.json
+  scripts/with-env.sh python scripts/mcp_smoke_real.py --bam aln.cram --reference ref.fa
 """
 
 from __future__ import annotations
@@ -97,6 +98,7 @@ def _build_calls(
     fastq: Path | None,
     bam: Path | None,
     include_error_profile: bool,
+    reference: Path | None = None,
 ) -> list[ToolCall]:
     calls: list[ToolCall] = [ToolCall("environment_status")]
 
@@ -115,8 +117,11 @@ def _build_calls(
         metrics = ["counts", "mapping_quality"]
         if include_error_profile:
             metrics.append("error_profile")
-        calls.append(ToolCall("alignment_qc", {"path": str(bam), "metrics": metrics}))
-        calls.append(ToolCall("coverage_qc", {"path": str(bam)}))
+        shared_arguments = {"path": str(bam)}
+        if reference is not None:
+            shared_arguments["reference_path"] = str(reference)
+        calls.append(ToolCall("alignment_qc", {**shared_arguments, "metrics": metrics}))
+        calls.append(ToolCall("coverage_qc", shared_arguments))
 
     return calls
 
@@ -126,6 +131,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--dir", type=Path, help="Directory to scan for .fq/.fastq and .bam/.cram inputs")
     parser.add_argument("--fastq", type=Path, help="FASTQ(.gz/.bgz) path to use (overrides --dir scan)")
     parser.add_argument("--bam", type=Path, help="BAM/CRAM/SAM path to use (overrides --dir scan)")
+    parser.add_argument(
+        "--reference",
+        type=Path,
+        help="Indexed uncompressed FASTA required when --bam is CRAM",
+    )
     parser.add_argument("--out", type=Path, help="Write JSON output to this file (default: stdout)")
     parser.add_argument(
         "--include-error-profile",
@@ -166,6 +176,7 @@ def main() -> int:
         fastq=fastq,
         bam=bam,
         include_error_profile=bool(args.include_error_profile),
+        reference=args.reference,
     )
     outputs = anyio.run(_call_tools, server_params, calls)
 
