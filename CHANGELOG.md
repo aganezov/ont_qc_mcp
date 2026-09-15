@@ -12,6 +12,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Migrate the local stdio adapter to MCP SDK 2.2 and validate public requests before worker admission.
 - Add `--reference` to the real-input MCP smoke helper and forward it to alignment and coverage calls for CRAM.
 
+### Fixed
+
+- Classify post-admission execution and result-validation failures as `execution_error` responses instead of request `validation_error` responses.
+
 ### Added
 - Add the API v2 `variant_qc` backend for whole-file, overlap-safe combined, and ordered
   per-region VCF/BCF populations, with typed bcftools expressions, validated native options, allele-count
