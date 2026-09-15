@@ -143,7 +143,8 @@ def test_real_mcp_reads_sn_and_coverage(mcp_server_params, tmp_path):
                 content = result.content[0]
                 assert isinstance(content, TextContent)
                 stats = json.loads(content.text)["results"][0]["error_profile"]
-                assert stats["mismatch_rate"] == pytest.approx(0.023)
+                assert stats["nm_error_rate"] == pytest.approx(0.023)
+                assert stats["mismatch_rate"] is None
                 assert stats["coverage_histogram"] == [{"start": 20, "end": 20, "count": 50}]
                 assert stats["mismatch_counts_by_cycle"] is None
 
