@@ -3,7 +3,13 @@
 import pytest
 from pydantic import ValidationError
 
-from ont_qc_mcp.v2_contracts import AlignmentQCRequest, CoverageQCRequest, FilterReadsRequest, ReadQCRequest
+from ont_qc_mcp.v2_contracts import (
+    AlignmentQCRequest,
+    CoverageQCRequest,
+    FilterReadsRequest,
+    ReadQCRequest,
+    VariantQCRequest,
+)
 from ont_qc_mcp.v2_native_args import NativeArgumentError, validate_native_args
 
 
@@ -97,6 +103,23 @@ def test_filter_contract_rejects_native_conflict_with_typed_selection() -> None:
         FilterReadsRequest.model_validate(
             {"path": "reads.fastq", "selection": {"quality": 10}, "extra_args": {"chopper": ["-q10"]}}
         )
+
+
+@pytest.mark.parametrize("native_args", [["--split-by-ID"], ["-I"]])
+def test_variant_contract_rejects_split_output_sets(native_args: list[str]) -> None:
+    with pytest.raises(ValidationError, match="bcftools_stats"):
+        VariantQCRequest.model_validate({"path": "calls.vcf.gz", "extra_args": {"bcftools_stats": native_args}})
+
+
+@pytest.mark.parametrize("expression", ["   ", "QUAL>20\x00extra"])
+def test_variant_expressions_are_nonblank_and_nul_free(expression: str) -> None:
+    with pytest.raises(ValidationError, match="variant expressions"):
+        VariantQCRequest.model_validate({"path": "calls.vcf.gz", "selection": {"include_expression": expression}})
+
+
+def test_variant_expression_rejects_empty_string() -> None:
+    with pytest.raises(ValidationError, match="at least 1 character"):
+        VariantQCRequest.model_validate({"path": "calls.vcf.gz", "selection": {"include_expression": ""}})
 
 
 @pytest.mark.parametrize(

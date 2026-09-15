@@ -256,6 +256,7 @@ def filter_reads(
     output_fastq: str | None = None,
     flags: dict[str, Any] | None = None,
     exec_cfg: ExecutionConfig | None = None,
+    extra_args: list[str] | None = None,
 ) -> ChopperReport:
     tools = tools or ToolPaths()
     cfg = exec_cfg or _EXEC_CFG
@@ -268,7 +269,14 @@ def filter_reads(
     output_path = Path(output_fastq) if output_fastq else None
     logger.debug("filter_reads on %s -> %s", fastq_path, output_path or "<temp>")
     report_progress(f"filter_reads start: {fastq_path}")
-    result = chopper_filter(fastq_path, tools, output_fastq=output_path, flags=flags, exec_cfg=cfg)
+    result = chopper_filter(
+        fastq_path,
+        tools,
+        output_fastq=output_path,
+        flags=flags,
+        exec_cfg=cfg,
+        extra_args=extra_args,
+    )
     report_progress(f"filter_reads done: {fastq_path}")
     return result
 
@@ -586,11 +594,17 @@ def _read_alignment_header_text(
     tools: ToolPaths,
     flags: dict[str, Any] | None,
     exec_cfg: ExecutionConfig,
+    reference_path: str | None = None,
 ) -> str:
     flag_data: dict[str, Any] = dict(flags or {})
     flag_data.setdefault("threads", exec_cfg.threads_for("samtools"))
     flag_args = build_cli_args("samtools", flag_data)
-    cmd = [tools.samtools, "view", "-H", *flag_args, safe_path_arg(path)]
+    reference_args: list[str] = []
+    if reference_path is not None:
+        reference = Path(reference_path)
+        _validate_input_file(reference, exec_cfg, allowed_exts=(".fa", ".fasta", ".fna"))
+        reference_args = ["-T", safe_path_arg(reference.resolve())]
+    cmd = [tools.samtools, "view", "-H", *flag_args, *reference_args, safe_path_arg(path)]
     try:
         result = run_command(cmd, timeout=exec_cfg.timeout_for("samtools"))
     except CommandError as exc:
@@ -604,7 +618,7 @@ DEFAULT_VCF_HEADER_MAX_LINES = 2000
 
 
 def _read_vcf_header_text(path: Path, max_lines: int | None = DEFAULT_VCF_HEADER_MAX_LINES) -> str:
-    opener = gzip.open if path.name.lower().endswith(".gz") else open
+    opener = gzip.open if path.name.lower().endswith((".gz", ".bgz")) else open
     header_lines: list[str] = []
     with opener(path, "rt", encoding="utf-8", errors="replace") as fh:
         for line in fh:
@@ -627,6 +641,7 @@ def header_metadata_lookup(
     tools: ToolPaths | None = None,
     exec_cfg: ExecutionConfig | None = None,
     max_lines: int | None = DEFAULT_VCF_HEADER_MAX_LINES,
+    reference_path: str | None = None,
 ) -> HeaderMetadata:
     """
     Extract header metadata for BAM/CRAM/VCF inputs and return structured data with a summary.
@@ -639,7 +654,7 @@ def header_metadata_lookup(
     fmt = _infer_header_format(file_path, file_type)
     if fmt in {"bam", "cram", "sam"}:
         _maybe_quickcheck(file_path, tools, fmt, cfg)
-        header_text = _read_alignment_header_text(file_path, tools, flags, cfg)
+        header_text = _read_alignment_header_text(file_path, tools, flags, cfg, reference_path=reference_path)
         metadata = parse_alignment_header(header_text, file_path=str(file_path), fmt=fmt)
     elif fmt == "vcf":
         header_text = _read_vcf_header_text(file_path, max_lines=max_lines)
@@ -651,22 +666,29 @@ def header_metadata_lookup(
     return metadata
 
 
-def _parse_bed_regions(bed_path: Path, snapshot_format: str, min_snapshot_width: int) -> list[IgvRegion]:
+def _parse_bed_regions(
+    bed_path: Path,
+    snapshot_format: str,
+    min_snapshot_width: int,
+    *,
+    max_regions: int | None = None,
+) -> list[IgvRegion]:
     regions: list[IgvRegion] = []
     with open(bed_path, "r", encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()
-            if not line or line.startswith("#"):
+            if not line or line.startswith("#") or is_bed_metadata_line(line):
                 continue
             parts = line.split("\t")
             if len(parts) < 3:
                 raise ValueError(f"Invalid BED entry (expected at least 3 columns): {line}")
             chrom, start_str, end_str = parts[:3]
-            try:
-                start = int(start_str)
-                end = int(end_str)
-            except ValueError as exc:
-                raise ValueError(f"Invalid start/end in BED entry: {line}") from exc
+            if not all(is_bed_coordinate_field(value) for value in (start_str, end_str)):
+                raise ValueError(f"Invalid start/end in BED entry: {line}")
+            start = int(start_str)
+            end = int(end_str)
+            if start >= end:
+                raise ValueError(f"Invalid BED interval (expected 0 <= start < end): {line}")
 
             name = parts[3] if len(parts) > 3 else None
             extra_cmds: list[str] = []
@@ -684,6 +706,8 @@ def _parse_bed_regions(bed_path: Path, snapshot_format: str, min_snapshot_width:
                     extra_commands=extra_cmds,
                 )
             )
+            if max_regions is not None and len(regions) > max_regions:
+                raise ValueError(f"BED region count exceeds the limit of {max_regions}")
     if not regions:
         raise ValueError(f"No regions found in BED file: {bed_path}")
     return regions
@@ -729,6 +753,7 @@ def generate_igv_snapshots(
     allele_threshold: float = 0.2,
     tools: ToolPaths | None = None,
     exec_cfg: ExecutionConfig | None = None,
+    regions_are_zero_based_half_open: bool = False,
 ) -> IgvSnapshotResult:
     """
     Generate IGV snapshots via containerized IGV. Supports pre-made batch files or dynamic generation from regions.
@@ -803,6 +828,7 @@ def generate_igv_snapshots(
                 allele_threshold=allele_threshold,
                 extra_commands=extra_commands,
                 extra_preferences=extra_preferences,
+                regions_are_zero_based_half_open=regions_are_zero_based_half_open,
             )
 
         mount_paths = set()

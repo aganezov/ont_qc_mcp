@@ -10,6 +10,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Migrate the local stdio adapter to MCP SDK 2.2, preserving existing tool schemas, input validation, resource contents, and numerical result payloads.
 
 ### Added
+- Add the unregistered API v2 `variant_qc` backend for whole-file, overlap-safe combined, and ordered
+  per-region VCF/BCF populations, with typed bcftools expressions, validated native options, allele-count
+  TS/TV semantics, existing-index/reference checks, provenance, one deadline, and temporary-region cleanup.
+- Add strict unregistered API v2 adapters for `environment_status`, `header_info`, `bed_qc`, `run_summary`,
+  `filter_reads`, and `igv_snapshots`, preserving current result meanings, Chopper's atomic output lifecycle,
+  and IGV's existing dynamic and prebuilt-batch modes without changing the public 18-tool catalog.
 - Add the unregistered API v2 `alignment_qc` backend with default selected-record counts and MAPQ,
   optional CIGAR-aware aligned-base quality, cramino identity, and samtools NM/error sections; whole-file,
   overlap-safe combined, and ordered per-region populations; preserved native tags; requested-backend-only

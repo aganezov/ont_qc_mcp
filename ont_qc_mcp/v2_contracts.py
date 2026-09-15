@@ -157,6 +157,13 @@ class VariantSelection(ContractModel):
     include_expression: str | None = Field(default=None, min_length=1)
     exclude_expression: str | None = Field(default=None, min_length=1)
 
+    @field_validator("include_expression", "exclude_expression")
+    @classmethod
+    def expression_is_usable(cls, value: str | None) -> str | None:
+        if value is not None and (not value.strip() or "\x00" in value):
+            raise ValueError("variant expressions must be nonblank and contain no NUL")
+        return value
+
     @model_validator(mode="after")
     def expressions_are_exclusive(self) -> "VariantSelection":
         if self.include_expression is not None and self.exclude_expression is not None:
@@ -331,7 +338,11 @@ class VariantQCRequest(NumericalRequest):
             raise ValueError("group_by='region' requires regions")
         if len(set(self.metrics)) != len(self.metrics):
             raise ValueError("metrics must not contain duplicates")
-        validate_native_args("bcftools_stats", self.extra_args.bcftools_stats)
+        validate_native_args(
+            "bcftools_stats",
+            self.extra_args.bcftools_stats,
+            additionally_protected=("--split-by-ID", "-I"),
+        )
         return self
 
 
@@ -961,6 +972,13 @@ class FilterReadsRequest(PathRequest):
 
 class V2IgvRegion(RegionalInterval):
     extra_commands: list[str] = Field(default_factory=list)
+
+    @field_validator("name")
+    @classmethod
+    def snapshot_name_stays_in_output_directory(cls, value: str | None) -> str | None:
+        if value is not None and ("/" in value or "\\" in value):
+            raise ValueError("IGV snapshot region names must not contain path separators")
+        return value
 
 
 class IgvSnapshotsRequest(ContractModel):

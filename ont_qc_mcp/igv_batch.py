@@ -15,6 +15,7 @@ SNAPSHOT_EXTENSIONS = {"png", "svg"}
 # script's line structure is controlled by this code, never by untrusted field content.
 # Covers C0 controls (incl. \n, \r, \t), DEL, and C1 controls (0x80-0x9f).
 _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+_OUTPUT_ROUTING_COMMANDS = {"snapshot", "snapshotdirectory"}
 
 
 class IgvBatchValidationError(ValueError):
@@ -31,6 +32,16 @@ def _safe(value: str, field: str) -> str:
     return value
 
 
+def _safe_extra_command(value: str, field: str) -> str:
+    """Return a safe display command while reserving generated-batch output routing."""
+    command = _safe(value, field)
+    stripped = command.lstrip()
+    verb = stripped.split(maxsplit=1)[0].casefold() if stripped else ""
+    if verb in _OUTPUT_ROUTING_COMMANDS:
+        raise IgvBatchValidationError(f"IGV batch field {field!r} contains a reserved output-routing command")
+    return command
+
+
 def _format_preference(key: str, value: str | int | float | bool) -> str:
     return f"preference {_safe(key, 'preference key')} {_safe(str(value), 'preference value')}"
 
@@ -41,7 +52,14 @@ def _snapshot_name(region: IgvRegion, snapshot_format: str) -> str:
     """
     name = region.name
     if not name:
-        name = f"{region.chrom}:{region.start}-{region.end}".replace(":", "_").replace("-", "_")
+        name = (
+            f"{region.chrom}:{region.start}-{region.end}".replace(":", "_")
+            .replace("-", "_")
+            .replace("/", "_")
+            .replace("\\", "_")
+        )
+    elif "/" in name or "\\" in name:
+        raise IgvBatchValidationError("IGV snapshot region names must not contain path separators")
 
     needs_extension = True
     for ext in SNAPSHOT_EXTENSIONS:
@@ -56,14 +74,40 @@ def _snapshot_name(region: IgvRegion, snapshot_format: str) -> str:
     return f"{name}.{snapshot_format}"
 
 
-def _expand_region(start: int, end: int, min_width: int) -> tuple[int, int]:
+def _unique_snapshot_names(regions: list[IgvRegion], snapshot_format: str) -> list[str]:
+    desired = [_snapshot_name(region, snapshot_format) for region in regions]
+    reserved = set(desired)
+    used: set[str] = set()
+    unique: list[str] = []
+    for name in desired:
+        if name not in used:
+            selected = name
+        else:
+            extension_start = name.rfind(".")
+            stem, extension = name[:extension_start], name[extension_start:]
+            suffix = 2
+            selected = f"{stem}_{suffix}{extension}"
+            while selected in reserved or selected in used:
+                suffix += 1
+                selected = f"{stem}_{suffix}{extension}"
+        used.add(selected)
+        unique.append(selected)
+    return unique
+
+
+def _expand_region(start: int, end: int, min_width: int, *, min_start: int | None = None) -> tuple[int, int]:
     width = end - start
     if min_width <= 0 or width >= min_width:
         return start, end
     diff = min_width - width
     pad_left = diff // 2
     pad_right = diff - pad_left
-    return start - pad_left, end + pad_right
+    expanded_start = start - pad_left
+    expanded_end = end + pad_right
+    if min_start is not None and expanded_start < min_start:
+        expanded_end += min_start - expanded_start
+        expanded_start = min_start
+    return expanded_start, expanded_end
 
 
 def _header_lines(
@@ -105,7 +149,7 @@ def _header_lines(
 
     # Global extra commands
     if extra_commands:
-        lines.extend(_safe(cmd, "extra_commands") for cmd in extra_commands)
+        lines.extend(_safe_extra_command(cmd, "extra_commands") for cmd in extra_commands)
 
     return lines
 
@@ -114,15 +158,24 @@ def _region_lines(
     region: IgvRegion,
     snapshot_format: str,
     min_snapshot_width: int,
+    regions_are_zero_based_half_open: bool = False,
+    snapshot_name: str | None = None,
 ) -> list[str]:
-    start, end = _expand_region(region.start, region.end, min_snapshot_width)
+    start, end = _expand_region(
+        region.start,
+        region.end,
+        min_snapshot_width,
+        min_start=0 if regions_are_zero_based_half_open else None,
+    )
+    if regions_are_zero_based_half_open:
+        start += 1
     region_str = f"{_safe(region.chrom, 'region.chrom')}:{start}-{end}"
-    snapshot_name = _safe(_snapshot_name(region, snapshot_format), "region.name")
+    final_snapshot_name = _safe(snapshot_name or _snapshot_name(region, snapshot_format), "region.name")
 
     lines: list[str] = [f"goto {region_str}"]
     if region.extra_commands:
-        lines.extend(_safe(cmd, "region.extra_commands") for cmd in region.extra_commands)
-    lines.append(f"snapshot {snapshot_name}")
+        lines.extend(_safe_extra_command(cmd, "region.extra_commands") for cmd in region.extra_commands)
+    lines.append(f"snapshot {final_snapshot_name}")
     return lines
 
 
@@ -144,6 +197,7 @@ def generate_igv_batch(
     # Extensibility
     extra_commands: list[str] | None = None,
     extra_preferences: dict[str, str] | None = None,
+    regions_are_zero_based_half_open: bool = False,
 ) -> Path:
     """
     Generate an IGV batch file and return its path.
@@ -166,8 +220,17 @@ def generate_igv_batch(
         extra_commands=extra_commands,
     )
 
-    for region in regions:
-        lines.extend(_region_lines(region, snapshot_format=snapshot_format, min_snapshot_width=min_snapshot_width))
+    snapshot_names = _unique_snapshot_names(regions, snapshot_format)
+    for region, snapshot_name in zip(regions, snapshot_names, strict=True):
+        lines.extend(
+            _region_lines(
+                region,
+                snapshot_format=snapshot_format,
+                min_snapshot_width=min_snapshot_width,
+                regions_are_zero_based_half_open=regions_are_zero_based_half_open,
+                snapshot_name=snapshot_name,
+            )
+        )
 
     lines.append("exit")
     output_path.write_text("\n".join(lines), encoding="utf-8")

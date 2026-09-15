@@ -173,6 +173,7 @@ def chopper_filter(
     output_fastq: Path | None = None,
     flags: dict[str, Any] | None = None,
     exec_cfg: ExecutionConfig | None = None,
+    extra_args: list[str] | None = None,
 ) -> ChopperReport:
     """
     Run chopper for ONT-oriented filtering/trimming.
@@ -205,6 +206,9 @@ def chopper_filter(
     if unsupported_suffix:
         raise ValueError(f"Unsupported output compression suffix {unsupported_suffix!r}; use .gz for gzip output")
     merged_flags, timeout = _prepare_execution("chopper", flags, exec_cfg)
+    from .v2_native_args import validate_native_args
+
+    native = validate_native_args("chopper", extra_args or [])
     report_progress(f"chopper start: {input_fastq}")
     flag_args = build_cli_args("chopper", merged_flags)
     destination = output_fastq.resolve() if output_fastq is not None else None
@@ -229,7 +233,7 @@ def chopper_filter(
         if output_fastq is None:
             output_fastq = staged_output
 
-        cmd = [tools.chopper, "--input", safe_path_arg(input_fastq), *flag_args]
+        cmd = [tools.chopper, "--input", safe_path_arg(input_fastq), *flag_args, *native.supplied_args]
         logger.debug("Executing chopper: %s", format_cmd(cmd))
         try:
             run_command_with_retry(cmd, timeout=timeout, stdout_path=staged_output, max_attempts=2, backoff_seconds=0.5)
