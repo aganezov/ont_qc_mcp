@@ -44,6 +44,54 @@ def test_bed_file_preserves_order_names_and_duplicates(tmp_path: Path) -> None:
     assert bed.read_bytes() == original
 
 
+@pytest.mark.parametrize("source_kind", ["bed", "gff3"])
+def test_external_region_source_replacement_during_normalization_is_rejected(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    source_kind: str,
+) -> None:
+    from ont_qc_mcp import v2_regions
+
+    if source_kind == "bed":
+        source = tmp_path / "targets.bed"
+        source.write_text("chr1\t0\t1\ttarget\n")
+        request = CoverageQCRequest.model_validate(
+            {"path": "reads.bam", "regions": {"format": "bed", "path": str(source)}}
+        )
+        original = v2_regions._bed_intervals
+
+        def replace_after_read(*args, **kwargs):
+            intervals = original(*args, **kwargs)
+            replacement = tmp_path / "replacement.bed"
+            replacement.write_text("chr1\t1\t2\treplacement\n")
+            replacement.replace(source)
+            return intervals
+
+        monkeypatch.setattr(v2_regions, "_bed_intervals", replace_after_read)
+    else:
+        source = tmp_path / "genes.gff3"
+        source.write_text("chr1\ttest\tgene\t1\t2\t.\t+\t.\tID=target\n")
+        request = CoverageQCRequest.model_validate(
+            {
+                "path": "reads.bam",
+                "regions": {"format": "gff3", "path": str(source), "feature_type": "gene"},
+            }
+        )
+        original = v2_regions._all_gff_genes
+
+        def replace_after_read(*args, **kwargs):
+            genes = original(*args, **kwargs)
+            replacement = tmp_path / "replacement.gff3"
+            replacement.write_text("chr1\ttest\tgene\t2\t3\t.\t+\t.\tID=replacement\n")
+            replacement.replace(source)
+            return genes
+
+        monkeypatch.setattr(v2_regions, "_all_gff_genes", replace_after_read)
+
+    with pytest.raises(RuntimeError, match="changed during normalization"):
+        normalize_regions(request.regions, REFERENCE_LENGTHS)
+
+
 def test_inline_bed_preserves_carriage_return_record_boundaries() -> None:
     request = CoverageQCRequest.model_validate(
         {

@@ -20,6 +20,16 @@ MAX_REGIONS = 1024
 MAX_REGION_LINE_CHARS = 64 * 1024
 
 
+def _region_source_identity(path: Path) -> tuple[int, int, int, int]:
+    stat = path.stat()
+    return stat.st_size, stat.st_mtime_ns, stat.st_dev, stat.st_ino
+
+
+def _assert_region_source_unchanged(path: Path, identity: tuple[int, int, int, int]) -> None:
+    if identity != _region_source_identity(path):
+        raise RuntimeError("A BED or GFF3 region source changed during normalization; retry with stable files")
+
+
 def _check_region_count(count: int) -> None:
     if not 1 <= count <= MAX_REGIONS:
         raise ValueError(f"regions must contain 1 to {MAX_REGIONS} intervals")
@@ -240,12 +250,14 @@ def _gff_intervals(
     path = Path(source.path)
     _validate_input_file(path, cfg, allowed_exts=(".gff", ".gff3"))
     resolved = path.resolve()
+    identity = _region_source_identity(resolved)
     coordinates: Sequence[tuple[str, int, int, str | None]]
     if source.ids is None:
         coordinates = _all_gff_genes(resolved, deadline)
     else:
         _check_region_count(len(source.ids))
         coordinates = _selected_gff_genes(resolved, source.ids, deadline)
+    _assert_region_source_unchanged(resolved, identity)
 
     intervals: list[RegionalInterval] = []
     for chrom, start, end, gene_name in coordinates:
@@ -301,11 +313,13 @@ def normalize_regions(
         path = Path(source.path)
         _validate_input_file(path, cfg, allowed_exts=(".bed",))
         resolved = path.resolve()
+        identity = _region_source_identity(resolved)
         with resolved.open(encoding="utf-8") as stream:
             intervals = _bed_intervals(
                 _bounded_lines(stream, source=f"BED file {resolved}", deadline=deadline),
                 source=f"BED file {resolved}",
             )
+        _assert_region_source_unchanged(resolved, identity)
         dependencies = (resolved,)
     elif isinstance(source, Gff3Regions):
         intervals, dependency = _gff_intervals(source, cfg, deadline)

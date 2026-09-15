@@ -5,6 +5,7 @@ from __future__ import annotations
 from .config import ExecutionConfig, ToolPaths
 from .schemas import BedQCReport, ChopperReport, EnvStatus, HeaderMetadata, IgvSnapshotResult, SequencingSummaryStats
 from .tools import (
+    _parse_bed_regions,
     env_check,
     filter_reads as filter_reads_core,
     generate_igv_snapshots,
@@ -19,7 +20,10 @@ from .v2_contracts import (
     HeaderInfoRequest,
     IgvSnapshotsRequest,
     RunSummaryRequest,
+    V2IgvRegion,
 )
+from .v2_regions import MAX_REGIONS
+from .v2_samtools import file_identity, local_file
 
 
 def environment_status(
@@ -104,11 +108,23 @@ def igv_snapshots(
 ) -> IgvSnapshotResult:
     """Retain dynamic and prebuilt-batch IGV execution through the strict v2 request."""
     validated = request if isinstance(request, IgvSnapshotsRequest) else IgvSnapshotsRequest.model_validate(request)
-    regions = (
-        [region.model_dump() for region in validated.regions]
-        if isinstance(validated.regions, list)
-        else validated.regions
-    )
+    cfg = exec_cfg or ExecutionConfig()
+    regions: list[dict[str, object]] | None
+    if isinstance(validated.regions, str):
+        bed_path = local_file(validated.regions, cfg, (".bed",))
+        identity = file_identity(bed_path)
+        parsed = _parse_bed_regions(
+            bed_path,
+            snapshot_format=validated.snapshot_format,
+            min_snapshot_width=validated.min_snapshot_width,
+        )
+        if identity != file_identity(bed_path):
+            raise RuntimeError("The IGV BED region source changed during parsing; retry with a stable file")
+        if len(parsed) > MAX_REGIONS:
+            raise ValueError(f"regions must contain 1 to {MAX_REGIONS} intervals")
+        regions = [V2IgvRegion.model_validate(region.model_dump()).model_dump() for region in parsed]
+    else:
+        regions = [region.model_dump() for region in validated.regions] if validated.regions is not None else None
     return generate_igv_snapshots(
         genome=validated.genome,
         tracks=validated.tracks,
@@ -126,7 +142,7 @@ def igv_snapshots(
         small_indels_threshold=validated.small_indels_threshold,
         allele_threshold=validated.allele_threshold,
         tools=tools or ToolPaths(),
-        exec_cfg=exec_cfg or ExecutionConfig(),
+        exec_cfg=cfg,
         regions_are_zero_based_half_open=True,
     )
 

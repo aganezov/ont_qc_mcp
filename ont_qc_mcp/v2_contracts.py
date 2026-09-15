@@ -973,6 +973,13 @@ class FilterReadsRequest(PathRequest):
 class V2IgvRegion(RegionalInterval):
     extra_commands: list[str] = Field(default_factory=list)
 
+    @field_validator("name")
+    @classmethod
+    def snapshot_name_stays_in_output_directory(cls, value: str | None) -> str | None:
+        if value is not None and ("/" in value or "\\" in value):
+            raise ValueError("IGV snapshot region names must not contain path separators")
+        return value
+
 
 class IgvSnapshotsRequest(ContractModel):
     batch_file: str | None = Field(default=None, min_length=1)

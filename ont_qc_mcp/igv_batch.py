@@ -41,7 +41,14 @@ def _snapshot_name(region: IgvRegion, snapshot_format: str) -> str:
     """
     name = region.name
     if not name:
-        name = f"{region.chrom}:{region.start}-{region.end}".replace(":", "_").replace("-", "_")
+        name = (
+            f"{region.chrom}:{region.start}-{region.end}".replace(":", "_")
+            .replace("-", "_")
+            .replace("/", "_")
+            .replace("\\", "_")
+        )
+    elif "/" in name or "\\" in name:
+        raise IgvBatchValidationError("IGV snapshot region names must not contain path separators")
 
     needs_extension = True
     for ext in SNAPSHOT_EXTENSIONS:
@@ -56,14 +63,19 @@ def _snapshot_name(region: IgvRegion, snapshot_format: str) -> str:
     return f"{name}.{snapshot_format}"
 
 
-def _expand_region(start: int, end: int, min_width: int) -> tuple[int, int]:
+def _expand_region(start: int, end: int, min_width: int, *, min_start: int | None = None) -> tuple[int, int]:
     width = end - start
     if min_width <= 0 or width >= min_width:
         return start, end
     diff = min_width - width
     pad_left = diff // 2
     pad_right = diff - pad_left
-    return start - pad_left, end + pad_right
+    expanded_start = start - pad_left
+    expanded_end = end + pad_right
+    if min_start is not None and expanded_start < min_start:
+        expanded_end += min_start - expanded_start
+        expanded_start = min_start
+    return expanded_start, expanded_end
 
 
 def _header_lines(
@@ -116,7 +128,12 @@ def _region_lines(
     min_snapshot_width: int,
     regions_are_zero_based_half_open: bool = False,
 ) -> list[str]:
-    start, end = _expand_region(region.start, region.end, min_snapshot_width)
+    start, end = _expand_region(
+        region.start,
+        region.end,
+        min_snapshot_width,
+        min_start=0 if regions_are_zero_based_half_open else None,
+    )
     if regions_are_zero_based_half_open:
         start += 1
     region_str = f"{_safe(region.chrom, 'region.chrom')}:{start}-{end}"

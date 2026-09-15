@@ -14,6 +14,7 @@ from ont_qc_mcp.schemas import (
     ChopperReport,
     EnvStatus,
     HeaderMetadata,
+    IgvRegion,
     IgvSnapshotResult,
     SequencingSummaryStats,
 )
@@ -241,7 +242,66 @@ def test_igv_v2_regions_become_one_based_in_batch(
             "tracks": [str(track)],
             "regions": regions,
             "output_dir": str(output),
+            "min_snapshot_width": 3,
         }
     )
 
-    assert "goto chr1:1-1\n" in Path(result.batch_file).read_text()
+    assert "goto chr1:1-3\n" in Path(result.batch_file).read_text()
+
+
+@pytest.mark.parametrize("coordinates", ["-1\t5", "5\t5", "6\t5", "０\t5"])
+def test_igv_v2_bed_regions_require_valid_half_open_coordinates(tmp_path: Path, coordinates: str) -> None:
+    bed = tmp_path / "targets.bed"
+    bed.write_text(f"chr1\t{coordinates}\ttarget\n")
+
+    with pytest.raises(ValueError, match="Invalid start/end|expected 0 <= start < end"):
+        igv_snapshots(
+            {
+                "genome": "reference.fa",
+                "tracks": ["reads.bam"],
+                "regions": str(bed),
+            }
+        )
+
+
+@pytest.mark.parametrize("regions", [[{"chrom": "chr1", "start": 0, "end": 1, "name": "../outside"}], "bed"])
+def test_igv_v2_snapshot_names_cannot_escape_output_directory(tmp_path: Path, regions: object) -> None:
+    if regions == "bed":
+        bed = tmp_path / "targets.bed"
+        bed.write_text("chr1\t0\t1\t../outside\n")
+        regions = str(bed)
+
+    with pytest.raises(ValidationError, match="must not contain path separators"):
+        igv_snapshots(
+            {
+                "genome": "reference.fa",
+                "tracks": ["reads.bam"],
+                "regions": regions,
+            }
+        )
+
+
+def test_igv_v2_bed_replacement_during_parsing_is_rejected(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ont_qc_mcp import v2_supporting_tools as module
+
+    bed = tmp_path / "targets.bed"
+    bed.write_text("chr1\t0\t1\ttarget\n")
+
+    def replace_after_read(*args, **kwargs):
+        replacement = tmp_path / "replacement.bed"
+        replacement.write_text("chr1\t1\t2\treplacement\n")
+        replacement.replace(bed)
+        return [IgvRegion(chrom="chr1", start=0, end=1, name="target")]
+
+    monkeypatch.setattr(module, "_parse_bed_regions", replace_after_read)
+    with pytest.raises(RuntimeError, match="changed during parsing"):
+        igv_snapshots(
+            {
+                "genome": "reference.fa",
+                "tracks": ["reads.bam"],
+                "regions": str(bed),
+            }
+        )

@@ -671,17 +671,18 @@ def _parse_bed_regions(bed_path: Path, snapshot_format: str, min_snapshot_width:
     with open(bed_path, "r", encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()
-            if not line or line.startswith("#"):
+            if not line or line.startswith("#") or is_bed_metadata_line(line):
                 continue
             parts = line.split("\t")
             if len(parts) < 3:
                 raise ValueError(f"Invalid BED entry (expected at least 3 columns): {line}")
             chrom, start_str, end_str = parts[:3]
-            try:
-                start = int(start_str)
-                end = int(end_str)
-            except ValueError as exc:
-                raise ValueError(f"Invalid start/end in BED entry: {line}") from exc
+            if not all(is_bed_coordinate_field(value) for value in (start_str, end_str)):
+                raise ValueError(f"Invalid start/end in BED entry: {line}")
+            start = int(start_str)
+            end = int(end_str)
+            if start >= end:
+                raise ValueError(f"Invalid BED interval (expected 0 <= start < end): {line}")
 
             name = parts[3] if len(parts) > 3 else None
             extra_cmds: list[str] = []

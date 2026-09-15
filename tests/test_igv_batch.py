@@ -143,6 +143,19 @@ def test_injection_rejected_in_region_name(tmp_path: Path) -> None:
         generate_igv_batch(genome="hg38", tracks=["a.bam"], regions=[region], output_path=tmp_path / "b")
 
 
+def test_snapshot_name_path_traversal_is_rejected(tmp_path: Path) -> None:
+    region = IgvRegion(chrom="chr1", start=1, end=100, name="../outside")
+    with pytest.raises(IgvBatchValidationError, match="path separators"):
+        generate_igv_batch(genome="hg38", tracks=["a.bam"], regions=[region], output_path=tmp_path / "b")
+
+
+def test_generated_snapshot_name_sanitizes_reference_path_separators(tmp_path: Path) -> None:
+    region = IgvRegion(chrom="chr1/alternate", start=1, end=100)
+    output = tmp_path / "b"
+    generate_igv_batch(genome="hg38", tracks=["a.bam"], regions=[region], output_path=output)
+    assert "snapshot chr1_alternate_1_100.png" in output.read_text()
+
+
 def test_injection_rejected_in_extra_commands(tmp_path: Path) -> None:
     region = IgvRegion(chrom="chr1", start=1, end=100)
     with pytest.raises(IgvBatchValidationError):
