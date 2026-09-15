@@ -56,6 +56,18 @@ def selected_region():
 
 
 def assert_known_result(item):
+    assert item["span_overlapping_alignments"] == 5
+    assert item["aligned_base_alignments"] == 5
+    assert item["aligned_query_bases"] == 15
+    assert item["quality_known_bases"] == 13
+    assert item["quality_missing_bases"] == 2
+    assert item["mean_base_quality"] == pytest.approx(326 / 13)
+    assert item["mapq_known_alignments"] == 4 and item["mapq_missing_alignments"] == 1
+    assert item["mean_mapq"] == 37.5
+    assert item["supplementary_alignments"] == 1 and item["reverse_alignments"] == 1
+
+
+def assert_known_v2_result(item):
     assert item["counts"] == {
         "eligible_records": 5,
         "mapped_records": 5,
@@ -155,7 +167,8 @@ async def test_mcp_regional_discovery_validation_and_result(regional_files, mcp_
         async with ClientSession(read, write) as session:
             await session.initialize()
             tool = next(t for t in (await session.list_tools()).tools if t.name == "alignment_qc")
-            assert tool.input_schema["properties"]["regions"]["maxItems"] == 1024
+            assert tool.input_schema["title"] == "AlignmentQCRequest"
+            assert tool.input_schema["additionalProperties"] is False
             invalid_arguments: list[dict[str, Any]] = [
                 {"path": "absent.bam", "regions": [{"chrom": "chr1", "start": True, "end": 1}]},
                 {"path": "absent.bam", "regions": [], "selection": {"min_mapq": 255}},
@@ -176,7 +189,7 @@ async def test_mcp_regional_discovery_validation_and_result(regional_files, mcp_
             )
             assert not result.is_error
             payload = json.loads(cast(types.TextContent, result.content[0]).text)
-            assert_known_result(payload["results"][0])
+            assert_known_v2_result(payload["results"][0])
             assert payload["resolved_group_by"] == "region"
             assert payload["results"][0]["region_name"] == "quality"
             assert payload["provenance"]
