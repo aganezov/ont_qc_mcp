@@ -744,6 +744,7 @@ def generate_igv_snapshots(
     allele_threshold: float = 0.2,
     tools: ToolPaths | None = None,
     exec_cfg: ExecutionConfig | None = None,
+    regions_are_zero_based_half_open: bool = False,
 ) -> IgvSnapshotResult:
     """
     Generate IGV snapshots via containerized IGV. Supports pre-made batch files or dynamic generation from regions.
@@ -818,6 +819,7 @@ def generate_igv_snapshots(
                 allele_threshold=allele_threshold,
                 extra_commands=extra_commands,
                 extra_preferences=extra_preferences,
+                regions_are_zero_based_half_open=regions_are_zero_based_half_open,
             )
 
         mount_paths = set()

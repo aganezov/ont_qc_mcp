@@ -206,6 +206,46 @@ def test_whole_file_does_not_require_header_or_index(tmp_path: Path, monkeypatch
     assert result.results[0].indels is not None and result.results[0].indels.count == 2
 
 
+def test_whole_file_reference_is_validated_against_header(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from ont_qc_mcp import v2_variant_qc as module
+
+    vcf = tmp_path / "calls.vcf"
+    vcf.write_text("##fileformat=VCFv4.3\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n")
+    reference = tmp_path / "reference.fa"
+    reference.write_text(">chr1\nA\n")
+    variant = SimpleNamespace(
+        path=vcf.resolve(),
+        access_path=vcf.resolve(),
+        index=None,
+        reference=reference.resolve(),
+        reference_index=Path(str(reference.resolve()) + ".fai"),
+        reference_access_path=reference.resolve(),
+        assert_unchanged=lambda: None,
+    )
+    header_reads: list[RequestDeadline] = []
+    monkeypatch.setattr(module, "resolve_variant_input", lambda *args, **kwargs: variant)
+
+    def read_lengths(*args, **kwargs):
+        header_reads.append(args[-1])
+        return {"chr1": 1}
+
+    monkeypatch.setattr(module, "read_variant_reference_lengths", read_lengths)
+    monkeypatch.setattr(
+        module,
+        "run_pipeline",
+        lambda stages, deadline, **kwargs: PipelineResult((CommandResult(stages[0].command, 0, STATS, ""),)),
+    )
+
+    result = variant_qc(
+        {"path": str(vcf), "reference_path": str(reference)},
+        tools=ToolPaths(bcftools="bcftools"),
+    )
+
+    assert len(header_reads) == 1
+    args = result.provenance[0].effective_args
+    assert args[args.index("--fasta-ref") + 1] == str(reference.resolve())
+
+
 def test_regional_input_requires_compressed_indexed_variant(tmp_path: Path) -> None:
     plain = tmp_path / "calls.vcf"
     plain.write_text("##fileformat=VCFv4.3\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n")

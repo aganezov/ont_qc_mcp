@@ -348,10 +348,11 @@ def variant_qc(
         exec_cfg=cfg,
     )
 
+    if validated.regions is not None or variant.reference is not None:
+        lengths = read_variant_reference_lengths(variant, tool_paths, cfg, deadline)
     if validated.regions is None:
         regions = NormalizedRegionSet((), ())
     else:
-        lengths = read_variant_reference_lengths(variant, tool_paths, cfg, deadline)
         regions = normalize_regions(validated.regions, lengths, exec_cfg=cfg, deadline=deadline)
     dependency_identities = tuple(file_identity(path) for path in regions.external_dependencies)
     variant.assert_unchanged()

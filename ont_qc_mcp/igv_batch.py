@@ -114,8 +114,11 @@ def _region_lines(
     region: IgvRegion,
     snapshot_format: str,
     min_snapshot_width: int,
+    regions_are_zero_based_half_open: bool = False,
 ) -> list[str]:
     start, end = _expand_region(region.start, region.end, min_snapshot_width)
+    if regions_are_zero_based_half_open:
+        start += 1
     region_str = f"{_safe(region.chrom, 'region.chrom')}:{start}-{end}"
     snapshot_name = _safe(_snapshot_name(region, snapshot_format), "region.name")
 
@@ -144,6 +147,7 @@ def generate_igv_batch(
     # Extensibility
     extra_commands: list[str] | None = None,
     extra_preferences: dict[str, str] | None = None,
+    regions_are_zero_based_half_open: bool = False,
 ) -> Path:
     """
     Generate an IGV batch file and return its path.
@@ -167,7 +171,14 @@ def generate_igv_batch(
     )
 
     for region in regions:
-        lines.extend(_region_lines(region, snapshot_format=snapshot_format, min_snapshot_width=min_snapshot_width))
+        lines.extend(
+            _region_lines(
+                region,
+                snapshot_format=snapshot_format,
+                min_snapshot_width=min_snapshot_width,
+                regions_are_zero_based_half_open=regions_are_zero_based_half_open,
+            )
+        )
 
     lines.append("exit")
     output_path.write_text("\n".join(lines), encoding="utf-8")

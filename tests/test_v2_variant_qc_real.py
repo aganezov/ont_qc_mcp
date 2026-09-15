@@ -154,3 +154,17 @@ def test_zero_snp_selection_has_zero_allele_counts_and_null_ratio(indexed_varian
         "transversions": 0,
         "ts_tv_ratio": None,
     }
+
+
+@pytest.mark.integration
+def test_whole_file_reference_must_match_variant_header(indexed_variants, tmp_path: Path) -> None:
+    vcf, bcftools = indexed_variants
+    reference = tmp_path / "mismatched.fa"
+    reference.write_text(">chr1\n" + "A" * 19 + "\n")
+    Path(str(reference) + ".fai").write_text("chr1\t19\t6\t19\t20\n")
+
+    with pytest.raises(ValueError, match="does not match variant contig"):
+        variant_qc(
+            {"path": str(vcf), "reference_path": str(reference)},
+            tools=ToolPaths(bcftools=bcftools),
+        )

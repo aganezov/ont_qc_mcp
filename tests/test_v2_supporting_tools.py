@@ -159,6 +159,7 @@ def test_igv_snapshots_preserves_dynamic_and_batch_modes(monkeypatch: pytest.Mon
         }
     ]
     assert calls[0]["extra_commands"] == ["viewaspairs"]
+    assert calls[0]["regions_are_zero_based_half_open"] is True
     assert calls[1]["batch_file"] == "prepared.batch"
     assert calls[1]["tracks"] is None and calls[1]["regions"] is None
 
@@ -213,3 +214,34 @@ def test_header_info_passes_reference_to_samtools(tmp_path: Path, monkeypatch: p
     view_command = next(command for command in commands if "view" in command)
     assert view_command[view_command.index("-T") + 1] == str(reference.resolve())
     assert result.references[0].name == "chr1" and result.references[0].length == 4
+
+
+@pytest.mark.parametrize("region_source", ["list", "bed"])
+def test_igv_v2_regions_become_one_based_in_batch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    region_source: str,
+) -> None:
+    reference = tmp_path / "reference.fa"
+    reference.write_text(">chr1\nA\n")
+    track = tmp_path / "reads.bam"
+    track.write_bytes(b"BAM")
+    output = tmp_path / region_source
+    if region_source == "bed":
+        bed = tmp_path / "targets.bed"
+        bed.write_text("chr1\t0\t1\ttarget\n")
+        regions: object = str(bed)
+    else:
+        regions = [{"chrom": "chr1", "start": 0, "end": 1, "name": "target"}]
+
+    monkeypatch.setenv("MCP_IGV_MOCK", "1")
+    result = igv_snapshots(
+        {
+            "genome": str(reference),
+            "tracks": [str(track)],
+            "regions": regions,
+            "output_dir": str(output),
+        }
+    )
+
+    assert "goto chr1:1-1\n" in Path(result.batch_file).read_text()

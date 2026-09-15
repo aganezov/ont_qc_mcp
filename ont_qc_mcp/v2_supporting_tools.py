@@ -127,6 +127,7 @@ def igv_snapshots(
         allele_threshold=validated.allele_threshold,
         tools=tools or ToolPaths(),
         exec_cfg=exec_cfg or ExecutionConfig(),
+        regions_are_zero_based_half_open=True,
     )
 
 
