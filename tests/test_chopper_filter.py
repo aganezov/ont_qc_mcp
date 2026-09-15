@@ -137,6 +137,30 @@ def test_publish_complete_output(input_fastq, tmp_path, monkeypatch, contents, d
     assert set(tmp_path.iterdir()) == before | {result.resolve()}
 
 
+def test_native_arguments_follow_typed_chopper_arguments(input_fastq, tmp_path, monkeypatch):
+    output = tmp_path / "filtered.fastq"
+    commands = []
+
+    def fake_run(cmd, **kwargs):
+        commands.append(cmd)
+        Path(kwargs["stdout_path"]).write_text(FASTQ)
+
+    monkeypatch.setattr("ont_qc_mcp.cli_wrappers.run_command_with_retry", fake_run)
+    report = chopper_filter(
+        input_fastq,
+        ToolPaths(),
+        output,
+        flags={"minlength": 4},
+        extra_args=["--future-option=value"],
+    )
+
+    command = commands[0]
+    assert command[command.index("--minlength") + 1] == "4"
+    assert command[-1] == "--future-option=value"
+    assert command.index("--minlength") < len(command) - 1
+    assert report.command == commands[0]
+
+
 @pytest.mark.parametrize(
     "destination,failure",
     [
