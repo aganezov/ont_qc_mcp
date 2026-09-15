@@ -117,13 +117,14 @@ def igv_snapshots(
             bed_path,
             snapshot_format=validated.snapshot_format,
             min_snapshot_width=validated.min_snapshot_width,
+            max_regions=MAX_REGIONS,
         )
         if identity != file_identity(bed_path):
             raise RuntimeError("The IGV BED region source changed during parsing; retry with a stable file")
-        if len(parsed) > MAX_REGIONS:
-            raise ValueError(f"regions must contain 1 to {MAX_REGIONS} intervals")
         regions = [V2IgvRegion.model_validate(region.model_dump()).model_dump() for region in parsed]
     else:
+        if isinstance(validated.regions, list) and len(validated.regions) > MAX_REGIONS:
+            raise ValueError(f"regions must contain 1 to {MAX_REGIONS} intervals")
         regions = [region.model_dump() for region in validated.regions] if validated.regions is not None else None
     return generate_igv_snapshots(
         genome=validated.genome,

@@ -666,7 +666,13 @@ def header_metadata_lookup(
     return metadata
 
 
-def _parse_bed_regions(bed_path: Path, snapshot_format: str, min_snapshot_width: int) -> list[IgvRegion]:
+def _parse_bed_regions(
+    bed_path: Path,
+    snapshot_format: str,
+    min_snapshot_width: int,
+    *,
+    max_regions: int | None = None,
+) -> list[IgvRegion]:
     regions: list[IgvRegion] = []
     with open(bed_path, "r", encoding="utf-8") as fh:
         for line in fh:
@@ -700,6 +706,8 @@ def _parse_bed_regions(bed_path: Path, snapshot_format: str, min_snapshot_width:
                     extra_commands=extra_cmds,
                 )
             )
+            if max_regions is not None and len(regions) > max_regions:
+                raise ValueError(f"BED region count exceeds the limit of {max_regions}")
     if not regions:
         raise ValueError(f"No regions found in BED file: {bed_path}")
     return regions

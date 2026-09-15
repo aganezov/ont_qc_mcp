@@ -264,6 +264,34 @@ def test_igv_v2_bed_regions_require_valid_half_open_coordinates(tmp_path: Path, 
         )
 
 
+@pytest.mark.parametrize("region_source", ["list", "bed"])
+def test_igv_v2_region_limit_is_enforced_before_batch_generation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    region_source: str,
+) -> None:
+    from ont_qc_mcp import v2_supporting_tools as module
+
+    monkeypatch.setattr(module, "MAX_REGIONS", 2)
+    if region_source == "bed":
+        bed = tmp_path / "targets.bed"
+        bed.write_text("chr1\t0\t1\tone\nchr1\t1\t2\ttwo\nchr1\t2\t3\tthree\nchr1\tbad\t4\n")
+        regions: object = str(bed)
+        message = "BED region count exceeds the limit of 2"
+    else:
+        regions = [{"chrom": "chr1", "start": index, "end": index + 1} for index in range(3)]
+        message = "regions must contain 1 to 2 intervals"
+
+    with pytest.raises(ValueError, match=message):
+        igv_snapshots(
+            {
+                "genome": "reference.fa",
+                "tracks": ["reads.bam"],
+                "regions": regions,
+            }
+        )
+
+
 @pytest.mark.parametrize("regions", [[{"chrom": "chr1", "start": 0, "end": 1, "name": "../outside"}], "bed"])
 def test_igv_v2_snapshot_names_cannot_escape_output_directory(tmp_path: Path, regions: object) -> None:
     if regions == "bed":
