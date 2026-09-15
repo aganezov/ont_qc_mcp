@@ -39,3 +39,13 @@ def test_cram_header_info_uses_explicit_reference(tmp_path: Path) -> None:
 
     assert result.format == "cram"
     assert [(item.name, item.length) for item in result.references] == [("chr1", 8)]
+
+
+def test_header_info_reads_bgzf_vcf_with_bgz_suffix(tmp_path: Path, synthetic_vcf: Path) -> None:
+    bgz = tmp_path / "calls.vcf.bgz"
+    shutil.copyfile(synthetic_vcf, bgz)
+
+    result = header_info({"path": str(bgz)})
+
+    assert result.format == "vcf"
+    assert result.raw_header.startswith("##fileformat=VCF")

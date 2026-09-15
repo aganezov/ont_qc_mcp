@@ -9,6 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 from ont_qc_mcp.config import ToolPaths
+from ont_qc_mcp.igv_batch import IgvBatchValidationError
 from ont_qc_mcp.schemas import (
     BedQCReport,
     ChopperReport,
@@ -307,6 +308,51 @@ def test_igv_v2_snapshot_names_cannot_escape_output_directory(tmp_path: Path, re
                 "regions": regions,
             }
         )
+
+
+@pytest.mark.parametrize("command_source", ["top-level", "inline-region", "bed-region"])
+def test_igv_v2_generated_batches_reserve_output_routing_commands(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    command_source: str,
+) -> None:
+    reference = tmp_path / "reference.fa"
+    reference.write_text(">chr1\nA\n")
+    track = tmp_path / "reads.bam"
+    track.write_bytes(b"BAM")
+    request: dict[str, object] = {
+        "genome": str(reference),
+        "tracks": [str(track)],
+        "regions": [{"chrom": "chr1", "start": 0, "end": 1}],
+    }
+    if command_source == "top-level":
+        request["extra_commands"] = ["snapshot ../outside.png"]
+    elif command_source == "inline-region":
+        request["regions"] = [
+            {"chrom": "chr1", "start": 0, "end": 1, "extra_commands": ["snapshotDirectory ../outside"]}
+        ]
+    else:
+        bed = tmp_path / "targets.bed"
+        bed.write_text("chr1\t0\t1\ttarget\tsnapshot ../outside.png\n")
+        request["regions"] = str(bed)
+
+    monkeypatch.setenv("MCP_IGV_MOCK", "1")
+    with pytest.raises(IgvBatchValidationError, match="output-routing command"):
+        igv_snapshots(request)
+
+
+def test_igv_v2_prebuilt_batch_retains_explicit_output_commands(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output = tmp_path / "snapshots"
+    batch = tmp_path / "prepared.batch"
+    batch.write_text(f"snapshotDirectory {output}\nsnapshot requested.png\nexit\n")
+
+    monkeypatch.setenv("MCP_IGV_MOCK", "1")
+    result = igv_snapshots({"batch_file": str(batch), "output_dir": str(output)})
+
+    assert Path(result.snapshot_files[0]).name == "requested.png"
 
 
 def test_igv_v2_bed_replacement_during_parsing_is_rejected(

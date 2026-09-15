@@ -618,7 +618,7 @@ DEFAULT_VCF_HEADER_MAX_LINES = 2000
 
 
 def _read_vcf_header_text(path: Path, max_lines: int | None = DEFAULT_VCF_HEADER_MAX_LINES) -> str:
-    opener = gzip.open if path.name.lower().endswith(".gz") else open
+    opener = gzip.open if path.name.lower().endswith((".gz", ".bgz")) else open
     header_lines: list[str] = []
     with opener(path, "rt", encoding="utf-8", errors="replace") as fh:
         for line in fh:

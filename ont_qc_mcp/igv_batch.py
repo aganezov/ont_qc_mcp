@@ -15,6 +15,7 @@ SNAPSHOT_EXTENSIONS = {"png", "svg"}
 # script's line structure is controlled by this code, never by untrusted field content.
 # Covers C0 controls (incl. \n, \r, \t), DEL, and C1 controls (0x80-0x9f).
 _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+_OUTPUT_ROUTING_COMMANDS = {"snapshot", "snapshotdirectory"}
 
 
 class IgvBatchValidationError(ValueError):
@@ -29,6 +30,16 @@ def _safe(value: str, field: str) -> str:
             f"IGV command; refusing to build the batch script (value={value!r})"
         )
     return value
+
+
+def _safe_extra_command(value: str, field: str) -> str:
+    """Return a safe display command while reserving generated-batch output routing."""
+    command = _safe(value, field)
+    stripped = command.lstrip()
+    verb = stripped.split(maxsplit=1)[0].casefold() if stripped else ""
+    if verb in _OUTPUT_ROUTING_COMMANDS:
+        raise IgvBatchValidationError(f"IGV batch field {field!r} contains a reserved output-routing command")
+    return command
 
 
 def _format_preference(key: str, value: str | int | float | bool) -> str:
@@ -138,7 +149,7 @@ def _header_lines(
 
     # Global extra commands
     if extra_commands:
-        lines.extend(_safe(cmd, "extra_commands") for cmd in extra_commands)
+        lines.extend(_safe_extra_command(cmd, "extra_commands") for cmd in extra_commands)
 
     return lines
 
@@ -163,7 +174,7 @@ def _region_lines(
 
     lines: list[str] = [f"goto {region_str}"]
     if region.extra_commands:
-        lines.extend(_safe(cmd, "region.extra_commands") for cmd in region.extra_commands)
+        lines.extend(_safe_extra_command(cmd, "region.extra_commands") for cmd in region.extra_commands)
     lines.append(f"snapshot {final_snapshot_name}")
     return lines
 

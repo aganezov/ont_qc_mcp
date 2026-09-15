@@ -230,6 +230,23 @@ def test_injection_rejected_in_region_extra_commands(tmp_path: Path) -> None:
         generate_igv_batch(genome="hg38", tracks=["a.bam"], regions=[region], output_path=tmp_path / "b")
 
 
+@pytest.mark.parametrize("command", ["SNAPSHOT ../outside.png", "  snapshotDirectory ../outside"])
+@pytest.mark.parametrize("scope", ["global", "region"])
+def test_output_routing_commands_are_reserved(tmp_path: Path, command: str, scope: str) -> None:
+    region_commands = [command] if scope == "region" else []
+    global_commands = [command] if scope == "global" else []
+    region = IgvRegion(chrom="chr1", start=1, end=100, extra_commands=region_commands)
+
+    with pytest.raises(IgvBatchValidationError, match="output-routing command"):
+        generate_igv_batch(
+            genome="hg38",
+            tracks=["a.bam"],
+            regions=[region],
+            output_path=tmp_path / "b",
+            extra_commands=global_commands,
+        )
+
+
 @pytest.mark.parametrize("bad", [{"BAD\nKEY": "v"}, {"pref": "val\nexecute evil"}])
 def test_injection_rejected_in_extra_preferences(tmp_path: Path, bad: dict[str, str]) -> None:
     region = IgvRegion(chrom="chr1", start=1, end=100)
