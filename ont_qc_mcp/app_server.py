@@ -14,6 +14,7 @@ import jsonschema
 import mcp_types as types
 from mcp.server.context import ServerRequestContext
 from mcp.server.lowlevel import Server
+from mcp.shared.exceptions import MCPError
 from pydantic import BaseModel, ValidationError
 
 from .cli_wrappers import FlagValidationError
@@ -484,7 +485,7 @@ async def read_resource(uri: str) -> list[types.TextResourceContents]:
         tool = uri_str.removeprefix("tool://recipes/")
         recipes = _PUBLIC_RECIPES.get(tool)
         if recipes is None:
-            raise FileNotFoundError(f"Unknown resource URI: {uri_str}")
+            raise MCPError(types.INVALID_PARAMS, f"Unknown resource URI: {uri_str}")
         payload = json.dumps({"tool": tool, "recipes": recipes}, indent=2)
         return [types.TextResourceContents(uri=uri_str, text=payload, mime_type="application/json")]
 
@@ -492,7 +493,7 @@ async def read_resource(uri: str) -> list[types.TextResourceContents]:
         tool = uri_str.removeprefix("tool://guidance/")
         spec = TOOL_SPECS.get(tool)
         if spec is None:
-            raise FileNotFoundError(f"Unknown resource URI: {uri_str}")
+            raise MCPError(types.INVALID_PARAMS, f"Unknown resource URI: {uri_str}")
         payload = json.dumps(
             {
                 "tool": tool,
@@ -512,7 +513,7 @@ async def read_resource(uri: str) -> list[types.TextResourceContents]:
         )
         return [types.TextResourceContents(uri=uri_str, text=payload, mime_type="application/json")]
 
-    raise FileNotFoundError(f"Unknown resource URI: {uri_str}")
+    raise MCPError(types.INVALID_PARAMS, f"Unknown resource URI: {uri_str}")
 
 
 async def _on_list_tools(

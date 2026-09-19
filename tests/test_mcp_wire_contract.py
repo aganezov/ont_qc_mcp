@@ -333,6 +333,23 @@ def test_wire_catalog_results_and_resources(wire_server, tmp_path):
     assert client.call("tools/list")["result"]["tools"]
 
 
+def test_unknown_resource_errors_preserve_stdio_connection(wire_server):
+    client, _ = wire_server
+    valid_uri = "tool://recipes/alignment_qc"
+    valid_contents = client.call("resources/read", {"uri": valid_uri})["result"]["contents"]
+
+    for uri in (
+        "tool://guidance/does-not-exist",
+        "tool://recipes/does-not-exist",
+        "tool://unknown/read_qc",
+    ):
+        reply = client.call("resources/read", {"uri": uri})
+        assert reply["error"]["code"] == -32602, reply
+        assert reply["error"]["message"] == f"Unknown resource URI: {uri}", reply
+        assert client.call("resources/read", {"uri": valid_uri})["result"]["contents"] == valid_contents
+        assert client.call("tools/list")["result"]["tools"]
+
+
 def test_wire_schema_rejects_before_worker_or_filesystem(wire_server, tmp_path):
     client, events = wire_server
     output = tmp_path / "must-not-exist"
