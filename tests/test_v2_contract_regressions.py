@@ -58,7 +58,7 @@ def test_impossible_aggregate_or_request_is_rejected(model, payload):
 
 
 def test_read_mean_is_normalized_from_native_counts():
-    native = json.loads((FIXTURES / "raw" / "nanoq_haplotag.large.json").read_text())
+    native = json.loads((FIXTURES / "raw" / "nanoq_hg002_ont_chr1.json").read_text())
     payload = dict(
         read_count=native["reads"],
         total_bases=native["bases"],

@@ -1,0 +1,83 @@
+{
+  "dataset": "Oxford Nanopore Technologies Benchmark Datasets, giab_2023.05, hg002_sup_60x",
+  "sample": "HG002 (GM24385 / NA24385)",
+  "platform": "Oxford Nanopore Technologies PromethION, LSK114, 5 kHz",
+  "reference": "GCA_000001405.15_GRCh38_no_alt_analysis_set.fna",
+  "source_documentation": "https://epi2me.nanoporetech.com/giab-2023.05/",
+  "license": "CC-BY-NC-4.0",
+  "license_url": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "accessed": "2026-09-19",
+  "region_samtools": "chr1:4130001-4140000",
+  "region_bed": [
+    "chr1",
+    4130000,
+    4140000
+  ],
+  "selection": "All BAM records overlapping the region; complete stored sequences and alignment coordinates retained. VCF records overlapping the same region. FASTQ excludes secondary and supplementary alignments (0x900).",
+  "header_change": "Retained all HD/SQ and the original ID:minimap2 PG record; removed the other 23303 upstream PG records and added a fixture comment. No alignment records changed.",
+  "upstream_header_sha256": "4756f0dfabb7f539dd40d70290d7cf694b180d35e8dcbd59226ab1c9353a0e3d",
+  "alignment_records_sha256": "9779609996c8882a2ec5e27039b584e0dc218411d0d9054fb35f2b0f0d19b419",
+  "upstream_program_example": "@PG\tPN:minimap2\tID:minimap2\tVN:2.24-r1122\tCL:minimap2 -y -t 8 -ax map-ont ref.mmi -",
+  "tools": {
+    "samtools": "1.24",
+    "bcftools": "1.24",
+    "nanoq": "0.10.0",
+    "cramino": "1.4.1"
+  },
+  "alignment_records": 69,
+  "fastq_reads": 60,
+  "fastq_bases": 1701648,
+  "variant_records": 27,
+  "sources": [
+    {
+      "url": "https://ont-open-data.s3.eu-west-1.amazonaws.com/giab_2023.05/analysis/variant_calling/hg002_sup_60x/hg002.haplotagged.bam",
+      "bytes": 205484249144,
+      "etag": "34a48a3e6102a32737517486fe968e3b-6124"
+    },
+    {
+      "url": "https://ont-open-data.s3.eu-west-1.amazonaws.com/giab_2023.05/analysis/variant_calling/hg002_sup_60x/hg002.haplotagged.bam.bai",
+      "bytes": 65106512,
+      "etag": "bc5d414eeb930ebc3634c0d2ecb422e9-8"
+    },
+    {
+      "url": "https://ont-open-data.s3.eu-west-1.amazonaws.com/giab_2023.05/analysis/variant_calling/hg002_sup_60x/hg002.wf_snp.vcf.gz",
+      "bytes": 67449014,
+      "etag": "9ba8878c40b823fddf52c3e746393ad7-9"
+    },
+    {
+      "url": "https://ont-open-data.s3.eu-west-1.amazonaws.com/giab_2023.05/analysis/variant_calling/hg002_sup_60x/hg002.wf_snp.vcf.gz.tbi",
+      "bytes": 1578151,
+      "etag": "6546ae76aa59c6c90976de70a1bb400d"
+    }
+  ],
+  "files": {
+    "raw/cramino_hg002_ont_chr1.json": {
+      "bytes": 671,
+      "sha256": "10fe24d35d454c01c6cbf5576fe736808d37e5f01091baab1491e6edbaff577b"
+    },
+    "raw/nanoq_hg002_ont_chr1.json": {
+      "bytes": 727,
+      "sha256": "b715aabf399eb98622c94c3d0740fda1a959f3cd51c3e8ebfd4c20303846ec60"
+    },
+    "real/hg002_ont_chr1.bam": {
+      "bytes": 1876260,
+      "sha256": "760f07bf0b063b13b920e9a113c75e575689c7da04b060dcffa90109d38c967b"
+    },
+    "real/hg002_ont_chr1.bam.bai": {
+      "bytes": 3800,
+      "sha256": "eaa9bb0a00724b3103ef10e3c84fec39967b63bf0f2797496bfadb22fbc71b4b"
+    },
+    "real/hg002_ont_chr1.fq.gz": {
+      "bytes": 1549685,
+      "sha256": "aa1cb84e05d299dc50573f838efd505fbc3b668e1a7ad4130a9563e34bae6963"
+    },
+    "real/hg002_ont_chr1.vcf.gz": {
+      "bytes": 2464,
+      "sha256": "dfdd34af1333c2280e3346aea9ab0b745fa338e7c43626c3620db324d16853f0"
+    },
+    "real/hg002_ont_chr1.vcf.gz.tbi": {
+      "bytes": 131,
+      "sha256": "99a40ca15e44ad6542acda6e013983fb6f4d319848779fea960927e5e595fa2a"
+    }
+  }
+}
