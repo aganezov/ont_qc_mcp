@@ -44,8 +44,7 @@ else
   step ruff format --check .
   step mypy ont_qc_mcp tests
   step bandit -q -r ont_qc_mcp -x tests
-  # CVE-2025-71176 is a pytest-only (test) advisory; see the ci.yml note. Suppress narrowly.
-  step pip-audit --ignore-vuln CVE-2025-71176
+  step pip-audit
   step pytest -q
 fi
 
