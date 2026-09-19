@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- Return a protocol resource error for unknown URIs while keeping the stdio connection usable.
 - Classify post-admission execution and result-validation failures as `execution_error` responses instead of request `validation_error` responses.
 
 ### Added
