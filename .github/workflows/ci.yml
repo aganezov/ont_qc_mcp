@@ -110,10 +110,7 @@ jobs:
         run: uv run bandit -q -r ont_qc_mcp -x tests
 
       - name: Dependency audit (pip-audit)
-        # pytest is a test-only dependency (not in the shipped wheel). Its only
-        # advisory, CVE-2025-71176, is fixed in pytest 9, which forces a
-        # pytest-asyncio 1.x major upgrade — tracked separately. Suppress narrowly.
-        run: uv run pip-audit --ignore-vuln CVE-2025-71176
+        run: uv run pip-audit
 
       - name: Unit tests (skip integration)
         run: uv run pytest --cov=ont_qc_mcp --cov-report=xml
