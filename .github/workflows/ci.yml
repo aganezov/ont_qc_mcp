@@ -47,6 +47,7 @@ jobs:
               - 'uv.lock'
               - 'environment.yml'
               - 'scripts/install-rust-tools.sh'
+              - 'scripts/audit-dependencies.py'
               - '.github/workflows/ci.yml'
             integration:
               - 'ont_qc_mcp/**'
@@ -110,7 +111,7 @@ jobs:
         run: uv run bandit -q -r ont_qc_mcp -x tests
 
       - name: Dependency audit (pip-audit)
-        run: uv run pip-audit
+        run: uv run python scripts/audit-dependencies.py
 
       - name: Unit tests (skip integration)
         run: uv run pytest --cov=ont_qc_mcp --cov-report=xml
