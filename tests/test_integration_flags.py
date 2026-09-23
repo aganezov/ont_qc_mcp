@@ -32,7 +32,7 @@ def test_cramino_flags_applied_once(monkeypatch):
         captured["cmd"] = cmd
 
         class Result:
-            stdout = Path("tests/fixtures/raw/cramino_haplotag.large.json").read_text()
+            stdout = Path("tests/fixtures/raw/cramino_hg002_ont_chr1.json").read_text()
 
         return Result()
 

@@ -15,7 +15,7 @@ def captured_commands(monkeypatch):
     def run(cmd, timeout):
         calls.append((cmd, timeout))
         if cmd[0] == "cramino":
-            stdout = (fixtures / "raw/cramino_haplotag.large.json").read_text()
+            stdout = (fixtures / "raw/cramino_hg002_ont_chr1.json").read_text()
         elif cmd[0] == "mosdepth":
             Path(f"{cmd[-2]}.mosdepth.summary.txt").write_text(
                 "chrom\tlength\tbases\tmean\tmin\tmax\nchr1\t10\t20\t2\t2\t2\ntotal\t10\t20\t2\t0\t2\n"
