@@ -30,3 +30,21 @@ Thanks for helping improve ONT QC MCP! This guide covers **setup and commands**;
 - When adding a tool, update `flag_schemas.py`, the `app_server.py` tool registry, and
   add tests/fixtures.
 - Update `CHANGELOG.md` for user-visible changes.
+
+## Dependency audit updates
+
+The CI lint tier and `scripts/ci-local.sh` install exact versions from `uv.lock`.
+The dependency audit checks those versions against current advisory data, so an
+unchanged commit can start failing when that data changes.
+
+For a reported dependency with a published fix, use
+`uv lock --upgrade-package <package>` and inspect the diff. Run
+`scripts/ci-local.sh` to check the updated environment, then require green GitHub
+checks and both advisory reviews before merging. An audit pass means no known
+findings were reported for the audited packages at that time; it does not prove
+that the application has no vulnerabilities.
+
+The audit wrapper retries recognized temporary PyPI service failures only. It
+fails on reported vulnerabilities and unknown errors. Keep those failure paths
+enabled. Passing integration or minimum-dependency tests cannot substitute for
+the audit because those jobs resolve dependencies separately from the lockfile.
