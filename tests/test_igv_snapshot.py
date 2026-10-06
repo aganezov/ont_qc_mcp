@@ -282,7 +282,7 @@ def test_igv_snapshot_bam_and_vcf(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Test snapshot generation with both BAM and VCF tracks (haplotag data)."""
+    """Test snapshot generation with both BAM and VCF tracks (public HG002 ONT data)."""
     mock_flag = _should_use_mock()
     monkeypatch.setenv("MCP_IGV_MOCK", mock_flag)
 
@@ -290,8 +290,8 @@ def test_igv_snapshot_bam_and_vcf(
         genome="hg38",
         tracks=[str(sample_bam), str(sample_vcf)],
         regions=[
-            {"chrom": "chr1", "start": 4140000, "end": 4145000, "name": "haplotag_wide"},
-            {"chrom": "chr1", "start": 4142200, "end": 4143000, "name": "haplotag_zoomed"},
+            {"chrom": "chr1", "start": 4130000, "end": 4140000, "name": "hg002_wide"},
+            {"chrom": "chr1", "start": 4135900, "end": 4136200, "name": "hg002_indel"},
         ],
         output_dir=str(tmp_path),
     )

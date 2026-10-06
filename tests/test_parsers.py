@@ -73,12 +73,12 @@ def test_parse_nanoq_json_real_fixture():
     from pathlib import Path
     import json
 
-    path = Path("tests/fixtures/raw/nanoq_haplotag.large.json")
+    path = Path("tests/fixtures/raw/nanoq_hg002_ont_chr1.json")
     data = json.loads(path.read_text())
     parsed = parse_nanoq_json(data)
 
-    assert parsed.read_count == 221
-    assert parsed.total_bases == 1268233
+    assert parsed.read_count == 60
+    assert parsed.total_bases == 1701648
     assert parsed.mean_len > 0
     assert parsed.median_len > 0
     # Histogram is absent in this nanoq version but parser should not crash.
@@ -87,11 +87,11 @@ def test_parse_nanoq_json_real_fixture():
 
 
 def test_parse_cramino_json_real_fixture():
-    path = Path("tests/fixtures/raw/cramino_haplotag.large.json")
+    path = Path("tests/fixtures/raw/cramino_hg002_ont_chr1.json")
     data = json.loads(path.read_text())
     parsed = parse_cramino_json(data)
 
-    assert parsed.total_reads == 221
+    assert parsed.total_reads == 60
     assert parsed.mean_length and parsed.mean_length > 0
     assert parsed.mean_identity and parsed.mean_identity > 0
     # This captured JSON did not request histograms.

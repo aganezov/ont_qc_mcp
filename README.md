@@ -2,6 +2,9 @@
 
 Model Context Protocol server exposing lightweight QC/EDA helpers for Oxford Nanopore FASTQ and BAM/CRAM inputs. The server wraps common CLI tools and returns machine-readable summaries for educational and practical workflows.
 
+Small public HG002 ONT examples are bundled for local trials. See the
+[fixture provenance, usage and data license](tests/fixtures/real/README.md).
+
 ## Features
 - FASTQ and selected BAM/CRAM stored-read QC via `nanoq`.
 - BAM/CRAM alignment-record QC via `samtools` and `cramino`.

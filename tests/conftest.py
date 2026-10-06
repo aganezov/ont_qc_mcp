@@ -204,7 +204,7 @@ def sample_bam() -> Path:
     Defaults to the checked-in real fixture; can be overridden with MCP_SAMPLE_BAM.
     """
     env_path = os.environ.get("MCP_SAMPLE_BAM")
-    default_path = Path(__file__).resolve().parent / "fixtures" / "real" / "haplotag.large.bam"
+    default_path = Path(__file__).resolve().parent / "fixtures" / "real" / "hg002_ont_chr1.bam"
     bam_path = Path(env_path) if env_path else default_path
 
     if not bam_path.exists():
@@ -220,7 +220,7 @@ def sample_vcf() -> Path:
     Uses the checked-in real gzipped VCF; can be overridden with MCP_SAMPLE_VCF.
     """
     env_path = os.environ.get("MCP_SAMPLE_VCF")
-    default_path = Path(__file__).resolve().parent / "fixtures" / "real" / "haplotag.large.vcf.gz"
+    default_path = Path(__file__).resolve().parent / "fixtures" / "real" / "hg002_ont_chr1.vcf.gz"
     vcf_path = Path(env_path) if env_path else default_path
 
     if not vcf_path.exists():
@@ -236,7 +236,7 @@ def sample_fastq() -> Path:
     Uses the checked-in real gzipped FASTQ; can be overridden with MCP_SAMPLE_FASTQ.
     """
     env_path = os.environ.get("MCP_SAMPLE_FASTQ")
-    default_path = Path(__file__).resolve().parent / "fixtures" / "real" / "haplotag.large.fq.gz"
+    default_path = Path(__file__).resolve().parent / "fixtures" / "real" / "hg002_ont_chr1.fq.gz"
     fastq_path = Path(env_path) if env_path else default_path
 
     if not fastq_path.exists():

@@ -1,0 +1,27 @@
+{
+  "file_info": {
+    "name": "hg002_ont_chr1.bam",
+    "path": "tests/fixtures/real/hg002_ont_chr1.bam",
+    "creation_time": "19/09/2026 18:48:24"
+  },
+  "alignment_stats": {
+    "num_alignments": 69,
+    "percent_from_total": 86.95652173913044,
+    "num_reads": 60
+  },
+  "read_stats": {
+    "yield_gb": 0.00175062,
+    "mean_coverage": 0.0005647302398192407,
+    "yield_gb_long": 0.001208975,
+    "n50": 29972,
+    "n75": 22691,
+    "median_length": 26410.0,
+    "mean_length": 25371.304347826088
+  },
+  "identity_stats": {
+    "median_identity": 99.05999755859375,
+    "mean_identity": 98.69405674588853,
+    "modal_identity": 99.2,
+    "is_estimated": false
+  }
+}
