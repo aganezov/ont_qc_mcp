@@ -44,7 +44,7 @@ else
   step ruff format --check .
   step mypy ont_qc_mcp tests
   step bandit -q -r ont_qc_mcp -x tests
-  step pip-audit
+  step python scripts/audit-dependencies.py
   step pytest -q
 fi
 
