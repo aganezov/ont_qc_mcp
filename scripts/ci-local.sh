@@ -16,8 +16,8 @@ fi
 mode="${1:-}"
 case "$mode" in
   --floors)
-    echo "==> floors: lowest-direct resolution into a 3.10 venv (mirrors min-deps)"
-    uv venv --python 3.10 >/dev/null || { echo "❌ uv venv failed"; exit 1; }
+    echo "==> floors: lowest-direct resolution into a 3.11 venv (mirrors min-deps)"
+    uv venv --python 3.11 >/dev/null || { echo "❌ uv venv failed"; exit 1; }
     uv pip install --resolution lowest-direct -e ".[all]" || { echo "❌ floor install failed"; exit 1; }
     ;;
   --fast)

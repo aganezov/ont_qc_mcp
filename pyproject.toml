@@ -3,7 +3,7 @@ name = "ont-qc-mcp"
 version = "0.1.0"
 description = "Model Context Protocol server exposing QC/EDA helpers for ONT FASTQ/BAM/CRAM inputs."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Sergey Aganezov", email = "sergeyaganezovjr@gmail.com" }]
 urls = { "Repository" = "https://github.com/aganezov/ont_qc_mcp", "Issues" = "https://github.com/aganezov/ont_qc_mcp/issues" }
@@ -11,7 +11,6 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -77,7 +76,7 @@ markers = [
 addopts = "-m 'not integration and not igv_integration'"
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py311"
 line-length = 120
 
 [tool.ruff.lint]
@@ -86,7 +85,7 @@ extend-select = ["UP006", "UP007"]
 ignore = []
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 check_untyped_defs = true
 warn_return_any = true
 warn_unused_ignores = true
@@ -94,7 +93,7 @@ ignore_missing_imports = true
 show_error_codes = true
 
 # Do not type-check third-party stubs we don't own. Newer numpy ships PEP 695
-# `type` aliases in its .pyi files, which mypy rejects under python_version=3.10.
+# `type` aliases in its .pyi files, which mypy rejects under python_version=3.11.
 # This only surfaces in CI's fresh install (latest numpy), not in a stale local
 # env — the classic unpinned-dependency drift. We never analyze numpy internals.
 [[tool.mypy.overrides]]
