@@ -15,7 +15,7 @@ Small public HG002 ONT examples are bundled for local trials. See the
 - Non-blocking execution: CLI calls are offloaded to worker threads with configurable timeouts and thread defaults.
 
 ## Requirements
-- Python >= 3.10
+- Python >= 3.11
 - CLI tools on `PATH` (override via env vars):
   - `NANOQ` (default `nanoq`)
   - `CRAMINO` (default `cramino`)

@@ -14,6 +14,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Migrate the local stdio adapter to MCP SDK 2.2 and validate public requests before worker admission.
 - Add `--reference` to the real-input MCP smoke helper and forward it to alignment and coverage calls for CRAM.
 
+### Removed
+- **Breaking:** require Python 3.11 or newer and drop Python 3.10 support. The filelock and Pillow releases that fix the advisories reported by the dependency audit do not support Python 3.10.
+
 ### Fixed
 
 - Return a protocol resource error for unknown URIs while keeping the stdio connection usable.
